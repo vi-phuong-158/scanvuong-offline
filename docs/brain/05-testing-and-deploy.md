@@ -61,8 +61,8 @@ Không nằm trong phạm vi công việc thường xuyên — dự án là stat
 
 | Môi trường | Branch | URL |
 |-----------|--------|-----|
-| Production | _(chưa deploy)_ | _(cần bổ sung khi có yêu cầu deploy)_ |
-| Local | `master` (0 commit, chưa có remote) | `http://127.0.0.1:8765` (hoặc cổng fallback 8766–8768) |
+| Production | _(chưa deploy — chỉ có repo GitHub, chưa deploy static host)_ | _(cần bổ sung khi có yêu cầu deploy)_ |
+| Local | `main` (1 commit, remote: https://github.com/vi-phuong-158/scanvuong-offline, public) | `http://127.0.0.1:8765` (hoặc cổng fallback 8766–8768) |
 
 ## Lưu ý
 

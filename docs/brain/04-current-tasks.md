@@ -28,7 +28,7 @@ _(trống)_
 ## Không làm lúc này
 
 - OCR, cloud storage, đăng nhập, database, API AI — ngoài scope V1 theo quyết định thiết kế, xem [00-project-overview.md](00-project-overview.md).
-- Đổi Git branch `master` → `main`, tạo commit, tạo GitHub repo, deploy Vercel — chỉ làm sau khi `GATE-01` PASS và có yêu cầu rõ ràng cho bước đó.
+- Deploy Vercel/static host — chưa được yêu cầu. (Đổi branch → `main`, tạo commit đầu, và tạo GitHub repo công khai đã được thực hiện 2026-08-22 theo yêu cầu trực tiếp của người dùng, trước khi `GATE-01` PASS — xem [06-ai-working-log.md](06-ai-working-log.md).)
 - Refactor `app.js` thành nhiều module/file — không có lợi ích rõ ràng và đi ngược nguyên tắc dependency-free/không build-step.
 
 ---

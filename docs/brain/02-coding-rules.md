@@ -42,7 +42,7 @@ Không có test runner tự động. Checklist thủ công đầy đủ nằm tr
 
 ## Git
 
-- Repo hiện tại: branch `master`, 0 commit, không remote (khởi tạo `git init` cục bộ ngày 2026-08-22).
-- Không push thẳng `main`/`master` nếu chưa được yêu cầu rõ ràng — hiện tại chưa có commit nào nên chưa phát sinh tình huống này.
+- Repo hiện tại: branch `main`, 1 commit ("Initial commit: ScanVuong Offline V1", 2026-08-22), remote GitHub công khai: https://github.com/vi-phuong-158/scanvuong-offline.
+- Không push thẳng `main` cho các thay đổi sau này nếu chưa được yêu cầu rõ ràng — tạo nhánh/PR cho công việc tiếp theo trừ khi người dùng nói khác.
 - Không `reset`/`stash`/`clean`/`commit`/`push`/`merge` trừ khi người dùng yêu cầu rõ ràng (quy tắc workspace, xem `D:\04. Github\CLAUDE.md`).
 - Commit message ngắn gọn khi được yêu cầu tạo commit, format `type: short description`.
