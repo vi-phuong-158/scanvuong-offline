@@ -74,6 +74,9 @@ def _sw_assets_exist():
 
 check("every sw.js ASSETS entry exists on disk")(_sw_assets_exist)
 
+# Plain text scan (not comment/string-aware): a real http(s):// literal
+# anywhere in these files — including inside a comment — is worth failing CI
+# over, since this project's rule is that none should ever appear here.
 EXTERNAL_URL_RE = re.compile(r"https?://")
 SCANNED_FOR_EXTERNAL_URLS = ['index.html', 'app.js', 'styles.css', 'sw.js', 'manifest.webmanifest']
 

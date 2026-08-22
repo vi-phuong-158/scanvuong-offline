@@ -476,12 +476,17 @@
   });
   els.editorCanvas.addEventListener('pointermove', (e) => {
     const idx=state.preview.dragCorner,map=state.preview.mapping,page=selectedPage(); if(idx<0||!map||!page)return;
+    // Something else (e.g. an in-flight detect/export) can flip state.busy
+    // true after the drag already started via pointerdown's guard — bail out
+    // of the drag immediately rather than keep writing to page.corners.
+    if(state.busy){state.preview.dragCorner=-1;return;}
     const p=pointerToCss(e); page.corners[idx]={x:clamp((p.x-map.ox)/map.dw,.002,.998),y:clamp((p.y-map.oy)/map.dh,.002,.998)};
     page.confidence=Math.max(page.confidence,.62); drawEditor();
   });
   function endCornerDrag(){
     if(state.preview.dragCorner<0)return;
     state.preview.dragCorner=-1;
+    if(state.busy)return;
     // Re-label TL/TR/BR/BL only once the drag ends. Re-ordering on every
     // pointermove can move the handle out from under the finger mid-drag.
     const page=selectedPage(); if(page)page.corners=orderCorners(page.corners);
