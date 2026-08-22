@@ -42,7 +42,7 @@ Không có test runner tự động. Checklist thủ công đầy đủ nằm tr
 
 ## Git
 
-- Repo hiện tại: branch `main`, 1 commit ("Initial commit: ScanVuong Offline V1", 2026-08-22), remote GitHub công khai: https://github.com/vi-phuong-158/scanvuong-offline.
+- Repo hiện tại: nhánh mặc định `main`, remote GitHub công khai: https://github.com/vi-phuong-158/scanvuong-offline. Không ghi số lượng commit cụ thể ở tài liệu này — trạng thái đó đổi liên tục, dùng `git log`/`git status` để xem thật.
 - Không push thẳng `main` cho các thay đổi sau này nếu chưa được yêu cầu rõ ràng — tạo nhánh/PR cho công việc tiếp theo trừ khi người dùng nói khác.
 - Không `reset`/`stash`/`clean`/`commit`/`push`/`merge` trừ khi người dùng yêu cầu rõ ràng (quy tắc workspace, xem `D:\04. Github\CLAUDE.md`).
 - Commit message ngắn gọn khi được yêu cầu tạo commit, format `type: short description`.

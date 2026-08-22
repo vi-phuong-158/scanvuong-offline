@@ -1,4 +1,4 @@
-const CACHE = 'scanvuong-v1.0.1';
+const CACHE = 'scanvuong-v1.0.2';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', e => e.waitUntil(
@@ -7,7 +7,7 @@ self.addEventListener('install', e => e.waitUntil(
 
 self.addEventListener('activate', e => e.waitUntil(
   caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    .then(keys => Promise.all(keys.filter(k => k.startsWith('scanvuong-') && k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim())
 ));
 
@@ -25,6 +25,14 @@ self.addEventListener('fetch', e => {
       }
       return res;
     }).catch(() => cached || caches.match('./index.html'));
-    return cached || network;
+    // A cached hit is returned immediately below, but the refresh fetch above
+    // must not be abandoned when the fetch event is otherwise done — without
+    // waitUntil the service worker can be torn down mid-fetch, before the
+    // cache is ever updated for the next load.
+    if (cached) {
+      e.waitUntil(network.catch(() => {}));
+      return cached;
+    }
+    return network;
   }));
 });

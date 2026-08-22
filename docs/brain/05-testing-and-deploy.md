@@ -62,7 +62,15 @@ Không nằm trong phạm vi công việc thường xuyên — dự án là stat
 | Môi trường | Branch | URL |
 |-----------|--------|-----|
 | Production | _(chưa deploy — chỉ có repo GitHub, chưa deploy static host)_ | _(cần bổ sung khi có yêu cầu deploy)_ |
-| Local | `main` (1 commit, remote: https://github.com/vi-phuong-158/scanvuong-offline, public) | `http://127.0.0.1:8765` (hoặc cổng fallback 8766–8768) |
+| Local | nhánh mặc định `main`, remote: https://github.com/vi-phuong-158/scanvuong-offline (public) | `http://127.0.0.1:8765` (hoặc cổng fallback 8766–8768) |
+
+## CI
+
+`.github/workflows/static-validation.yml` chạy trên `push`/`pull_request`: `node --check app.js`/`sw.js`, parse JSON của `manifest.webmanifest`/`vercel.json`, `ast.parse` `server.py`, xác nhận asset trong `ASSETS` của `sw.js` tồn tại trên đĩa, quét không có URL runtime CDN/external, và quét ranh giới riêng tư (không `XMLHttpRequest`/`sendBeacon`/`WebSocket`/`localStorage`/`sessionStorage`/`indexedDB`/cookie/`fetch` trong `app.js`). Logic quét nằm trong `scripts/validate_static.py` (Python stdlib only, không dependency mới).
+
+## Regression harness (export snapshot / busy lock)
+
+`node scripts/regression_export_busy.js` — script Node dependency-free, chạy `app.js` thật (không sửa file trên đĩa) trong một fake DOM tối giản (qua module `vm`), rồi lái qua đúng các event handler thật (`fileInput` change, kéo-thả thumbnail, click các nút, click `exportBtn`) để chứng minh: xuất PDF khi đang chạy vẫn giữ đúng thứ tự trang dù `state.pages` bị đảo trực tiếp giữa chừng, filter/rotation/corners đổi sau khi đã tạo snapshot không ảnh hưởng PDF xuất ra, và mọi handler mutate trang đều bị chặn khi `state.busy === true`. Không cần trình duyệt thật (chỉ Node), nên script này **có chạy trong CI** (`.github/workflows/static-validation.yml`), cộng thêm chạy thủ công khi sửa `exportPdf()`/`setBusy()`/các handler liên quan.
 
 ## Lưu ý
 
