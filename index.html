@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="description" content="ScanVuông - quét tài liệu, chỉnh phối cảnh và xuất PDF hoàn toàn trên thiết bị." />
+  <title>ScanVuông — Scan PDF Offline</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <noscript>Ứng dụng cần JavaScript để xử lý ảnh.</noscript>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 40 40"><path d="M9 4H4v5M31 4h5v5M9 36H4v-5M31 36h5v-5M11 11h18v18H11z"/></svg>
+      </div>
+      <div>
+        <h1>ScanVuông</h1>
+        <p>Scan PDF offline</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="offlineBadge" class="badge">Xử lý trên thiết bị</span>
+      <button id="installBtn" class="btn ghost hidden" type="button">Cài ứng dụng</button>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <section id="emptyState" class="empty-state card">
+      <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-label="Chọn ảnh tài liệu">
+        <div class="drop-icon" aria-hidden="true">
+          <svg viewBox="0 0 48 48"><path d="M14 5h20a5 5 0 0 1 5 5v28a5 5 0 0 1-5 5H14a5 5 0 0 1-5-5V10a5 5 0 0 1 5-5Zm0 4a1 1 0 0 0-1 1v28a1 1 0 0 0 1 1h20a1 1 0 0 0 1-1V10a1 1 0 0 0-1-1H14Zm3 22 6-7 4 5 3-3 5 6H17Zm12-15a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+        </div>
+        <h2>Thả ảnh tài liệu vào đây</h2>
+        <p>JPG, PNG, WEBP · có thể chọn nhiều ảnh cùng lúc</p>
+        <div class="empty-buttons">
+          <button id="chooseBtn" class="btn primary" type="button">Chọn ảnh</button>
+          <button id="cameraBtn" class="btn secondary" type="button">Chụp ảnh</button>
+        </div>
+        <p class="privacy-note">Ảnh không được tải lên máy chủ.</p>
+      </div>
+    </section>
+
+    <section id="workspace" class="workspace hidden">
+      <aside class="sidebar card">
+        <div class="sidebar-head">
+          <div>
+            <strong id="pageCount">0 trang</strong>
+            <span id="reviewCount" class="muted"></span>
+          </div>
+          <button id="addBtn" class="icon-btn" type="button" title="Thêm ảnh" aria-label="Thêm ảnh">+</button>
+        </div>
+        <div id="thumbList" class="thumb-list" aria-label="Danh sách trang"></div>
+        <div class="sidebar-footer">
+          <button id="autoAllBtn" class="btn secondary full" type="button">Tự nhận lại tất cả</button>
+          <button id="clearBtn" class="btn danger-text full" type="button">Xóa toàn bộ</button>
+        </div>
+      </aside>
+
+      <section class="editor card">
+        <div class="editor-toolbar">
+          <div class="tool-group">
+            <button id="detectBtn" class="btn secondary small" type="button">Tự cắt</button>
+            <button id="resetCropBtn" class="btn secondary small" type="button">Đặt lại góc</button>
+            <button id="rotateBtn" class="btn secondary small" type="button">Xoay 90°</button>
+          </div>
+          <div class="tool-group">
+            <button id="moveUpBtn" class="btn secondary small" type="button">↑ Trước</button>
+            <button id="moveDownBtn" class="btn secondary small" type="button">↓ Sau</button>
+            <button id="deleteBtn" class="btn danger-text small" type="button">Xóa trang</button>
+          </div>
+        </div>
+
+        <div class="canvas-stage">
+          <canvas id="editorCanvas"></canvas>
+          <div id="processingOverlay" class="processing-overlay hidden">
+            <div class="spinner"></div>
+            <span id="processingText">Đang xử lý…</span>
+          </div>
+        </div>
+
+        <div class="editor-hint">
+          <span id="confidenceDot" class="status-dot"></span>
+          <span id="confidenceText">Kéo 4 điểm để chỉnh mép giấy nếu cần.</span>
+        </div>
+
+        <div class="filters" role="group" aria-label="Bộ lọc ảnh">
+          <button class="filter-chip active" data-filter="document" type="button">Tài liệu màu</button>
+          <button class="filter-chip" data-filter="bw" type="button">Đen trắng</button>
+          <button class="filter-chip" data-filter="original" type="button">Gốc</button>
+        </div>
+      </section>
+
+      <aside class="export-panel card">
+        <div>
+          <h2>Xuất PDF</h2>
+          <p class="muted">Tất cả xử lý diễn ra trên thiết bị.</p>
+        </div>
+
+        <label class="field">
+          <span>Tên file</span>
+          <div class="filename-wrap">
+            <input id="fileName" type="text" value="ScanVuong" maxlength="80" />
+            <span>.pdf</span>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Khổ trang</span>
+          <select id="pageSize">
+            <option value="a4">A4 tự xoay</option>
+            <option value="fit">Theo tỷ lệ tài liệu</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Chất lượng</span>
+          <select id="quality">
+            <option value="high">Cao</option>
+            <option value="standard" selected>Tiêu chuẩn</option>
+            <option value="small">Nhẹ</option>
+            <option value="2mb">Cố gắng dưới 2 MB</option>
+          </select>
+        </label>
+
+        <label class="field check-field">
+          <input id="marginToggle" type="checkbox" />
+          <span>Chừa lề trắng nhỏ</span>
+        </label>
+
+        <div id="exportSummary" class="export-summary">
+          <div><span>Số trang</span><strong>0</strong></div>
+          <div><span>Trang cần kiểm tra</span><strong>0</strong></div>
+        </div>
+
+        <button id="exportBtn" class="btn primary full export-btn" type="button">Xuất PDF</button>
+        <div id="exportProgress" class="progress-wrap hidden" aria-live="polite">
+          <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+          <span id="progressLabel">Đang chuẩn bị…</span>
+        </div>
+        <p id="exportNotice" class="notice hidden"></p>
+      </aside>
+    </section>
+  </main>
+
+  <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />
+  <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# OS noise
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Python bytecode from the local dev server
+__pycache__/
+*.pyc
+
+# Local scratch output — never ignore app assets, icons, sw.js or the manifest,
+# they are all required for the PWA to work offline.
+*.local
