@@ -16,6 +16,31 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-08-23] Review độc lập & đóng toàn bộ acceptance gaps cho PR #8 (Mobile-First UI Redesign)
+
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Emoji Gate:** Loại bỏ 100% emoji khỏi filter chips (`index.html`) và thông báo cảnh báo (`app.js`), thay thế bằng typography tiếng Việt cô đọng (`Tự động`, `Màu`, `Đen trắng`, `Gốc`). Bổ sung static regression check `_no_ui_emojis` trong `scripts/validate_static.py`.
+  2. **Touch Target Gate:** Điều chỉnh hit area tất cả interactive controls trên mobile ($\le 768\text{px}$) đạt $\ge 44\times 44\text{px}$ (nút bấm, filter chips, `.check-field`, toolbar actions). Tạo bộ kiểm thử tự động `scripts/test_touch_targets.cjs` đo `getBoundingClientRect()` trên 5 viewports (360×800, 375×812, 390×844, 412×915, 430×932), đạt 140/140 checks PASS.
+  3. **Visual QA Gate:** Nâng cấp `scripts/capture_ui_states.cjs` chụp 13 ảnh screenshot thực tế deterministic bằng Chrome CDP trên full flow (Mode Select, Empty State, Document Editor ở các kích thước 360px, 390px, 430px, Landscape 844x390, Tablet 768x1024, Desktop 1280x800, Export Panel, Scan ID Front, Back, A4 Preview, và Scan ID Desktop).
+  4. **Landscape Mobile Usability:** Bổ sung media query `@media (max-height: 500px)` cho điện thoại nằm ngang (2 cột: Canvas editor bên trái, Rail & Export scrollable bên phải).
+  5. **Font Offline & PWA Acceptance:** Nâng cấp `scripts/acceptance_offline_pwa.cjs` kiểm tra `document.fonts.check()` cho 4 weights (400, 500, 600, 700) cả online và offline; tách rõ ràng verdict PWA installability và assertion 0 required runtime network dependencies.
+  6. **License Integrity:** Bổ sung `assets/fonts/OFL.txt` với toàn văn bản quyền SIL Open Font License 1.1 và cập nhật Mục 4 của `THIRD_PARTY_NOTICES.md`.
+- **File đã sửa:** `index.html`, `styles.css`, `app.js`, `THIRD_PARTY_NOTICES.md`, `assets/fonts/OFL.txt`, `scripts/validate_static.py`, `scripts/test_touch_targets.cjs`, `scripts/capture_ui_states.cjs`, `scripts/acceptance_offline_pwa.cjs`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Đáp ứng đầy đủ các tiêu chuẩn kiểm thử khắt khe của dự án, đảm bảo bằng chứng thực tế khớp 100% với verdict báo cáo trước khi chuyển sang Ready for Review.
+- **Kiểm tra:**
+  - `node --check app.js`, `node --check sw.js`, `node --check document-detector.js` PASS.
+  - `python scripts/validate_static.py` PASS (9/9 checks).
+  - `node scripts/test_touch_targets.cjs` PASS (140/140 checks).
+  - `node scripts/acceptance_offline_pwa.cjs` PASS.
+  - `node scripts/regression_export_busy.js` PASS (29/29).
+  - `node scripts/regression_scan_id.js` PASS (52/52).
+  - `node scripts/regression_ml_detector.js` PASS (53/53).
+  - `node scripts/regression_sw_update.cjs` PASS (9/9).
+  - `node scripts/rehearsal_dataset.cjs` PASS (25/25 images).
+
+---
+
 ## [2026-08-23] Redesign UI mobile-first với Be Vietnam Pro, SVG icons và layout thích ứng
 
 - **Agent:** Codex

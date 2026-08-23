@@ -318,8 +318,8 @@ button {
 }
 
 .btn.ghost.compact {
-  min-height: 34px;
-  padding: 0 10px;
+  min-height: 40px;
+  padding: 0 12px;
   font-size: 12px;
   border-radius: var(--radius-sm);
 }
@@ -342,8 +342,8 @@ button {
 }
 
 .btn.small {
-  min-height: 38px;
-  padding: 0 10px;
+  min-height: 44px;
+  padding: 0 12px;
   font-size: 13px;
 }
 
@@ -352,9 +352,11 @@ button {
 }
 
 .btn-icon-add {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 12px;
   border: 1px solid var(--primary-border);
   background: var(--primary-soft);
   color: var(--primary);
@@ -933,7 +935,7 @@ button {
   border: 1px solid var(--line-strong);
   background: var(--surface-2);
   border-radius: var(--radius-pill);
-  padding: 7px 13px;
+  padding: 0 16px;
   font-weight: 600;
   font-size: 13px;
   color: var(--ink-secondary);
@@ -941,7 +943,10 @@ button {
   white-space: nowrap;
   transition: all 0.15s ease;
   user-select: none;
-  min-height: 36px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
 }
 
@@ -1040,18 +1045,22 @@ button {
 }
 
 .check-field {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
   font-weight: 500;
   color: var(--ink);
   cursor: pointer;
+  min-height: 44px;
+  user-select: none;
+  -webkit-user-select: none;
+  box-sizing: border-box;
 }
 
 .check-field input {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   accent-color: var(--primary);
   cursor: pointer;
 }
@@ -1307,8 +1316,8 @@ button {
   }
 }
 
-/* --- Tablet Layout (769px - 1024px) --- */
-@media (max-width: 1024px) and (min-width: 769px) {
+/* --- Tablet Layout (769px - 1024px, min-height: 501px) --- */
+@media (max-width: 1024px) and (min-width: 769px) and (min-height: 501px) {
   .workspace {
     grid-template-columns: 200px minmax(0, 1fr);
     grid-template-rows: auto auto;
@@ -1333,6 +1342,61 @@ button {
 
   .canvas-stage {
     min-height: 48dvh;
+  }
+}
+
+/* --- Mobile Landscape (<= 500px screen height) --- */
+@media (max-height: 500px) {
+  .topbar {
+    height: calc(44px + env(safe-area-inset-top, 0px));
+    padding: 0 12px;
+  }
+
+  .brand-text p {
+    display: none;
+  }
+
+  .app-shell {
+    padding: 6px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .workspace {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr) !important;
+    grid-template-rows: auto 1fr !important;
+    gap: 8px !important;
+    height: calc(100dvh - 56px) !important;
+    min-height: 0 !important;
+  }
+
+  .editor {
+    grid-column: 1 !important;
+    grid-row: 1 / span 2 !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  .canvas-stage {
+    flex: 1 1 auto !important;
+    min-height: 140px !important;
+    height: 100% !important;
+    max-height: none !important;
+  }
+
+  .sidebar {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    max-height: 160px !important;
+    overflow-y: auto !important;
+  }
+
+  .export-panel {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    overflow-y: auto !important;
+    max-height: 100% !important;
   }
 }
 
@@ -1432,26 +1496,35 @@ button {
   }
 
   .btn.small {
-    min-height: 36px;
-    padding: 0 8px;
-    font-size: 12px;
-    gap: 4px;
+    min-height: 44px;
+    padding: 0 10px;
+    font-size: 13px;
+    gap: 5px;
   }
 
   .btn.small svg {
-    width: 15px;
-    height: 15px;
+    width: 16px;
+    height: 16px;
+  }
+
+  .btn.ghost.compact {
+    min-height: 44px;
+    padding: 0 12px;
   }
 
   .filters {
     padding: 8px 10px;
-    gap: 6px;
+    gap: 8px;
   }
 
   .filter-chip {
-    padding: 6px 12px;
-    font-size: 12px;
-    min-height: 34px;
+    padding: 0 14px;
+    font-size: 13px;
+    min-height: 44px;
+  }
+
+  .field input[type="text"], .field select {
+    min-height: 44px;
   }
 
   /* Mobile Horizontal Thumbnail Rail */

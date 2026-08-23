@@ -499,7 +499,7 @@
     const warn = page.confidence < .58;
     els.confidenceDot.classList.toggle('warn', warn);
     els.confidenceText.textContent = warn
-      ? '⚠ Mép giấy chưa chắc chắn. Hãy kéo 4 điểm tròn vào đúng góc tờ giấy.'
+      ? 'Mép giấy chưa chắc chắn. Hãy kéo 4 điểm tròn vào đúng góc tờ giấy.'
       : 'Mép giấy đã nhận diện tốt. Có thể kéo 4 điểm để tinh chỉnh.';
   }
 
