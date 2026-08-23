@@ -273,10 +273,31 @@
         const { createCanvas } = require('canvas');
         canvas = createCanvas(INPUT_SIZE, INPUT_SIZE);
       } catch (e1) {
-        const path = require('path');
-        const baseDir = typeof __dirname !== 'undefined' ? __dirname : (typeof process !== 'undefined' && process.cwd ? process.cwd() : '.');
-        const { createCanvas } = require(path.join(baseDir, 'benchmark', 'node_modules', 'canvas'));
-        canvas = createCanvas(INPUT_SIZE, INPUT_SIZE);
+        try {
+          const path = require('path');
+          const baseDir = typeof __dirname !== 'undefined' ? __dirname : (typeof process !== 'undefined' && process.cwd ? process.cwd() : '.');
+          const { createCanvas } = require(path.join(baseDir, 'benchmark', 'node_modules', 'canvas'));
+          canvas = createCanvas(INPUT_SIZE, INPUT_SIZE);
+        } catch (e2) {
+          // Dependency-free mock canvas for Node environments without native canvas
+          const buf = new Uint8ClampedArray(INPUT_SIZE * INPUT_SIZE * 4);
+          canvas = {
+            width: INPUT_SIZE,
+            height: INPUT_SIZE,
+            getContext: () => ({
+              imageSmoothingEnabled: true,
+              imageSmoothingQuality: 'medium',
+              createImageData: (w, h) => ({ data: buf, width: w, height: h }),
+              getImageData: () => ({ data: buf, width: INPUT_SIZE, height: INPUT_SIZE }),
+              putImageData: () => {},
+              drawImage: () => { throw new Error('Mock drawImage'); },
+              save: () => {},
+              restore: () => {},
+              translate: () => {},
+              rotate: () => {}
+            })
+          };
+        }
       }
     }
 
