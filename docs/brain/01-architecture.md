@@ -51,8 +51,10 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 | **Editor / preview** | `renderSelected()` | `updateShell()`, khi chọn trang khác | `loadImage()`, `renderConfidenceHint()`, `drawEditor()` |
 | | `drawEditor()` | `renderSelected()`, `pointermove`, `resize`, `endCornerDrag()` | dùng `FILTER_CSS`, `rotatedDimensions()` |
 | **Perspective** | `homographyCoeffs()` | `homographyFromUnitQuad()` (đường WebGL), `warpCpu()` (đường CPU) | `solveLinear()` |
-| | `renderPageCanvas()` | `makeJpegs()` | `loadImage()`, `drawRotatedToCanvas()`, `getGL()`, `homographyFromUnitQuad()`, `warpCpu()` (fallback khi `glUnavailable`) |
-| **Filter** | `FILTER_CSS` (bảng hằng, không phải hàm) | `drawEditor()` **và** `renderPageCanvas()` | — |
+| | `renderPageCanvas()` | `makeJpegs()` | `loadImage()`, `drawRotatedToCanvas()`, `getGL()`, `homographyFromUnitQuad()`, `warpCpu()` (fallback khi `glUnavailable`), `enhanceCanvas()` (khi filter thuộc `PIXEL_FILTERS`) |
+| **Filter** | `FILTER_CSS` (bảng hằng) | `drawEditor()` **và** `renderPageCanvas()` — chỉ dùng cho `document`/`original` | — |
+| | `PIXEL_FILTERS` (`Set('auto','bw')`) + `enhanceCanvas()` | `drawEditor()` (qua `ensureEnhancedPreview()`) **và** `renderPageCanvas()` | `enhanceAuto()` hoặc `enhanceBW()` → `computeLuma()`, `channelHistogram()`, `histPercentile()`, `boxBlur()` |
+| | `ensureEnhancedPreview()` | `drawEditor()` | `drawRotatedToCanvas()`, `enhanceCanvas()` — cache theo key `pageId|filter|rotation|kích thước hiển thị`, chỉ tính lại khi key đổi (không tính lại mỗi `pointermove` khi kéo góc) |
 | **Pages** | `state.pages` (mảng trạng thái trung tâm) | mọi nút sửa trang | `removeSelected()`, `moveSelected()`, `rotateCorners90()`, `renderThumbs()`, `updateShell()` |
 | **PDF** | `exportPdf()` | nút `#exportBtn` | `makeJpegs()`, `buildPdf()`, `sanitizeFilename()`, `setProgress()` |
 | | `makeJpegs()` | `exportPdf()` | `renderPageCanvas()`, `canvasToJpeg()`, `sleepFrame()` |
@@ -93,6 +95,36 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 
 Song song, ngoài IIFE chính: `navigator.serviceWorker.register('./sw.js')` (bỏ qua nếu `location.protocol === 'file:'`) nạp `sw.js`, file này tự vận hành độc lập (install → cache app shell → activate → fetch cache-first + refresh nền).
 
+### Auto Enhance pixel pipeline (`enhanceAuto`/`enhanceBW`)
+
+Filter `auto` ("Tự động đẹp", mặc định cho trang mới) và filter `bw` ("Đen trắng") không dùng
+CSS filter — chúng chạy xử lý pixel thật qua `enhanceCanvas(canvas, mode)`, được gọi từ **cả**
+`drawEditor()` (preview, qua cache `ensureEnhancedPreview()`) **và** `renderPageCanvas()` (export),
+đảm bảo "preview = export". `document`/`original` vẫn dùng `FILTER_CSS` như cũ.
+
+`enhanceAuto()` chạy theo thứ tự (thứ tự này quan trọng — xem lý do trong
+[03-decisions.md](03-decisions.md)):
+
+1. **Background/shading correction** (`boxBlur` bán kính rộng, ~35% cạnh ngắn): ước lượng ánh
+   sáng nền bằng blur bán kính lớn, lấy percentile 90 làm mục tiêu (không lấy trung bình — trung
+   bình bị nội dung tối kéo xuống), chỉ khuếch đại lên (`gain` chặn dưới ở 1) để không bao giờ
+   làm tối vùng đã sáng.
+2. **Auto levels**: percentile-based stretch từng kênh R/G/B (0.6%–99.2%), trộn với mức chung
+   theo luma (`LEVEL_BLEND`) để không làm lệch màu con dấu đỏ/mực màu.
+3. **Local contrast**: unsharp mask bán kính hẹp hơn (~5% cạnh ngắn), ở quy mô đoạn văn/ký tự.
+4. **Sharpen**: unsharp mask bán kính 1px, biên độ nhỏ để không tạo halo/nhiễu.
+
+`enhanceBW()` theo cùng logic (grayscale → percentile stretch → chia cho nền cục bộ bán kính
+rộng để làm phẳng ánh sáng không đều → sharpen nhẹ), không nhị phân hoá cứng để giữ nét mảnh.
+
+`boxBlur()` là box blur tách trục kiểu sliding-window (`O(n)` **bất kể bán kính**), nên dùng
+bán kính lớn cho bước 1 không tốn thêm chi phí đáng kể so với bán kính nhỏ ở bước 3.
+
+**Đã kiểm chứng bằng số** (xem `06-ai-working-log.md` để biết cách đo): nền sáng lên khi ảnh tối
+(case B: 139.5→172.3), nền đồng đều hơn khi ánh sáng lệch (case C: độ lệch giữa 3 vùng nền
+28.7→9.6), không làm xấu ảnh đã đẹp (case F: nền/tương phản gần như giữ nguyên, tỉ lệ clip
+<0.2%), giữ màu con dấu đỏ (case D: kênh R cao hơn G/B trung bình ~206 điểm sau xử lý).
+
 ## Mô hình dữ liệu / API
 
 Không có API hay database. Cấu trúc dữ liệu trung tâm là một object trong bộ nhớ (không persist), mỗi phần tử của `state.pages`:
@@ -103,7 +135,8 @@ Không có API hay database. Cấu trúc dữ liệu trung tâm là một object
   corners: [{x,y}×4],          // toạ độ chuẩn hoá 0–1, thứ tự TL,TR,BR,BL, theo ảnh ĐÃ xoay
   confidence,                   // 0–1, dưới 0.58 thì bị đánh dấu "cần kiểm tra"
   rotation,                     // 0/90/180/270
-  filter,                       // 'document' | 'bw' | 'original', khoá vào FILTER_CSS
+  filter,                       // 'auto' | 'document' | 'bw' | 'original' — mặc định 'auto' cho trang mới;
+                                 // 'auto'/'bw' chạy qua enhanceCanvas(), 'document'/'original' khoá vào FILTER_CSS
   width, height                 // kích thước ảnh đã xoay, ghi sau detectPage()
 }
 ```
@@ -119,7 +152,9 @@ Không có. Ứng dụng không đọc bất kỳ biến môi trường nào —
 - **`sleepFrame()` không được chỉ dựa vào `requestAnimationFrame`** — rAF không bao giờ chạy khi tab ẩn (background), sẽ treo vĩnh viễn các vòng lặp dài (`addFiles`, `makeJpegs`). Hàm này đua rAF với một `setTimeout` dự phòng.
 - **`componentQuad()` phải phạt nặng tứ giác chiếm toàn khung hình** — nền sáng dưới giấy sáng khiến ngưỡng Otsu nuốt luôn cả nền, trả về "tài liệu" là toàn bộ ảnh với độ tin cậy cao nếu không có phạt này.
 - **Độ tin cậy dựa trên sự đồng thuận giữa 2 detector độc lập** (`componentQuad` và `edgeQuad`), không chỉ dựa vào điểm số của detector thắng — một detector đơn lẻ hoặc hai detector bất đồng sẽ bị giới hạn dưới ngưỡng review (0.58) để trang được đánh dấu thay vì bị cắt sai trong im lặng.
-- **`FILTER_CSS` là một bảng dùng chung** cho cả preview trong editor và canvas xuất PDF — tách bảng ra hai chỗ khác nhau sẽ khiến "cái người dùng thấy" khác "cái được xuất ra".
+- **`FILTER_CSS`/`enhanceCanvas()` dùng chung** cho cả preview trong editor và canvas xuất PDF — tách ra hai chỗ khác nhau sẽ khiến "cái người dùng thấy" khác "cái được xuất ra". `enhanceCanvas()` là pixel pipeline thật (không phải CSS) cho `auto`/`bw`, xem mục "Auto Enhance pixel pipeline" ở trên.
+- **Background-normalization trong `enhanceAuto()`/`enhanceBW()` phải lấy percentile cao (không lấy trung bình) làm mục tiêu sáng, và chỉ được khuếch đại lên (gain ≥ 1)** — dùng trung bình sẽ bị nội dung tối/ảnh trong tài liệu kéo mục tiêu xuống thấp hơn nền thật, khiến bước này LÀM TỐI nền thay vì làm sáng nó (phát hiện qua rehearsal case "ảnh sáng đều" bị tối đi sau enhance). Xem [03-decisions.md](03-decisions.md).
+- **Bán kính blur cho local-contrast (~5% cạnh ngắn) và cho background-shading (~35% cạnh ngắn) phải khác nhau rõ rệt** — bán kính nhỏ chỉ thấy được chi tiết ở quy mô ký tự, không đủ rộng để làm phẳng một gradient ánh sáng trải toàn trang; dùng chung một bán kính nhỏ cho cả hai mục đích sẽ khiến nền không đều không được sửa (phát hiện qua rehearsal case ánh sáng lệch, xem [03-decisions.md](03-decisions.md)).
 - **`warpCpu()` phải cho kết quả hình học giống hệt đường WebGL** (đã xác minh bằng test tắt WebGL) — đây là fallback bắt buộc phải đúng, không phải "best effort".
 - **Mỗi khi sửa danh sách asset trong `ASSETS` của `sw.js`, phải tăng version của hằng `CACHE`** — nếu không, người dùng cũ vẫn kẹt ở app shell cache cũ.
 - Không có cơ chế race condition đáng lo vì không có state ngoài bộ nhớ tab; rủi ro duy nhất là các Promise bất đồng bộ (`loadImage`, `renderPageCanvas`) chạy chồng khi người dùng thao tác rất nhanh — `state.renderToken` trong `renderSelected()` dùng để huỷ kết quả cũ.

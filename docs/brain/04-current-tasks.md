@@ -35,6 +35,7 @@ _(trống)_
 
 ## Đã hoàn thành gần đây
 
+- [2026-08-23] Thêm tính năng Auto Enhance ("Tự động đẹp") — pixel pipeline thật (background shading correction, auto levels, local contrast, sharpen) dùng chung cho preview và export; nâng cấp filter Đen trắng sang cùng cơ chế. Xem chi tiết trong [03-decisions.md](03-decisions.md) và [06-ai-working-log.md](06-ai-working-log.md). Branch `feat/auto-enhance`, chưa merge vào `main`.
 - [2026-08-22] Audit toàn bộ source, sửa các lỗi phát hiện qua rehearsal chức năng (xem [03-decisions.md](03-decisions.md)), viết `AGENTS.md`/`CLAUDE.md`/`README.md` đầu tiên cho dự án, `git init` cục bộ, cập nhật `PROJECTS.md` ở workspace root.
 - [2026-08-22] Hai lần thử đóng `GATE-01` — cả hai đều BLOCKED vì không có Chrome/Edge thật trong môi trường (không phải lỗi app, xem chi tiết trong `GATE-01` ở trên).
 - [2026-08-22] Dựng bộ AI project brain (`docs/brain/00-06`), hợp nhất với `AGENTS.md`/`CLAUDE.md` đã có sẵn từ trước (giữ nguyên nội dung kiến trúc/bảo mật/validation, thêm cấu trúc trỏ tới `docs/brain/` theo khung của skill `setup-ai-brain`).

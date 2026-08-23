@@ -18,7 +18,7 @@ ScanVuông biến ảnh chụp tài liệu giấy thành file PDF sạch, thẳn
 - Tự động phát hiện 4 góc tờ giấy kèm mức độ tin cậy; trang chưa chắc chắn được đánh dấu để người dùng tự kiểm tra, không âm thầm cắt sai.
 - Chỉnh tay 4 điểm góc, sửa phối cảnh, xoay 90°.
 - Quản lý nhiều trang: xoá, sắp xếp lại, xem thumbnail.
-- 3 bộ lọc ảnh: Tài liệu màu / Đen trắng / Gốc.
+- 4 bộ lọc ảnh: Tự động đẹp (mặc định, pixel pipeline thật) / Tài liệu màu / Đen trắng / Gốc.
 - Xuất PDF: khổ A4 tự xoay hoặc theo tỷ lệ tài liệu, nhiều mức chất lượng, chế độ "cố gắng dưới 2 MB".
 - Cài đặt như PWA và dùng offline sau lần tải đầu.
 

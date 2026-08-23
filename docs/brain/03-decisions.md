@@ -61,6 +61,27 @@
 - **Đánh đổi:** Không có — vẫn giữ nguyên tắc "mở tức thì kể cả offline", chỉ thêm khả năng tự cập nhật.
 - **Người quyết định:** Claude. Mỗi lần đổi asset trong `ASSETS`, bắt buộc tăng version `CACHE` — xem [01-architecture.md](01-architecture.md#lưu-ý-kiến-trúc-quan-trọng).
 
+## [2026-08-23] Auto Enhance: pixel pipeline thật thay vì CSS filter, thêm mode "Tự động đẹp"
+
+- **Quyết định:** Thêm filter mode mới `auto` ("Tự động đẹp", mặc định cho trang mới import/chụp), chạy pixel pipeline thật (`enhanceAuto()`: background shading correction → auto levels percentile-based → local contrast → sharpen, tất cả trên `ImageData` qua Canvas) thay vì chỉ tăng `brightness()/contrast()` CSS. Nâng cấp luôn filter `bw` sang cùng cơ chế pixel (`enhanceBW()`). `document`/`original` giữ nguyên CSS filter cũ. `enhanceCanvas()` được gọi từ cả `drawEditor()` (qua cache `ensureEnhancedPreview()`, chỉ tính lại khi `pageId|filter|rotation|kích thước` đổi — không tính lại mỗi `pointermove` khi kéo góc) và `renderPageCanvas()` (export), đảm bảo preview khớp PDF xuất ra.
+- **Lý do:** Yêu cầu rõ ràng: CSS filter đơn thuần không được tính là "Auto Enhance" — ảnh chụp bằng camera cần cải thiện dynamic range/nền/độ nét thật để trông giống bản scan, không chỉ là tăng tương phản CSS hời hợt.
+- **Đánh đổi:** Tốn thêm CPU mỗi lần export (vài pass `getImageData`/`putImageData` toàn ảnh) — chấp nhận được vì `boxBlur()` là thuật toán sliding-window `O(n)` bất kể bán kính, và preview dùng canvas kích thước hiển thị (không phải full-res) nên vẫn mượt khi kéo góc.
+- **Người quyết định:** Claude, theo yêu cầu trực tiếp của người dùng.
+
+## [2026-08-23] Background normalization phải nhắm percentile cao và chỉ khuếch đại lên, không lấy trung bình
+
+- **Quyết định:** Trong `enhanceAuto()`/`enhanceBW()`, mục tiêu độ sáng nền (`targetShade`) lấy percentile 90 của bản đồ shading (blur bán kính rộng), không lấy trung bình; hệ số khuếch đại (`gain`) bị chặn dưới ở 1 (chỉ được làm sáng thêm, không bao giờ làm tối).
+- **Lý do:** Bản đầu tiên dùng trung bình toàn ảnh làm mục tiêu — với ảnh có khối chữ/ảnh tối chiếm một phần đáng kể diện tích, trung bình bị kéo xuống thấp hơn mức nền thực, khiến bước này **làm tối** nền sáng thay vì giữ/làm sáng nó (phát hiện qua rehearsal định lượng: ảnh nền đồng đều 215 bị tối xuống 181 sau enhance — sai hướng so với yêu cầu "nền sáng hơn"). Đổi sang percentile cao + chặn gain ≥ 1 khắc phục triệt để, xác nhận lại bằng rehearsal số (nền ảnh tối 139.5→172.3, nền ảnh đã đẹp 249.5→247.3 gần như không đổi).
+- **Đánh đổi:** Không có — đây là sửa lỗi logic, không đánh đổi gì.
+- **Người quyết định:** Claude, phát hiện qua bộ rehearsal định lượng dùng ảnh tổng hợp export qua PDF thật (giải mã JPEG nhúng để đo lại pixel).
+
+## [2026-08-23] Bán kính blur cho background-shading phải rộng hơn nhiều so với local-contrast
+
+- **Quyết định:** Dùng hai bán kính `boxBlur()` khác nhau trong `enhanceAuto()`/`enhanceBW()`: ~35% cạnh ngắn (chặn 30–260px) cho bước làm phẳng ánh sáng toàn trang, và ~5% cạnh ngắn (chặn 6–40px) cho local contrast ở quy mô ký tự/đoạn văn.
+- **Lý do:** Bản đầu tiên dùng chung một bán kính hẹp (~5%) cho cả hai mục đích — với một gradient ánh sáng trải chậm trên toàn trang, bán kính hẹp cho ra giá trị blur gần như bằng chính pixel đó, nên "trừ đi local average" gần như không có tác dụng, gradient không được làm phẳng (phát hiện qua rehearsal: độ lệch giữa 3 vùng nền của ảnh có ánh sáng lệch không giảm mà còn tăng, từ 28.7 lên 47). Tăng bán kính riêng cho bước shading lên ~35% khắc phục, xác nhận lại bằng số (độ lệch giảm còn 9.6).
+- **Đánh đổi:** Không có đáng kể — `boxBlur()` là sliding-window nên chi phí không phụ thuộc bán kính.
+- **Người quyết định:** Claude, phát hiện qua bộ rehearsal định lượng (case ánh sáng không đều).
+
 ## Template cho entry mới
 
 ```
