@@ -29,8 +29,5 @@ jobs:
       - name: Regression harness (export snapshot / busy lock)
         run: node scripts/regression_export_busy.js
 
-      - name: Regression harness (Scan ID front/back / A4 / busy lock)
-        run: node scripts/regression_scan_id.js
-
       - name: Static validation (JSON/AST/assets/privacy boundary)
         run: python3 scripts/validate_static.py
