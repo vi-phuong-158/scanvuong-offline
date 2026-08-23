@@ -82,6 +82,13 @@
 - **Đánh đổi:** Không có — hành vi cache-first/offline-first/same-origin/GET-only giữ nguyên hoàn toàn, chỉ sửa lifetime của refresh nền.
 - **Người quyết định:** Claude, theo yêu cầu audit service worker lifecycle.
 
+## [2026-08-23] Đóng băng luôn cấu hình xuất (quality/pageSize/margin/fileName), không chỉ `state.pages`
+
+- **Quyết định:** Đổi `snapshotPagesForExport()` (chỉ đóng băng trang) thành được gọi bên trong `snapshotExportJob()`, đóng băng thêm `quality`, `pageSize`, `marginToggle.checked`, `fileName` (đã sanitize) — đọc `els.*` đúng một lần ở đầu `exportPdf()`, trước `setBusy(true)`. Toàn bộ phần còn lại của `exportPdf()` (bao gồm nhánh nén lại nhiều vòng cho chế độ "2mb" và lời gọi `buildPdf()`) chỉ dùng `exportJob.*`. `setBusy()` disable thêm 4 control: `fileName`, `pageSize`, `quality`, `marginToggle`.
+- **Lý do:** Người dùng test PR #1 phát hiện: dù trang đã được snapshot đúng (P1, merge trước đó), 4 control cấu hình xuất vẫn bị đọc lại từ `els.*` ở cuối `exportPdf()` — SAU KHI vòng lặp render/nén nhiều trang đã chạy xong (có thể mất vài giây tới vài chục giây với chế độ nén mạnh). Đổi `pageSize`/chất lượng/lề/tên file trong lúc export đang chạy khiến PDF cuối dùng cấu hình khác thời điểm bấm "Xuất PDF" — cùng loại race đã sửa cho `state.pages` ở P1, chỉ khác là áp dụng cho export settings thay vì page data.
+- **Đánh đổi:** Không có — cùng cơ chế snapshot đã có, chỉ mở rộng phạm vi những gì được đóng băng.
+- **Người quyết định:** Claude, theo phát hiện của người dùng khi review PR #1 trước khi merge; xác minh bằng cách mở rộng `scripts/regression_export_busy.js` (Case 5) — parse MediaBox/nội dung PDF thật để xác nhận `pageSize`/`margin`/tên file xuất ra vẫn đúng giá trị tại thời điểm bấm Export dù bị đổi trực tiếp giữa chừng; đã tự xác minh test không vô nghĩa bằng cách revert fix trên bản `app.js` scratch và xác nhận harness FAIL đúng chỗ (3/3 assertion liên quan).
+
 ## Template cho entry mới
 
 ```

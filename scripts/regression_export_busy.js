@@ -20,6 +20,9 @@
 //            camera, drop import, thumb reorder, move up/down, rotate,
 //            delete, clear all, reset crop, detect, filter change) refuse to
 //            change page count / order / filter / crop.
+//   Case 5 — changing pageSize / margin / fileName (or quality) after the
+//            export job snapshot was taken does not affect the exported PDF,
+//            and those controls are disabled while busy.
 
 const fs = require('fs');
 const path = require('path');
@@ -227,7 +230,7 @@ function buildSandbox() {
 // ---------- load the real app.js with a debug hook appended in-memory only ----------
 function loadApp() {
   const src = fs.readFileSync(APP_JS_PATH, 'utf8');
-  const hookLine = "\n  globalThis.__TEST_HOOK__ && globalThis.__TEST_HOOK__({ state, exportPdf, makeJpegs, snapshotPagesForExport, setBusy });\n";
+  const hookLine = "\n  globalThis.__TEST_HOOK__ && globalThis.__TEST_HOOK__({ state, exportPdf, makeJpegs, snapshotPagesForExport, snapshotExportJob, setBusy });\n";
   const marker = /\n\}\)\(\);\s*$/;
   if (!marker.test(src)) throw new Error('Could not find IIFE close `})();` at end of app.js to attach test hook');
   const patched = src.replace(marker, `${hookLine}})();\n`);
@@ -252,15 +255,31 @@ function parsePdfPageSizes(buf) {
   return kids.map(pageNum => {
     const objMatch = text.match(new RegExp(`(?:^|\\n)${pageNum} 0 obj\\n([\\s\\S]*?)\\nendobj`));
     if (!objMatch) throw new Error(`page object ${pageNum} not found`);
-    const imgRef = objMatch[1].match(/\/XObject\s*<<\s*\/Im\d+\s+(\d+)\s+0\s+R/);
+    const body = objMatch[1];
+    const imgRef = body.match(/\/XObject\s*<<\s*\/Im\d+\s+(\d+)\s+0\s+R/);
     if (!imgRef) throw new Error(`image XObject ref not found for page ${pageNum}`);
     const imgNum = +imgRef[1];
     const headerIdx = text.indexOf(`${imgNum} 0 obj\n`);
     const streamIdx = text.indexOf('stream\n', headerIdx);
     const dictText = text.slice(headerIdx, streamIdx);
+    const mediaBox = body.match(/\/MediaBox\s*\[\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\]/);
+    const contentRef = body.match(/\/Contents\s+(\d+)\s+0\s+R/);
+    const contentNum = contentRef ? +contentRef[1] : null;
+    let cm = null;
+    if (contentNum) {
+      const cHeaderIdx = text.indexOf(`${contentNum} 0 obj\n`);
+      const cStreamIdx = text.indexOf('stream\n', cHeaderIdx) + 'stream\n'.length;
+      const cEndIdx = text.indexOf('\nendstream', cStreamIdx);
+      const contentText = text.slice(cStreamIdx, cEndIdx);
+      const cmMatch = contentText.match(/([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm/);
+      if (cmMatch) cm = { dw: +cmMatch[1], dh: +cmMatch[2], dx: +cmMatch[3], dy: +cmMatch[4] };
+    }
     return {
       width: +dictText.match(/\/Width\s+(\d+)/)[1],
       height: +dictText.match(/\/Height\s+(\d+)/)[1],
+      mediaW: mediaBox ? +mediaBox[3] - +mediaBox[1] : null,
+      mediaH: mediaBox ? +mediaBox[4] - +mediaBox[2] : null,
+      cm,
     };
   });
 }
@@ -307,6 +326,22 @@ async function main() {
   const pageAOriginal = { rotation: findPage('A.jpg').rotation, corners: JSON.parse(JSON.stringify(findPage('A.jpg').corners)), filter: findPage('A.jpg').filter };
   console.log('Directly mutated state.pages (reversed order + page B filter/rotation/corners) synchronously right after the export snapshot was taken.');
 
+  // --- Case 5: export-job settings (pageSize/margin/fileName/quality) must
+  // also be frozen at click time, not re-read after the render loop. These
+  // controls have no dedicated change handler to "bypass" — setting them
+  // directly is the equivalent of a user interacting with a control that is
+  // visually disabled but not physically unable to receive a programmatic
+  // value change, so this checks the snapshot itself, same spirit as Cases 2 & 3.
+  assert(elementsById.pageSize.disabled === true, 'Case 5: pageSize control disabled while busy');
+  assert(elementsById.quality.disabled === true, 'Case 5: quality control disabled while busy');
+  assert(elementsById.marginToggle.disabled === true, 'Case 5: marginToggle control disabled while busy');
+  assert(elementsById.fileName.disabled === true, 'Case 5: fileName control disabled while busy');
+  elementsById.pageSize.value = 'fit';
+  elementsById.marginToggle.checked = true;
+  elementsById.fileName.value = 'Hacked';
+  elementsById.quality.value = 'high';
+  console.log('Directly mutated pageSize/margin/fileName/quality synchronously right after the export job snapshot was taken.');
+
   // --- Case 4: busy=true must block every mutating handler ---
   // (checks below compare against `orderAfterDirectMutation`/`pageAOriginal`
   // — the state as of just above, not the pre-export state — since the
@@ -352,6 +387,8 @@ async function main() {
   await exportPromise;
   await secondExport;
 
+  assert(getLastAnchor().download === 'ScanVuong.pdf', `Case 5: downloaded filename uses the frozen fileName, not the mid-export edit (got "${getLastAnchor().download}")`);
+
   const pdfBlob = blobRegistry.get(getLastAnchor().href);
   assert(!!pdfBlob, 'export produced a downloadable PDF blob');
   const pdfBytes = Buffer.from(await pdfBlob.arrayBuffer());
@@ -370,6 +407,22 @@ async function main() {
   // export had used live state (rotation mutated to 90 after the snapshot),
   // this would flip to landscape.
   assert(pages.length === 3 && pages[1].height > pages[1].width, 'Case 3: page B stays portrait — export used the frozen (pre-mutation) rotation, not the live one');
+
+  // pageSize was snapshotted as 'a4' (portrait, since our test images are all
+  // portrait-ish); if the live 'fit' edit had leaked in, the MediaBox height
+  // would track the image aspect ratio instead of the fixed A4 point size.
+  assert(
+    pages.every(p => Math.abs(p.mediaW - 595.28) < 0.01 && Math.abs(p.mediaH - 841.89) < 0.01),
+    `Case 5: PDF pages use the frozen 'a4' page size, not the mid-export 'fit' edit (got ${pages.map(p => `${p.mediaW}x${p.mediaH}`).join(', ')})`
+  );
+  // margin was snapshotted as false (no padding); if the live margin=true edit
+  // had leaked in, the image would be scaled down and inset from the page
+  // edges. With no margin the scaled image should span almost the full
+  // MediaBox on at least one axis.
+  assert(
+    pages.every(p => p.cm && (Math.abs(p.cm.dw - p.mediaW) < 1 || Math.abs(p.cm.dh - p.mediaH) < 1)),
+    'Case 5: PDF pages use the frozen margin=false layout, not the mid-export margin=true edit'
+  );
 
   console.log('\nExport finished; busy state restored:');
   assert(state.busy === false, 'busy returns to false after export completes');

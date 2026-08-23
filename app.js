@@ -74,7 +74,8 @@
     state.busy = busy;
     els.processingText.textContent = text;
     els.processingOverlay.classList.toggle('hidden', !busy);
-    [els.detectBtn, els.resetCropBtn, els.rotateBtn, els.moveUpBtn, els.moveDownBtn, els.deleteBtn, els.autoAllBtn, els.exportBtn, els.clearBtn]
+    [els.detectBtn, els.resetCropBtn, els.rotateBtn, els.moveUpBtn, els.moveDownBtn, els.deleteBtn, els.autoAllBtn, els.exportBtn, els.clearBtn,
+     els.fileName, els.pageSize, els.quality, els.marginToggle]
       .forEach(el => { if (el) el.disabled = busy; });
     $$('.filter-chip').forEach(el => { el.disabled = busy; });
   }
@@ -666,22 +667,35 @@
 
   function setProgress(percent,label){els.exportProgress.classList.remove('hidden');els.progressBar.style.width=`${clamp(percent,0,100)}%`;els.progressLabel.textContent=label;}
 
+  // Frozen alongside the page snapshot: the export-wide settings, so changing
+  // quality/page size/margin/filename in the UI while an export is already
+  // running can't change what gets written to the PDF either.
+  function snapshotExportJob(){
+    return {
+      pages: snapshotPagesForExport(),
+      quality: els.quality.value,
+      pageSize: els.pageSize.value,
+      margin: els.marginToggle.checked,
+      fileName: sanitizeFilename(els.fileName.value||'ScanVuong')
+    };
+  }
+
   async function exportPdf(){
     if(!state.pages.length||state.busy)return;
-    const snapshot=snapshotPagesForExport();
+    const exportJob=snapshotExportJob();
     setBusy(true,'Đang xuất PDF…');els.exportNotice.classList.add('hidden');setProgress(1,'Đang chuẩn bị…');
     try{
-      const q=els.quality.value; let settings={...QUALITY[q]}; let jpegs=await makeJpegs(settings,snapshot); let total=jpegs.reduce((s,j)=>s+j.bytes.length,0);
-      if(q==='2mb'&&total>1.82*1024*1024){
+      let settings={...QUALITY[exportJob.quality]}; let jpegs=await makeJpegs(settings,exportJob.pages); let total=jpegs.reduce((s,j)=>s+j.bytes.length,0);
+      if(exportJob.quality==='2mb'&&total>1.82*1024*1024){
         const rounds=[{maxEdge:1250,jpeg:.52},{maxEdge:1050,jpeg:.43},{maxEdge:900,jpeg:.36}];
         for(let r=0;r<rounds.length&&total>1.82*1024*1024;r++){
-          setProgress(5,`Đang nén thêm để gần 2 MB (lần ${r+1})…`);settings=rounds[r];jpegs=await makeJpegs(settings,snapshot);total=jpegs.reduce((s,j)=>s+j.bytes.length,0);
+          setProgress(5,`Đang nén thêm để gần 2 MB (lần ${r+1})…`);settings=rounds[r];jpegs=await makeJpegs(settings,exportJob.pages);total=jpegs.reduce((s,j)=>s+j.bytes.length,0);
         }
       }
-      setProgress(92,'Đang đóng gói PDF…'); const pdf=buildPdf(jpegs,els.pageSize.value,els.marginToggle.checked); const name=sanitizeFilename(els.fileName.value||'ScanVuong')+'.pdf';
+      setProgress(92,'Đang đóng gói PDF…'); const pdf=buildPdf(jpegs,exportJob.pageSize,exportJob.margin); const name=exportJob.fileName+'.pdf';
       const a=document.createElement('a');a.href=URL.createObjectURL(pdf);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
       setProgress(100,`Hoàn tất · ${(pdf.size/1024/1024).toFixed(2)} MB`);
-      if(q==='2mb'&&pdf.size>2*1024*1024){els.exportNotice.textContent=`PDF hiện ${(pdf.size/1024/1024).toFixed(2)} MB. Với ${jpegs.length} trang, không thể giữ chất lượng đọc tốt mà xuống dưới 2 MB; app đã nén ở mức an toàn nhất.`;els.exportNotice.classList.remove('hidden');}
+      if(exportJob.quality==='2mb'&&pdf.size>2*1024*1024){els.exportNotice.textContent=`PDF hiện ${(pdf.size/1024/1024).toFixed(2)} MB. Với ${jpegs.length} trang, không thể giữ chất lượng đọc tốt mà xuống dưới 2 MB; app đã nén ở mức an toàn nhất.`;els.exportNotice.classList.remove('hidden');}
       toast(`Đã xuất ${name} · ${(pdf.size/1024/1024).toFixed(2)} MB`,3500);
     }catch(err){console.error(err);els.exportNotice.textContent=`Không xuất được PDF: ${err.message||err}`;els.exportNotice.classList.remove('hidden');toast('Có lỗi khi xuất PDF.');}
     finally{setBusy(false);setTimeout(()=>els.exportProgress.classList.add('hidden'),5000);}

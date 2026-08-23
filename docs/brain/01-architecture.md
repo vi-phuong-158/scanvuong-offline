@@ -54,10 +54,11 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 | | `renderPageCanvas()` | `makeJpegs()` | `loadImage()`, `drawRotatedToCanvas()`, `getGL()`, `homographyFromUnitQuad()`, `warpCpu()` (fallback khi `glUnavailable`) |
 | **Filter** | `FILTER_CSS` (bảng hằng, không phải hàm) | `drawEditor()` **và** `renderPageCanvas()` | — |
 | **Pages** | `state.pages` (mảng trạng thái trung tâm) | mọi nút sửa trang | `removeSelected()`, `moveSelected()`, `rotateCorners90()`, `renderThumbs()`, `updateShell()` |
-| **PDF** | `exportPdf()` | nút `#exportBtn` | `snapshotPagesForExport()`, `makeJpegs()`, `buildPdf()`, `sanitizeFilename()`, `setProgress()` |
-| | `snapshotPagesForExport()` | `exportPdf()` (dòng đầu tiên, trước `setBusy(true)`) | `cloneCorners()` |
+| **PDF** | `exportPdf()` | nút `#exportBtn` | `snapshotExportJob()`, `makeJpegs()`, `buildPdf()`, `setProgress()` |
+| | `snapshotExportJob()` | `exportPdf()` (dòng đầu tiên, trước `setBusy(true)`) | `snapshotPagesForExport()`, `sanitizeFilename()`, đọc `els.quality/pageSize/marginToggle/fileName` **một lần duy nhất** |
+| | `snapshotPagesForExport()` | `snapshotExportJob()` | `cloneCorners()` |
 | | `makeJpegs(settings, pages)` | `exportPdf()`, nhận **snapshot** làm tham số `pages` — không đọc `state.pages` | `renderPageCanvas()`, `canvasToJpeg()`, `sleepFrame()` |
-| | `buildPdf()` | `exportPdf()` (qua `makeJpegs()`'s output) | `concatBytes()`, `strBytes()` |
+| | `buildPdf()` | `exportPdf()` (qua `makeJpegs()`'s output, dùng `exportJob.pageSize`/`exportJob.margin`) | `concatBytes()`, `strBytes()` |
 | **PWA glue** | cuối file (ngoài mọi hàm) | tải trang | `navigator.serviceWorker.register('./sw.js')`, `beforeinstallprompt`, `online`/`offline` |
 
 ### Luồng xử lý chính
@@ -81,10 +82,11 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
         ├──(người dùng kéo tay góc)──► pointermove cập nhật preview ──► endCornerDrag() gọi lại orderCorners()
         │
         ▼  (khi bấm Xuất PDF)
-   exportPdf() ──► snapshotPagesForExport() (đóng băng file/name/corners/rotation/filter)
+   exportPdf() ──► snapshotExportJob() (đóng băng pages qua snapshotPagesForExport() VÀ
+                    quality/pageSize/margin/fileName — đọc els.* đúng MỘT lần, ở đây)
                                           │
                                           ▼
-                                    makeJpegs(settings, snapshot) ──► renderPageCanvas() ──► homographyCoeffs()
+                                    makeJpegs(settings, exportJob.pages) ──► renderPageCanvas() ──► homographyCoeffs()
                                           │                                     │
                                           │                           WebGL (getGL) hoặc warpCpu() fallback
                                           ▼
@@ -130,5 +132,6 @@ Không có. Ứng dụng không đọc bất kỳ biến môi trường nào —
 - **Mỗi khi sửa danh sách asset trong `ASSETS` của `sw.js`, phải tăng version của hằng `CACHE`** — nếu không, người dùng cũ vẫn kẹt ở app shell cache cũ.
 - Không có cơ chế race condition đáng lo vì không có state ngoài bộ nhớ tab; rủi ro duy nhất là các Promise bất đồng bộ (`loadImage`, `renderPageCanvas`) chạy chồng khi người dùng thao tác rất nhanh — `state.renderToken` trong `renderSelected()` dùng để huỷ kết quả cũ.
 - **`exportPdf()` phải luôn snapshot `state.pages` (`snapshotPagesForExport()`) trước khi gọi `setBusy(true)`**, và `makeJpegs()`/`renderPageCanvas()` chỉ nhận dữ liệu qua tham số `pages`, không bao giờ đọc `state.pages` trực tiếp trong vòng lặp export. `corners` phải clone sâu (`cloneCorners()`) vì đó là mảng object UI có thể mutate sau khi snapshot đã chụp; `file` không cần clone vì bản thân `File` object không đổi.
+- **`snapshotExportJob()` phải đóng băng luôn cả cấu hình xuất** (`quality`, `pageSize`, `marginToggle.checked`, `fileName`), không chỉ `state.pages` — các control này được đọc từ `els.*` đúng **một lần**, ở đầu `exportPdf()`, trước `setBusy(true)`. Toàn bộ phần còn lại của `exportPdf()`/`buildPdf()` chỉ được dùng `exportJob.*`, không được đọc lại `els.quality.value`/`els.pageSize.value`/`els.marginToggle.checked`/`els.fileName.value` — nếu không, đổi các control này trong lúc vòng lặp render/nén nhiều trang đang chạy (có thể mất vài giây tới vài chục giây) sẽ khiến PDF cuối dùng cấu hình khác với thời điểm bấm "Xuất PDF". Phát hiện qua review độc lập sau khi P1 (snapshot trang) đã merge.
 - **Mọi handler có thể mutate `state.pages`/corners/filter/rotation/thứ tự trang phải tự guard bằng `if (state.busy) return;` ngay trong handler**, không được chỉ dựa vào thuộc tính `disabled` của nút — drag/drop thumbnail và một số code path khác không đi qua `disabled`. `setBusy()` vẫn toggle `disabled` cho các nút liên quan (kể cả `clearBtn` và các `.filter-chip`) để UI phản hồi rõ ràng, nhưng đó chỉ là lớp UX, không phải cơ chế chặn chính.
 - **`sw.js`: refresh nền khi có cached response phải bọc trong `event.waitUntil()`** — nếu không, trình duyệt có thể huỷ service worker giữa chừng refresh (ngay sau khi `respondWith()` đã resolve bằng cached response), khiến cache không bao giờ thực sự được cập nhật cho lần mở sau.

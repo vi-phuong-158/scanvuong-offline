@@ -18,6 +18,16 @@
 
 ---
 
+## [2026-08-23] Đóng băng luôn cấu hình xuất PDF (PR #1, sau khi người dùng review)
+
+- **Agent:** Claude Code
+- **Thay đổi:** Người dùng review PR #1 (đã CI xanh) và phát hiện một race còn sót: `pageSize`/`marginToggle`/`fileName` (và `quality`) vẫn được đọc từ `els.*` sau khi vòng lặp render/nén nhiều trang hoàn tất, thay vì được đóng băng cùng lúc với trang. Thêm `snapshotExportJob()` (gọi `snapshotPagesForExport()` bên trong, cộng thêm `quality`/`pageSize`/`marginToggle.checked`/`fileName` đã sanitize) ngay đầu `exportPdf()`, trước `setBusy(true)`; toàn bộ phần còn lại của `exportPdf()`/`buildPdf()` chỉ dùng `exportJob.*`. `setBusy()` disable thêm `fileName`/`pageSize`/`quality`/`marginToggle`. Mở rộng `scripts/regression_export_busy.js` với Case 5: mutate trực tiếp 4 control này ngay sau khi export bắt đầu (bypass mọi guard, đúng tinh thần Case 2/3 cho trang), rồi parse PDF thật (MediaBox, nội dung stream `cm`, tên file tải xuống) để xác nhận export vẫn dùng giá trị tại thời điểm bấm Xuất PDF.
+- **File đã sửa:** `app.js`, `scripts/regression_export_busy.js`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`.
+- **Lý do:** Cùng loại race đã sửa cho `state.pages` (P1) nhưng áp dụng cho cấu hình xuất — nếu không sửa, đổi khổ trang/lề/tên file/chất lượng trong lúc export (có thể mất vài chục giây ở chế độ nén mạnh) sẽ khiến PDF cuối không phản ánh đúng lựa chọn tại thời điểm bấm nút.
+- **Kiểm tra:** `node --check app.js` PASS, `python3 scripts/validate_static.py` PASS (7/7), `node scripts/regression_export_busy.js` PASS (28/28) — tự xác minh 3 assertion mới (Case 5: tên file, MediaBox theo `pageSize`, layout theo `margin`) không vô nghĩa bằng cách revert fix trên bản `app.js` scratch và xác nhận harness FAIL đúng 3 chỗ đó.
+
+---
+
 ## [2026-08-22] Đóng băng export state, khoá busy-state, sửa SW lifecycle, thêm CI
 
 - **Agent:** Claude Code
