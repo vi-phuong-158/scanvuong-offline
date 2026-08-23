@@ -186,7 +186,7 @@ function buildSandbox() {
   elementsById.cameraInput.files = [];
   elementsById.idFileInput.files = [];
   elementsById.idCameraInput.files = [];
-  elementsById.fileName.value = 'ScanVuong';
+  elementsById.fileName.value = 'VigilLens';
   elementsById.pageSize.value = 'a4';
   elementsById.quality.value = 'standard';
   elementsById.marginToggle.checked = false;
@@ -363,7 +363,7 @@ async function main() {
 
   const pdfBlob = blobRegistry.get(getLastAnchor().href);
   assert(!!pdfBlob, 'Case 5: export produced a downloadable PDF blob despite state.idScan being nulled mid-flight');
-  assert(getLastAnchor().download === 'ScanVuong-ID.pdf', `Case 5: default filename is ScanVuong-ID.pdf (got "${getLastAnchor() && getLastAnchor().download}")`);
+  assert(getLastAnchor().download === 'VigilLens-ID.pdf', `Case 5: default filename is VigilLens-ID.pdf (got "${getLastAnchor() && getLastAnchor().download}")`);
   const pdfBytes = Buffer.from(await pdfBlob.arrayBuffer());
   const pages = parsePdfPageSizes(pdfBytes);
   assert(pages.length === 1, `Case 11: exported PDF has exactly 1 page (got ${pages.length})`);

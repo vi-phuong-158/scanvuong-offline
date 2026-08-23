@@ -130,9 +130,45 @@ def _sw_fetch_is_same_origin_only():
 
 check("sw.js fetch usage stays same-origin (documented guard present)")(_sw_fetch_is_same_origin_only)
 
+# UI Emoji Guard: ensure all UI icons use consistent SVG and no emojis linger in app shell
+EMOJI_RE = re.compile(r'[\U0001F300-\U0001F9FF\U00002700-\U000027BF\U00002600-\U000026FF\U0001FA00-\U0001FAFF\U00002B50\U00002B55\U000025FD-\U000025FE\U000026AA-\U000026AB]')
+SCANNED_FOR_EMOJIS = ['index.html', 'styles.css', 'app.js', 'document-detector.js']
+
+
+def _no_ui_emojis():
+    hits = []
+    for f in SCANNED_FOR_EMOJIS:
+        text = read(f)
+        for m in EMOJI_RE.finditer(text):
+            line = text.count('\n', 0, m.start()) + 1
+            hits.append(f"{f}:{line} ({m.group(0)!r})")
+    assert not hits, "UI emoji(s) found in app shell files: " + ", ".join(hits)
+    return f"{len(SCANNED_FOR_EMOJIS)} file(s) scanned, 0 emoji literals"
+
+
+check("no UI emojis in app shell files")(_no_ui_emojis)
+
+# Brand Guard: ensure no legacy branding strings remain in user-facing files
+LEGACY_BRAND_RE = re.compile(r'\b(ScanVu[oô]ng|Scan\s+Vu[oô]ng)\b', re.IGNORECASE)
+SCANNED_FOR_LEGACY_BRAND = ['index.html', 'manifest.webmanifest']
+
+
+def _no_legacy_brand_in_user_facing():
+    hits = []
+    for f in SCANNED_FOR_LEGACY_BRAND:
+        text = read(f)
+        for m in LEGACY_BRAND_RE.finditer(text):
+            line = text.count('\n', 0, m.start()) + 1
+            hits.append(f"{f}:{line} ({m.group(0)!r})")
+    assert not hits, "Legacy brand occurrence(s) in user-facing files: " + ", ".join(hits)
+    return f"{len(SCANNED_FOR_LEGACY_BRAND)} file(s) scanned, 0 legacy brand literals"
+
+
+check("no legacy brand in user-facing files")(_no_legacy_brand_in_user_facing)
+
 
 def main():
-    print(f"ScanVuong static validation — {ROOT}\n")
+    print(f"Vigil Lens static validation — {ROOT}\n")
     if FAILURES:
         print(f"\n{len(FAILURES)} check(s) FAILED: {', '.join(FAILURES)}")
         sys.exit(1)

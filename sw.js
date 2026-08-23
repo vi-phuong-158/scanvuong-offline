@@ -1,4 +1,4 @@
-const CACHE = 'scanvuong-v2.0.0';
+const CACHE = 'vigil-lens-v2.2.1';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,10 @@ const ASSETS = [
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './assets/fonts/BeVietnamPro-Regular.woff2',
+  './assets/fonts/BeVietnamPro-Medium.woff2',
+  './assets/fonts/BeVietnamPro-SemiBold.woff2',
+  './assets/fonts/BeVietnamPro-Bold.woff2',
   './assets/ml/doccornernet_lean.ort',
   './assets/ml/ort-wasm-simd-threaded.wasm',
   './assets/ml/ort-wasm-simd-threaded.mjs',
@@ -20,7 +24,7 @@ self.addEventListener('install', e => e.waitUntil(
 
 self.addEventListener('activate', e => e.waitUntil(
   caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k.startsWith('scanvuong-') && k !== CACHE).map(k => caches.delete(k))))
+    .then(keys => Promise.all(keys.filter(k => (k.startsWith('scanvuong-') || k.startsWith('vigil-lens-')) && k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim())
 ));
 

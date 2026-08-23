@@ -1,7 +1,7 @@
 {
-  "name": "ScanVuông — Scan PDF Offline",
-  "short_name": "ScanVuông",
-  "description": "Tự nhận mép giấy, chỉnh phối cảnh và xuất PDF hoàn toàn trên thiết bị.",
+  "name": "Vigil Lens — Quét tài liệu & Xuất PDF Offline",
+  "short_name": "Vigil Lens",
+  "description": "A fast, private document scanning tool focused on accurate document detection, perspective correction and clean PDF output.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

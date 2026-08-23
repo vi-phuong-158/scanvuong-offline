@@ -1,4 +1,4 @@
-# 04 — Current Tasks
+﻿# 04 — Current Tasks
 
 > Cập nhật mỗi khi bắt đầu hoặc hoàn thành task. Agent đọc đây để biết được phép làm gì.
 
@@ -6,49 +6,45 @@
 
 ## Đang làm
 
-_(trống)_
+- **PR #8 Final Acceptance & Release Candidate Preparation**: Hoàn tất các tiêu chuẩn nghiệm thu cuối cùng cho PR #8 (`feat/mobile-ui-redesign`), đồng bộ launcher icon, tích hợp touch-target CI, và chuẩn bị tài liệu cho bước review merge.
 
 ---
 
 ## Chờ làm (backlog)
 
-### GATE-01: Đóng gate PWA install / Service Worker / offline reload trên trình duyệt thật
-- **Mô tả:** Xác nhận `navigator.serviceWorker.register('./sw.js')` thành công, service worker chuyển `activated`, app installable, và reload khi offline vẫn mở được — trên Chrome hoặc Edge thật (không phải browser pane nhúng).
-- **Liên quan:** `sw.js`, `manifest.webmanifest`, toàn bộ pipeline offline.
-- **Ưu tiên:** Cao — đây là gate duy nhất còn chặn verdict `SCANVUONG_V1_LOCAL_ACCEPTANCE_PASS`.
-- **Trạng thái:** Bị chặn hai lần liên tiếp (2026-08-22) vì môi trường không có Chrome/Edge thật khả dụng (Claude in Chrome extension không kết nối; browser pane nhúng tái hiện đúng lỗi "unknown error occurred when fetching the script" dù `fetch('./sw.js')` trả về 200 hợp lệ — kết luận là giới hạn môi trường nhúng, không phải lỗi app). Cần người dùng tự chạy checklist thủ công hoặc bật Claude in Chrome extension.
+### GATE-01: Nghiệm thu PWA Installability thủ công trên trình duyệt thật (OS Launcher)
+- **Mô tả:** Kiểm tra thủ công prompt cài đặt PWA ("Cài đặt ứng dụng" / "Add to Home Screen") trên trình duyệt Chrome/Edge thực tế ngoài môi trường headless, xác nhận icon launcher xuất hiện trên màn hình chính và mở ứng dụng standalone khi không có mạng.
+- **Trạng thái kỹ thuật (Automated Headless Acceptance):** **PASS**
+  - `SERVICE_WORKER_REGISTERED`: PASS
+  - `PRECACHE_COMPLETE`: PASS (16/16 assets)
+  - `OFFLINE_RELOAD_PASS`: PASS (App Shell load hoàn toàn từ Service Worker cache khi ngắt mạng)
+  - `BE_VIETNAM_PRO_OFFLINE_PASS`: PASS (4 weights 400, 500, 600, 700 tải offline)
+  - `OFFLINE_DOCUMENT_FLOW_PASS`: PASS
+  - `OFFLINE_SCAN_ID_FLOW_PASS`: PASS
+  - `NO_REQUIRED_RUNTIME_NETWORK_DEPENDENCY`: PASS
+- **Trạng thái nghiệm thu thủ công (Manual OS Prompt):** **PENDING** (`PWA_INSTALLABILITY_NOT_VERIFIED_ENVIRONMENT_LIMITATION` do môi trường headless CI không kích hoạt giao diện prompt native của hệ điều hành).
 
 ### Scan ID: preset kích thước thật (physical-size, 85.60×53.98mm in-scale-thật)
-- **Mô tả:** V1 Scan ID chỉ có một layout preset ("Bản in đẹp" — thẻ phóng lớn vừa phải, tận dụng
-  trang giấy). Preset thứ hai render thẻ đúng kích thước vật lý thật (cần physical DPI/print scaling
-  chính xác) được yêu cầu backlog rõ ràng thay vì giả vờ hỗ trợ, vì đảm bảo DPI in chính xác vượt quá
-  kiến trúc canvas-raster-cố-định hiện tại của `composeIdA4()`.
+- **Mô tả:** V1 Scan ID hỗ trợ layout preset "Bản in đẹp" (thẻ phóng lớn vừa phải, căn giữa A4). Preset thứ hai render thẻ đúng kích thước vật lý thật (cần physical DPI/print scaling chính xác) được đưa vào backlog.
 - **Liên quan:** `composeIdA4()` trong `app.js`.
-- **Ưu tiên:** Thấp — không được yêu cầu làm ngay, chỉ ghi lại để không bị quên hoặc bị coi là thiếu sót.
-
-### Cải thiện auto-detect trên nền tương phản thấp
-- **Mô tả:** Case "giấy trắng trên nền sáng" (Case C trong bộ rehearsal) vẫn để lại ~8% sai số góc — hiện được xử lý đúng bằng cách đánh dấu "cần kiểm tra" thay vì cắt sai, nhưng bản thân độ chính xác detector còn có thể cải thiện.
-- **Liên quan:** `componentQuad()`, `edgeQuad()` trong `app.js`.
-- **Ưu tiên:** Thấp — hành vi an toàn (đánh dấu cảnh báo) đã đúng, đây chỉ là cải thiện độ chính xác, không phải bug.
+- **Ưu tiên:** Thấp — backlog sau V1.
 
 ---
 
 ## Không làm lúc này
 
-- OCR, cloud storage, đăng nhập, database, API AI — ngoài scope V1 theo quyết định thiết kế, xem [00-project-overview.md](00-project-overview.md).
-- Deploy Vercel/static host — chưa được yêu cầu. (Đổi branch → `main`, tạo commit đầu, và tạo GitHub repo công khai đã được thực hiện 2026-08-22 theo yêu cầu trực tiếp của người dùng, trước khi `GATE-01` PASS — xem [06-ai-working-log.md](06-ai-working-log.md).)
-- Refactor `app.js` thành nhiều module/file — không có lợi ích rõ ràng và đi ngược nguyên tắc dependency-free/không build-step.
+- OCR, cloud storage, đăng nhập, database, API AI — ngoài scope V1 theo quyết định thiết kế (xem [00-project-overview.md](00-project-overview.md)).
+- Thêm dependency, bundler hoặc framework bên ngoài.
+- Refactor pipeline cốt lõi (`app.js`, `document-detector.js`).
+- Tự ý merge PR #8 vào `main` khi chưa có phê duyệt từ người dùng.
 
 ---
 
-## Đã hoàn thành gần đây
+## Tính năng đã hoàn thành trên branch `feat/mobile-ui-redesign` (PR #8)
 
-- [2026-08-23] Thêm tính năng Scan ID (mặt trước/mặt sau căn cước → 1 trang A4) — workflow riêng qua
-  `state.mode`/`state.idScan`, dùng chung 100% pipeline detect/crop/phối cảnh/filter/PDF writer của
-  document mode qua `activePage()`. Xem chi tiết trong [03-decisions.md](03-decisions.md) và
-  [06-ai-working-log.md](06-ai-working-log.md). Branch `feat/scan-id`, chưa merge vào `main`.
-- [2026-08-23] Thêm tính năng Auto Enhance ("Tự động đẹp") — pixel pipeline thật (background shading correction, auto levels, local contrast, sharpen) dùng chung cho preview và export; nâng cấp filter Đen trắng sang cùng cơ chế. Xem chi tiết trong [03-decisions.md](03-decisions.md) và [06-ai-working-log.md](06-ai-working-log.md). Branch `feat/auto-enhance`, chưa merge vào `main`.
-- [2026-08-22] Đóng băng export state (snapshot bất biến trước `setBusy(true)`), khoá mọi mutation handler khi `busy`, sửa SW refresh lifecycle (`event.waitUntil`), bỏ số commit hard-code trong docs, thêm CI (`static-validation.yml` + `scripts/validate_static.py`) và regression harness dependency-free (`scripts/regression_export_busy.js`) — xem chi tiết trong [06-ai-working-log.md](06-ai-working-log.md). `GATE-01` **không** bị ảnh hưởng bởi task này — vẫn đang mở, chưa chạy trên Chrome/Edge thật.
-- [2026-08-22] Audit toàn bộ source, sửa các lỗi phát hiện qua rehearsal chức năng (xem [03-decisions.md](03-decisions.md)), viết `AGENTS.md`/`CLAUDE.md`/`README.md` đầu tiên cho dự án, `git init` cục bộ, cập nhật `PROJECTS.md` ở workspace root.
-- [2026-08-22] Hai lần thử đóng `GATE-01` — cả hai đều BLOCKED vì không có Chrome/Edge thật trong môi trường (không phải lỗi app, xem chi tiết trong `GATE-01` ở trên).
-- [2026-08-22] Dựng bộ AI project brain (`docs/brain/00-06`), hợp nhất với `AGENTS.md`/`CLAUDE.md` đã có sẵn từ trước (giữ nguyên nội dung kiến trúc/bảo mật/validation, thêm cấu trúc trỏ tới `docs/brain/` theo khung của skill `setup-ai-brain`).
+- [2026-08-23] **Rebrand toàn diện VPH Vigil Lens**: Master brand: VPH, Ecosystem: VIGIL, Product: Vigil Lens, Signature: by VPH, Tagline: *See clearly. Capture precisely.* Cập nhật launcher icons 192/512px, Topbar SVG logo, PWA manifest, cache `vigil-lens-v2.2.1` và documentation.
+- [2026-08-23] **Mobile-First UI & Touch Targets**: Giao diện tối ưu thao tác 1 tay, 50dvh canvas viewport, 100% interactive targets đạt $\ge 44\times 44\text{px}$ (140/140 checks PASS trên 5 kích thước màn hình), tích hợp regression vào CI.
+- [2026-08-23] **Tự host font Be Vietnam Pro**: Trọn bộ 4 weights WOFF2 cục bộ kèm giấy phép SIL Open Font License 1.1 trong `assets/fonts/OFL.txt`.
+- [2026-08-23] **Tự động nhận diện 4 góc bằng Machine Learning**: Mô hình DocCornerNet Lean (`assets/ml/`) chạy offline qua ONNX Runtime Web WASM kèm Geometry Guard và classical fallback (25/25 ảnh dataset thực tế đạt 100% usable).
+- [2026-08-23] **Scan ID (Căn cước 2 mặt → 1 trang A4)**: Workflow riêng biệt 2 mặt, ghép tự động lên A4 chuẩn đối xứng và khóa an toàn trong suốt quá trình xuất PDF.
+- [2026-08-23] **Auto Enhance ("Tự động")**: Shading correction và contrast tuning thời gian thực cho văn bản.

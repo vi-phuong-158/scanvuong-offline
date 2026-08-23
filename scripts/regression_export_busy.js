@@ -184,7 +184,7 @@ function buildSandbox() {
   elementsById.cameraInput.files = [];
   elementsById.idFileInput.files = [];
   elementsById.idCameraInput.files = [];
-  elementsById.fileName.value = 'ScanVuong';
+  elementsById.fileName.value = 'VigilLens';
   elementsById.pageSize.value = 'a4';
   elementsById.quality.value = 'standard';
   elementsById.marginToggle.checked = false;
@@ -411,7 +411,7 @@ async function main() {
   await exportPromise;
   await secondExport;
 
-  assert(getLastAnchor().download === 'ScanVuong.pdf', `Case 5: downloaded filename uses the frozen fileName, not the mid-export edit (got "${getLastAnchor().download}")`);
+  assert(getLastAnchor().download === 'VigilLens.pdf', `Case 5: downloaded filename uses the frozen fileName, not the mid-export edit (got "${getLastAnchor().download}")`);
 
   const pdfBlob = blobRegistry.get(getLastAnchor().href);
   assert(!!pdfBlob, 'export produced a downloadable PDF blob');

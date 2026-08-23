@@ -5,6 +5,19 @@
 
 ---
 
+## [2026-08-23] Redesign UI Mobile-First với Be Vietnam Pro tự host & Icon SVG nhất quán
+
+- **Quyết định:** Nâng cấp toàn bộ giao diện thành ứng dụng tiện ích di động hiện đại (Premium Mobile Document Utility) tối ưu hoá thao tác một tay:
+  1. Sử dụng font chữ tiếng Việt **Be Vietnam Pro** (OFL-1.1) tự host cục bộ dạng `.woff2` (400, 500, 600, 700) trong `assets/fonts/`, precached trong Service Worker `sw.js`, tuyệt đối không dùng Google Fonts hay kết nối mạng runtime.
+  2. Thay thế toàn bộ emoji icon (`📄`, `🪪`, ...) bằng hệ thống icon SVG vector nhất quán (viewBox 20/24, stroke 2px, round join/caps).
+  3. Áp dụng kiến trúc Design Tokens với màu nhấn Cobalt Blue (`#2563eb`), độ tương phản cao, bóng mờ tự nhiên, hỗ trợ Safe Area insets (`env(safe-area-inset-top)`, `env(safe-area-inset-bottom)`), và touch targets $\ge 44\text{px}$.
+  4. Bố cục mobile-first thông minh: Vùng vẽ chỉnh góc 50dvh cho ngón tay thao tác, dải thumbnails cuộn ngang gọn gàng trên mobile và tự động mở rộng thành 3 cột trên Desktop $\ge 1025\text{px}$.
+- **Lý do:** Khắc phục tình trạng font chữ tiếng Việt bị lỗi dấu/lệch kerning trên một số hệ điều hành khi chỉ dùng hệ thống font fallback; loại bỏ emoji đa nền tảng không đồng bộ; nâng cao tốc độ quét và chất lượng trải nghiệm tương đương ứng dụng native.
+- **Đánh đổi:** Tăng dung lượng cache offline thêm ~170 KB cho 4 file WOFF2 (đã nén tối ưu). Hoàn toàn phù hợp tiêu chuẩn PWA offline.
+- **Người quyết định:** Lead Product Designer & Senior Frontend Engineer.
+
+---
+
 ## [2026-08-23] Tích hợp Scanic ML (DocCornerNet Lean) làm Detector góc chính kèm Classical Fallback
 
 - **Quyết định:** Thay thế detector góc tài liệu chính bằng `DocumentDetector` (`document-detector.js`) sử dụng mô hình neural network siêu nhẹ DocCornerNet Lean (~1.93 MB) chạy offline qua ONNX Runtime Web WASM, bảo vệ bởi bộ lọc hình học nghiêm ngặt (Geometry Guard: lồi, không tự cắt, diện tích $\ge 5\%$, biên an toàn). Nếu ML không tải được, gặp lỗi runtime hoặc hình học không hợp lệ, hệ thống tự động kích hoạt detector cổ điển (`detectDocument`: Otsu/Connected Components/Sobel) làm chốt chặn an toàn (fallback).
@@ -209,8 +222,12 @@
 
 - **Quyết định:** Tách `calculateIdA4Layout(frontW, frontH, backW, backH, options)` thành hàm pure helper kiểm thử được. Giữ target width của thẻ ở **65%** chiều rộng trang A4 (`cardW = 806px` trên raster 1240×1754, tương đương ~136.5 mm trên khổ A4 210 mm); giảm khoảng cách (gap) giữa mặt trước và mặt sau từ ~70 mm xuống **~28 mm** (`165px`); và **căn giữa dọc toàn bộ cụm block (front + gap + back)** trên trang A4 thay vì chia cứng hai nửa riêng biệt.
 - **Lý do:** Kích thước 65% phóng to thẻ ~1.59x so với thẻ thật (85.6 mm) giúp chữ sắc nét dễ đọc. Thu hẹp khoảng cách xuống 28 mm và căn giữa toàn block giúp bố cục bản in A4 thanh thoát, cân xứng, khoảng trắng trên/dưới đồng đều (~4.9 cm), không để lại khoảng trống quá lớn ở giữa hai mặt thẻ.
-- **Đánh đổi:** Không có — đây là tinh chỉnh UX/print layout hoàn thiện cho bản in đẹp.
-- **Người quyết định:** Antigravity (theo final hardening PR #4).
+## [2026-08-23] Thiết kế PWA Launcher Icon cho VPH Vigil Lens (Optical Symbol Mark)
+
+- **Quyết định:** Thiết kế lại toàn bộ launcher icon PWA (`icons/icon-192.png` và `icons/icon-512.png`) theo biểu tượng quang học của VPH Vigil Lens (chữ **V** hình học platinum, 4 ngoặc lấy nét/đăng ký góc tài liệu xanh cobalt `#3b82f6` và tâm quang học `#60a5fa` trên nền slate `#090d16` có ánh sáng radial lens). Toàn bộ đồ họa chính nằm gọn trong vùng an toàn maskable (bán kính $\le 40\%$ canvas). Loại bỏ hoàn toàn chữ nhỏ/typography khỏi icon để giữ nét căng, dễ nhận diện ở mọi kích thước launcher (32px, 48px, 96px, 192px, 512px).
+- **Lý do:** Icon cũ là hình vẽ tờ giấy bitmap pixelated của ScanVuông. Icon mới đồng bộ 100% với hệ thống nhận diện thương hiệu VPH Vigil Lens, thể hiện tinh thần công cụ quang học độ chính xác cao và an toàn hiển thị khi hệ điều hành Android/iOS bo tròn hoặc cắt theo hình tròn/squircle adaptive.
+- **Đánh đổi:** Không có — icon vector được render trực tiếp qua HTML5 Canvas độ phân giải cao thành PNG, không thêm bất kỳ runtime dependency nào.
+- **Người quyết định:** Codex (theo yêu cầu acceptance PR #8).
 
 ## Template cho entry mới
 

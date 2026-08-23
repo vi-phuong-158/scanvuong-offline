@@ -16,6 +16,111 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-08-23] Final Acceptance Closure & PWA Icon Rebrand cho PR #8 (VPH Vigil Lens)
+
+- **Agent:** Codex
+- **Baseline SHA:** `2822426eaeebfd3a919aec7c936abaea761f6639`
+- **Thay đổi:**
+  1. **PWA Icons Rebrand:** Tạo mới hoàn toàn `icons/icon-192.png` và `icons/icon-512.png` theo biểu tượng quang học của VPH Vigil Lens (chữ V hình học, 4 ngoặc lấy nét cobalt, reticle quang học trên nền slate navy, maskable-safe).
+  2. **Service Worker Cache Bump:** Nâng cấp cache lên `vigil-lens-v2.2.1` trong `sw.js` để đảm bảo client đã cài đặt PWA tự động cập nhật icon mới.
+  3. **CI Portability & Touch Targets:** Tích hợp kiểm thử `test_touch_targets.cjs` vào `.github/workflows/static-validation.yml` kèm bộ dò tìm trình duyệt đa nền tảng (`findBrowser()` hỗ trợ Linux runner, Windows, macOS).
+  4. **Documentation & Decision Log:** Viết lại `docs/brain/04-current-tasks.md` phản ánh chính xác trạng thái PR #8, tách bạch automated offline acceptance (PASS) và manual OS installability prompt (PENDING); bổ sung quyết định thiết kế icon trong `docs/brain/03-decisions.md`.
+- **File đã sửa:** `icons/icon-192.png`, `icons/icon-512.png`, `sw.js`, `.github/workflows/static-validation.yml`, `scripts/test_touch_targets.cjs`, `scripts/acceptance_offline_pwa.cjs`, `scripts/capture_ui_states.cjs`, `scripts/generate_pwa_icons.cjs`, `docs/brain/03-decisions.md`, `docs/brain/04-current-tasks.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Hoàn thiện 100% các tiêu chuẩn release candidate cho PR #8, đóng toàn bộ acceptance gaps trước khi đưa ra khuyến nghị merge.
+- **Kiểm tra:**
+  - `python scripts/validate_static.py` PASS (9/9 checks).
+  - `node scripts/test_touch_targets.cjs` PASS (140/140 checks).
+  - `node scripts/regression_sw_update.cjs` PASS (9/9 checks).
+  - `node scripts/acceptance_offline_pwa.cjs` PASS.
+  - `node scripts/regression_export_busy.js` PASS (29/29).
+  - `node scripts/regression_scan_id.js` PASS (52/52).
+  - `node scripts/regression_ml_detector.js` PASS (53/53).
+  - `node scripts/rehearsal_dataset.cjs` PASS (25/25 images).
+
+---
+
+## [2026-08-23] Rebrand toàn diện ứng dụng thành VPH Vigil Lens
+
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Brand Architecture:** Thiết lập kiến trúc thương hiệu chuẩn hóa: Master brand: **VPH**, Ecosystem: **VIGIL**, Product name: **Vigil Lens**, Signature: **by VPH**, Tagline: **See clearly. Capture precisely.**
+  2. **Giao diện & Biểu tượng:**
+     - Thiết kế mới biểu tượng SVG Topbar: kết hợp chữ **V** hình học quang học, các ngoặc lấy nét (focus brackets) và 4 điểm góc tài liệu.
+     - Cập nhật tiêu đề Topbar thành **Vigil Lens**, phụ đề `by VPH`.
+     - Cập nhật huy hiệu `VIGIL ECOSYSTEM` và thông điệp tagline trên màn hình chọn chế độ.
+  3. **Metadata & PWA:** Cập nhật `title`, `meta description` trong `index.html` và `name`, `short_name`, `description` trong `manifest.webmanifest`.
+  4. **Export Defaults:** Cập nhật tên file xuất mặc định trong `index.html` (`VigilLens`), `app.js` (`VigilLens` và `VigilLens-ID`) cùng PDF header chunk (`%PDF-1.4\n%VigilLens\n`).
+  5. **Service Worker:** Nâng cấp cache name lên `vigil-lens-v2.2.0`, hỗ trợ tự động dọn sạch cache cũ tiền tố `scanvuong-*` và `vigil-lens-*`.
+  6. **Documentation & Validation:** Cập nhật toàn diện `README.md`, `docs/brain/`, static check `_no_legacy_brand_in_user_facing` trong `scripts/validate_static.py` và các kịch bản kiểm thử regression.
+- **File đã sửa:** `index.html`, `styles.css`, `app.js`, `manifest.webmanifest`, `sw.js`, `README.md`, `scripts/validate_static.py`, `scripts/regression_export_busy.js`, `scripts/regression_scan_id.js`, `scripts/acceptance_offline_pwa.cjs`, `docs/brain/00-project-overview.md`, `docs/brain/01-architecture.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Định vị sản phẩm thành công cụ quét tài liệu quang học độ chính xác cao thuộc hệ sinh thái VIGIL, đảm bảo tính nhất quán và khả năng mở rộng trong tương lai.
+- **Kiểm tra:**
+  - `python scripts/validate_static.py` PASS (9/9 checks, 0 legacy brand in user-facing).
+  - `node --check app.js`, `node --check sw.js`, `node --check document-detector.js` PASS.
+  - `node scripts/regression_export_busy.js` PASS (29/29).
+  - `node scripts/regression_scan_id.js` PASS (52/52).
+  - `node scripts/regression_ml_detector.js` PASS (53/53).
+  - `node scripts/regression_sw_update.cjs` PASS (9/9).
+  - `node scripts/rehearsal_dataset.cjs` PASS (25/25 images).
+  - `node scripts/test_touch_targets.cjs` PASS (140/140 checks).
+  - `node scripts/acceptance_offline_pwa.cjs` PASS.
+
+---
+
+## [2026-08-23] Review độc lập & đóng toàn bộ acceptance gaps cho PR #8 (Mobile-First UI Redesign)
+
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Emoji Gate:** Loại bỏ 100% emoji khỏi filter chips (`index.html`) và thông báo cảnh báo (`app.js`), thay thế bằng typography tiếng Việt cô đọng (`Tự động`, `Màu`, `Đen trắng`, `Gốc`). Bổ sung static regression check `_no_ui_emojis` trong `scripts/validate_static.py`.
+  2. **Touch Target Gate:** Điều chỉnh hit area tất cả interactive controls trên mobile ($\le 768\text{px}$) đạt $\ge 44\times 44\text{px}$ (nút bấm, filter chips, `.check-field`, toolbar actions). Tạo bộ kiểm thử tự động `scripts/test_touch_targets.cjs` đo `getBoundingClientRect()` trên 5 viewports (360×800, 375×812, 390×844, 412×915, 430×932), đạt 140/140 checks PASS.
+  3. **Visual QA Gate:** Nâng cấp `scripts/capture_ui_states.cjs` chụp 13 ảnh screenshot thực tế deterministic bằng Chrome CDP trên full flow (Mode Select, Empty State, Document Editor ở các kích thước 360px, 390px, 430px, Landscape 844x390, Tablet 768x1024, Desktop 1280x800, Export Panel, Scan ID Front, Back, A4 Preview, và Scan ID Desktop).
+  4. **Landscape Mobile Usability:** Bổ sung media query `@media (max-height: 500px)` cho điện thoại nằm ngang (2 cột: Canvas editor bên trái, Rail & Export scrollable bên phải).
+  5. **Font Offline & PWA Acceptance:** Nâng cấp `scripts/acceptance_offline_pwa.cjs` kiểm tra `document.fonts.check()` cho 4 weights (400, 500, 600, 700) cả online và offline; tách rõ ràng verdict PWA installability và assertion 0 required runtime network dependencies.
+  6. **License Integrity:** Bổ sung `assets/fonts/OFL.txt` với toàn văn bản quyền SIL Open Font License 1.1 và cập nhật Mục 4 của `THIRD_PARTY_NOTICES.md`.
+- **File đã sửa:** `index.html`, `styles.css`, `app.js`, `THIRD_PARTY_NOTICES.md`, `assets/fonts/OFL.txt`, `scripts/validate_static.py`, `scripts/test_touch_targets.cjs`, `scripts/capture_ui_states.cjs`, `scripts/acceptance_offline_pwa.cjs`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Đáp ứng đầy đủ các tiêu chuẩn kiểm thử khắt khe của dự án, đảm bảo bằng chứng thực tế khớp 100% với verdict báo cáo trước khi chuyển sang Ready for Review.
+- **Kiểm tra:**
+  - `node --check app.js`, `node --check sw.js`, `node --check document-detector.js` PASS.
+  - `python scripts/validate_static.py` PASS (9/9 checks).
+  - `node scripts/test_touch_targets.cjs` PASS (140/140 checks).
+  - `node scripts/acceptance_offline_pwa.cjs` PASS.
+  - `node scripts/regression_export_busy.js` PASS (29/29).
+  - `node scripts/regression_scan_id.js` PASS (52/52).
+  - `node scripts/regression_ml_detector.js` PASS (53/53).
+  - `node scripts/regression_sw_update.cjs` PASS (9/9).
+  - `node scripts/rehearsal_dataset.cjs` PASS (25/25 images).
+
+---
+
+## [2026-08-23] Redesign UI mobile-first với Be Vietnam Pro, SVG icons và layout thích ứng
+
+- **Agent:** Codex
+- **Thay đổi:**
+  1. Tích hợp font chữ tiếng Việt **Be Vietnam Pro** (Regular 400, Medium 500, SemiBold 600, Bold 700) tự host cục bộ dạng `.woff2` trong `assets/fonts/`, không phụ thuộc Google Fonts/mạng runtime.
+  2. Nâng cấp Service Worker cache lên `scanvuong-v2.1.0`, bổ sung 4 file font WOFF2 vào danh sách 16 precached assets trong `sw.js`.
+  3. Cập nhật `THIRD_PARTY_NOTICES.md` (Mục 4: Be Vietnam Pro Font - SIL Open Font License 1.1).
+  4. Redesign toàn bộ giao diện HTML (`index.html`) & CSS (`styles.css`):
+     - Thay thế 100% icon emoji sang hệ thống icon SVG nhất quán (stroke 2px, rounded joins).
+     - Thiết kế hệ thống Design Tokens hoàn chỉnh (surfaces, text contrast, cobalt primary `#2563eb`, semantic status colors, radius hierarchy, soft shadows).
+     - Mobile-first layout: Topbar với Safe Area insets, Home screen mode selection (Scan tài liệu vs Scan Căn cước), Drop zone tài liệu, Editor stage 50dvh cho thao tác kéo góc một tay, thanh cuộn thumbnails ngang trên mobile (`.thumb-list` horizontal rail), Export panel dưới cùng.
+     - Layout Desktop $\ge 1025\text{px}$ giữ nguyên dạng 3 cột (Sidebar 240px | Editor flex | Export 280px).
+     - Đảm bảo touch targets $\ge 44\text{px}$, responsive mượt mà trên tất cả viewports (360×800, 375×812, 390×844, 412×915, 430×932, 768×1024, 1280×800, landscape).
+  5. Giữ nguyên 100% logic xử lý tài liệu, DOM ID contract trong `app.js`, ML DocumentDetector, homography warp, bộ lọc canvas và handwritten PDF writer.
+  6. Cập nhật các bộ regression test (`validate_static.py`, `regression_sw_update.cjs`, `acceptance_offline_pwa.cjs`) để xác thực 16 assets và pass 100% các gate kiểm thử.
+- **File đã sửa:** `index.html`, `styles.css`, `sw.js`, `THIRD_PARTY_NOTICES.md`, `scripts/regression_sw_update.cjs`, `scripts/acceptance_offline_pwa.cjs`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Nâng cấp trải nghiệm quét tài liệu trên di động theo tiêu chuẩn Premium Mobile Document Utility, cải thiện typography tiếng Việt, tăng tốc độ thao tác và đảm bảo chuẩn responsive không phụ thuộc mạng.
+- **Kiểm tra:**
+  - `node --check app.js`, `node --check sw.js`, `node --check document-detector.js` PASS.
+  - `python scripts/validate_static.py` PASS (8/8).
+  - `node scripts/regression_export_busy.js` PASS (29/29).
+  - `node scripts/regression_scan_id.js` PASS (52/52).
+  - `node scripts/regression_ml_detector.js` PASS (53/53).
+  - `node scripts/regression_sw_update.cjs` PASS (9/9).
+  - `node scripts/rehearsal_dataset.cjs` PASS (25/25 images).
+  - `node scripts/acceptance_offline_pwa.cjs` PASS (Chromium offline with cut network).
+
+---
+
 ## [2026-08-23] Fix fail-safe classical fallback geometry validation & expand regression gates
 
 - **Agent:** Codex

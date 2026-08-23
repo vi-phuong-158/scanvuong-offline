@@ -41,6 +41,9 @@ jobs:
       - name: Regression harness (Service Worker update safety)
         run: node scripts/regression_sw_update.cjs
 
+      - name: Mobile touch-target regression (>=44px hit areas across 5 viewports)
+        run: node scripts/test_touch_targets.cjs
+
       - name: Benchmark engine unit tests (dependency-free)
         run: node scripts/test_benchmark_engine.cjs
 
