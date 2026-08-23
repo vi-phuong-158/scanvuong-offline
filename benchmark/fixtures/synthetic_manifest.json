@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "dataset_name": "SYNTHETIC_CI_FIXTURES",
+  "description": "Deterministic fixtures for automated benchmark validation and CI testing",
+  "cases": [
+    {
+      "id": "SYNTH_PERSP_01",
+      "category": "HC01_PERSPECTIVE",
+      "filename": "synthetic_persp_01.png",
+      "contains_document": true,
+      "difficulty": "medium",
+      "ground_truth": [
+        { "x": 0.15, "y": 0.15 },
+        { "x": 0.85, "y": 0.10 },
+        { "x": 0.90, "y": 0.90 },
+        { "x": 0.10, "y": 0.85 }
+      ]
+    },
+    {
+      "id": "SYNTH_ROT_01",
+      "category": "HC02_ROTATION",
+      "filename": "synthetic_rot_01.png",
+      "contains_document": true,
+      "difficulty": "easy",
+      "ground_truth": [
+        { "x": 0.10, "y": 0.10 },
+        { "x": 0.90, "y": 0.10 },
+        { "x": 0.90, "y": 0.90 },
+        { "x": 0.10, "y": 0.90 }
+      ]
+    },
+    {
+      "id": "SYNTH_NEG_01",
+      "category": "HC10_NON_DOCUMENT_NEGATIVES",
+      "filename": "synthetic_neg_01.png",
+      "contains_document": false,
+      "difficulty": "medium",
+      "ground_truth": null
+    }
+  ]
+}

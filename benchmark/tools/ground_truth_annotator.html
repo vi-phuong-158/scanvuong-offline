@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ScanVuông — Ground Truth Corner Annotator</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-border: #334155;
+    --text: #f8fafc;
+    --text-muted: #94a3b8;
+    --primary: #38bdf8;
+    --success: #4ade80;
+    --danger: #f87171;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--panel-border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  h1 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .badge { background: #0284c7; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 999px; }
+  .top-controls { display: flex; gap: 10px; align-items: center; }
+  button, .file-label {
+    background: #334155;
+    color: var(--text);
+    border: 1px solid #475569;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  button:hover, .file-label:hover { background: #475569; }
+  button.primary { background: #0284c7; border-color: #38bdf8; }
+  button.primary:hover { background: #0369a1; }
+  input[type="file"] { display: none; }
+  main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+  #canvas-container {
+    flex: 1;
+    position: relative;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    user-select: none;
+  }
+  canvas {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  }
+  #sidebar {
+    width: 320px;
+    background: var(--panel);
+    border-left: 1px solid var(--panel-border);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+  }
+  .section-title { font-size: 13px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; letter-spacing: 0.5px; }
+  .meta-group { display: flex; flex-direction: column; gap: 8px; }
+  label { font-size: 12px; color: var(--text-muted); }
+  input[type="text"], select {
+    background: #0f172a;
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    padding: 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 100%;
+  }
+  .corner-list { display: flex; flex-direction: column; gap: 8px; }
+  .corner-card {
+    background: #0f172a;
+    border: 1px solid var(--panel-border);
+    padding: 8px 12px;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .corner-card.active { border-color: var(--primary); background: #082f49; }
+  .corner-label { font-weight: 600; }
+  .corner-coords { font-family: monospace; color: var(--primary); font-size: 12px; }
+  .instructions {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    background: #0f172a;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px dashed var(--panel-border);
+  }
+  .instructions kbd {
+    background: #334155;
+    color: #fff;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 10px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>
+    <span>ScanVuông Ground Truth Annotator</span>
+    <span class="badge">100% Offline / Local</span>
+  </h1>
+  <div class="top-controls">
+    <label class="file-label" for="image-input">📷 Mở ảnh</label>
+    <input type="file" id="image-input" accept="image/*">
+    <label class="file-label" for="json-input">📂 Nạp JSON</label>
+    <input type="file" id="json-input" accept=".json">
+    <button class="primary" id="btn-export">💾 Xuất Ground Truth</button>
+  </div>
+</header>
+
+<main>
+  <div id="canvas-container">
+    <canvas id="view-canvas"></canvas>
+  </div>
+  <aside id="sidebar">
+    <div class="meta-group">
+      <div class="section-title">Thông tin mẫu</div>
+      <div>
+        <label for="input-id">ID ảnh</label>
+        <input type="text" id="input-id" value="RW_001">
+      </div>
+      <div>
+        <label for="select-cat">Danh mục (Category)</label>
+        <select id="select-cat">
+          <option value="RW01_WHITE_ON_WHITE">RW01 — White on White</option>
+          <option value="RW02_PARTIAL_OCCLUSION">RW02 — Partial Occlusion</option>
+          <option value="RW03_PERSPECTIVE">RW03 — Perspective Oblique</option>
+          <option value="RW04_SHADOW">RW04 — Shadows & Uneven Light</option>
+          <option value="RW05_NEAR_FRAME">RW05 — Near Frame / Cropped</option>
+          <option value="RW06_SMALL_RECEIPT_CARD">RW06 — Small Receipt / Card</option>
+          <option value="RW07_MULTIPLE_RECTANGLES">RW07 — Multiple Rectangles</option>
+          <option value="NEG_ORDINARY">NEG-A — Ordinary Non-Document</option>
+          <option value="NEG_DOCUMENT_LIKE">NEG-B — Document-Like Object</option>
+        </select>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+        <input type="checkbox" id="check-has-doc" checked>
+        <label for="check-has-doc" style="color: #fff; cursor: pointer;">Chứa tài liệu (Contains Document)</label>
+      </div>
+    </div>
+
+    <div class="section-title">4 Góc Ground Truth</div>
+    <div class="corner-list">
+      <div class="corner-card active" data-index="0" id="card-0">
+        <span class="corner-label" style="color: #38bdf8;">1. TL (Top-Left)</span>
+        <span class="corner-coords" id="coords-0">(0.00, 0.00)</span>
+      </div>
+      <div class="corner-card" data-index="1" id="card-1">
+        <span class="corner-label" style="color: #4ade80;">2. TR (Top-Right)</span>
+        <span class="corner-coords" id="coords-1">(0.00, 0.00)</span>
+      </div>
+      <div class="corner-card" data-index="2" id="card-2">
+        <span class="corner-label" style="color: #facc15;">3. BR (Bottom-Right)</span>
+        <span class="corner-coords" id="coords-2">(0.00, 0.00)</span>
+      </div>
+      <div class="corner-card" data-index="3" id="card-3">
+        <span class="corner-label" style="color: #f87171;">4. BL (Bottom-Left)</span>
+        <span class="corner-coords" id="coords-3">(0.00, 0.00)</span>
+      </div>
+    </div>
+
+    <div class="instructions">
+      <strong>Phím tắt:</strong><br>
+      • <kbd>Click</kbd> trực tiếp lên ảnh để đặt góc đang chọn.<br>
+      • <kbd>Kéo chuột</kbd> handle tròn để căn chỉnh vị trí.<br>
+      • <kbd>1</kbd>, <kbd>2</kbd>, <kbd>3</kbd>, <kbd>4</kbd> để đổi góc active.<br>
+      • <kbd>Phím mũi tên</kbd> để vi chỉnh toạ độ 1 pixel.<br>
+      • <kbd>S</kbd> hoặc nút "Xuất" để tải JSON.
+    </div>
+  </aside>
+</main>
+
+<script>
+  let currentImage = null;
+  let activeCorner = 0;
+  let corners = [
+    { x: 0.15, y: 0.15 },
+    { x: 0.85, y: 0.15 },
+    { x: 0.85, y: 0.85 },
+    { x: 0.15, y: 0.85 }
+  ];
+  let isDragging = false;
+  let dragIndex = -1;
+
+  const canvas = document.getElementById('view-canvas');
+  const ctx = canvas.getContext('2d');
+
+  function updateCards() {
+    for (let i = 0; i < 4; i++) {
+      const card = document.getElementById(`card-${i}`);
+      const coords = document.getElementById(`coords-${i}`);
+      card.classList.toggle('active', i === activeCorner);
+      coords.textContent = `(${corners[i].x.toFixed(4)}, ${corners[i].y.toFixed(4)})`;
+    }
+  }
+
+  function render() {
+    if (!currentImage) {
+      canvas.width = 800;
+      canvas.height = 600;
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(0, 0, 800, 600);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Chọn ảnh hoặc kéo thả ảnh vào đây để bắt đầu', 400, 300);
+      return;
+    }
+
+    canvas.width = currentImage.width;
+    canvas.height = currentImage.height;
+    ctx.drawImage(currentImage, 0, 0);
+
+    const hasDoc = document.getElementById('check-has-doc').checked;
+    if (!hasDoc) return;
+
+    // Draw Quad
+    ctx.lineWidth = Math.max(2, Math.round(canvas.width / 400));
+    ctx.strokeStyle = '#38bdf8';
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x * canvas.width, corners[0].y * canvas.height);
+    for (let i = 1; i < 4; i++) {
+      ctx.lineTo(corners[i].x * canvas.width, corners[i].y * canvas.height);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Draw Corner Handles
+    const colors = ['#38bdf8', '#4ade80', '#facc15', '#f87171'];
+    const radius = Math.max(8, Math.round(canvas.width / 120));
+
+    for (let i = 0; i < 4; i++) {
+      const px = corners[i].x * canvas.width;
+      const py = corners[i].y * canvas.height;
+
+      ctx.beginPath();
+      ctx.arc(px, py, radius, 0, Math.PI * 2);
+      ctx.fillStyle = colors[i];
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(2, Math.round(radius / 4));
+      ctx.stroke();
+
+      if (i === activeCorner) {
+        ctx.beginPath();
+        ctx.arc(px, py, radius + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  }
+
+  function getCanvasPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    };
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (!currentImage) return;
+    const pos = getCanvasPos(e);
+    const radius = Math.max(16, Math.round(canvas.width / 60));
+
+    // Check handle hit
+    dragIndex = -1;
+    for (let i = 0; i < 4; i++) {
+      const cx = corners[i].x * canvas.width;
+      const cy = corners[i].y * canvas.height;
+      if (Math.hypot(pos.x - cx, pos.y - cy) <= radius) {
+        dragIndex = i;
+        activeCorner = i;
+        isDragging = true;
+        updateCards();
+        render();
+        return;
+      }
+    }
+
+    // Set active corner to click pos
+    corners[activeCorner] = {
+      x: Math.max(0, Math.min(1, Number((pos.x / canvas.width).toFixed(4)))),
+      y: Math.max(0, Math.min(1, Number((pos.y / canvas.height).toFixed(4))))
+    };
+    isDragging = true;
+    dragIndex = activeCorner;
+    activeCorner = (activeCorner + 1) % 4;
+    updateCards();
+    render();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging || dragIndex === -1 || !currentImage) return;
+    const pos = getCanvasPos(e);
+    corners[dragIndex] = {
+      x: Math.max(0, Math.min(1, Number((pos.x / canvas.width).toFixed(4)))),
+      y: Math.max(0, Math.min(1, Number((pos.y / canvas.height).toFixed(4))))
+    };
+    updateCards();
+    render();
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+    dragIndex = -1;
+  });
+
+  document.querySelectorAll('.corner-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      activeCorner = parseInt(card.dataset.index, 10);
+      updateCards();
+      render();
+    });
+  });
+
+  document.getElementById('image-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    document.getElementById('input-id').value = file.name.replace(/\.[^.]+$/, '');
+    const reader = new FileReader();
+    reader.onload = (re) => {
+      const img = new Image();
+      img.onload = () => {
+        currentImage = img;
+        render();
+      };
+      img.src = re.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('btn-export').addEventListener('click', () => {
+    const id = document.getElementById('input-id').value;
+    const category = document.getElementById('select-cat').value;
+    const hasDoc = document.getElementById('check-has-doc').checked;
+
+    const record = {
+      id,
+      category,
+      contains_document: hasDoc,
+      corners: hasDoc ? corners.map(p => ({ x: Number(p.x.toFixed(4)), y: Number(p.y.toFixed(4)) })) : null,
+      timestamp: new Date().toISOString()
+    };
+
+    const blob = new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${id}_ground_truth.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (['1', '2', '3', '4'].includes(e.key)) {
+      activeCorner = parseInt(e.key, 10) - 1;
+      updateCards();
+      render();
+    } else if (e.key.toLowerCase() === 's' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      document.getElementById('btn-export').click();
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>

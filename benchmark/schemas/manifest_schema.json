@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ScanVuongBenchmarkManifest",
+  "type": "object",
+  "required": ["version", "cases"],
+  "properties": {
+    "version": { "type": "string" },
+    "dataset_name": { "type": "string" },
+    "description": { "type": "string" },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "filename", "contains_document"],
+        "properties": {
+          "id": { "type": "string" },
+          "category": {
+            "type": "string",
+            "enum": [
+              "HC01_PERSPECTIVE",
+              "HC02_ROTATION",
+              "HC03_BACKGROUND_SIMILARITY",
+              "HC04_DARK_BACKGROUND",
+              "HC05_SHADOW",
+              "HC06_PARTIAL_OCCLUSION",
+              "HC07_CROPPED_DOCUMENT",
+              "HC08_SMALL_DOCUMENT",
+              "HC09_MULTIPLE_DOCUMENTS",
+              "HC10_NON_DOCUMENT_NEGATIVES",
+              "HC11_DOCUMENT_LIKE_OBJECTS",
+              "HC12_REAL_OFFICE_SCANS",
+              "RW01_WHITE_ON_WHITE",
+              "RW02_PARTIAL_OCCLUSION",
+              "RW03_PERSPECTIVE",
+              "RW04_SHADOW",
+              "RW05_NEAR_FRAME",
+              "RW06_SMALL_RECEIPT_CARD",
+              "RW07_MULTIPLE_RECTANGLES",
+              "NEG_ORDINARY",
+              "NEG_DOCUMENT_LIKE"
+            ]
+          },
+          "filename": { "type": "string" },
+          "contains_document": { "type": "boolean" },
+          "is_document_like": { "type": "boolean" },
+          "difficulty": { "type": "string", "enum": ["easy", "medium", "hard", "extreme", "real"] },
+          "ground_truth": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "object",
+              "required": ["x", "y"],
+              "properties": {
+                "x": { "type": "number", "minimum": -0.2, "maximum": 1.2 },
+                "y": { "type": "number", "minimum": -0.2, "maximum": 1.2 }
+              }
+            },
+            "minItems": 4,
+            "maxItems": 4
+          }
+        }
+      }
+    }
+  }
+}

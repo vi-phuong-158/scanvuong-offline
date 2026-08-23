@@ -1,0 +1,473 @@
+{
+  "version": "1.0.0",
+  "total_cases": 24,
+  "cases": [
+    {
+      "id": "HC01_001",
+      "category": "HC01_PERSPECTIVE",
+      "filename": "HC01_001.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.12,
+          "y": 0.2
+        },
+        {
+          "x": 0.82,
+          "y": 0.08
+        },
+        {
+          "x": 0.92,
+          "y": 0.88
+        },
+        {
+          "x": 0.28,
+          "y": 0.94
+        }
+      ]
+    },
+    {
+      "id": "HC01_002",
+      "category": "HC01_PERSPECTIVE",
+      "filename": "HC01_002.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.18,
+          "y": 0.08
+        },
+        {
+          "x": 0.88,
+          "y": 0.2
+        },
+        {
+          "x": 0.72,
+          "y": 0.94
+        },
+        {
+          "x": 0.08,
+          "y": 0.88
+        }
+      ]
+    },
+    {
+      "id": "HC01_003",
+      "category": "HC01_PERSPECTIVE",
+      "filename": "HC01_003.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.25,
+          "y": 0.15
+        },
+        {
+          "x": 0.75,
+          "y": 0.15
+        },
+        {
+          "x": 0.9,
+          "y": 0.92
+        },
+        {
+          "x": 0.1,
+          "y": 0.92
+        }
+      ]
+    },
+    {
+      "id": "HC02_001",
+      "category": "HC02_ROTATION",
+      "filename": "HC02_001.png",
+      "contains_document": true,
+      "difficulty": "medium",
+      "ground_truth": [
+        {
+          "x": 0.15,
+          "y": 0.12
+        },
+        {
+          "x": 0.85,
+          "y": 0.12
+        },
+        {
+          "x": 0.85,
+          "y": 0.88
+        },
+        {
+          "x": 0.15,
+          "y": 0.88
+        }
+      ]
+    },
+    {
+      "id": "HC02_002",
+      "category": "HC02_ROTATION",
+      "filename": "HC02_002.png",
+      "contains_document": true,
+      "difficulty": "medium",
+      "ground_truth": [
+        {
+          "x": 0.18,
+          "y": 0.15
+        },
+        {
+          "x": 0.82,
+          "y": 0.15
+        },
+        {
+          "x": 0.82,
+          "y": 0.85
+        },
+        {
+          "x": 0.18,
+          "y": 0.85
+        }
+      ]
+    },
+    {
+      "id": "HC02_003",
+      "category": "HC02_ROTATION",
+      "filename": "HC02_003.png",
+      "contains_document": true,
+      "difficulty": "medium",
+      "ground_truth": [
+        {
+          "x": 0.25,
+          "y": 0.1
+        },
+        {
+          "x": 0.88,
+          "y": 0.28
+        },
+        {
+          "x": 0.75,
+          "y": 0.9
+        },
+        {
+          "x": 0.12,
+          "y": 0.72
+        }
+      ]
+    },
+    {
+      "id": "HC03_001",
+      "category": "HC03_BACKGROUND_SIMILARITY",
+      "filename": "HC03_001.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.12,
+          "y": 0.1
+        },
+        {
+          "x": 0.88,
+          "y": 0.1
+        },
+        {
+          "x": 0.88,
+          "y": 0.9
+        },
+        {
+          "x": 0.12,
+          "y": 0.9
+        }
+      ]
+    },
+    {
+      "id": "HC03_002",
+      "category": "HC03_BACKGROUND_SIMILARITY",
+      "filename": "HC03_002.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.15,
+          "y": 0.12
+        },
+        {
+          "x": 0.85,
+          "y": 0.12
+        },
+        {
+          "x": 0.85,
+          "y": 0.88
+        },
+        {
+          "x": 0.15,
+          "y": 0.88
+        }
+      ]
+    },
+    {
+      "id": "HC03_003",
+      "category": "HC03_BACKGROUND_SIMILARITY",
+      "filename": "HC03_003.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.14,
+          "y": 0.11
+        },
+        {
+          "x": 0.86,
+          "y": 0.11
+        },
+        {
+          "x": 0.86,
+          "y": 0.89
+        },
+        {
+          "x": 0.14,
+          "y": 0.89
+        }
+      ]
+    },
+    {
+      "id": "HC05_001",
+      "category": "HC05_SHADOW",
+      "filename": "HC05_001.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.15,
+          "y": 0.12
+        },
+        {
+          "x": 0.85,
+          "y": 0.12
+        },
+        {
+          "x": 0.85,
+          "y": 0.88
+        },
+        {
+          "x": 0.15,
+          "y": 0.88
+        }
+      ]
+    },
+    {
+      "id": "HC05_002",
+      "category": "HC05_SHADOW",
+      "filename": "HC05_002.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.12,
+          "y": 0.1
+        },
+        {
+          "x": 0.88,
+          "y": 0.1
+        },
+        {
+          "x": 0.88,
+          "y": 0.9
+        },
+        {
+          "x": 0.12,
+          "y": 0.9
+        }
+      ]
+    },
+    {
+      "id": "HC06_001",
+      "category": "HC06_PARTIAL_OCCLUSION",
+      "filename": "HC06_001.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.15,
+          "y": 0.12
+        },
+        {
+          "x": 0.85,
+          "y": 0.12
+        },
+        {
+          "x": 0.85,
+          "y": 0.88
+        },
+        {
+          "x": 0.15,
+          "y": 0.88
+        }
+      ]
+    },
+    {
+      "id": "HC06_002",
+      "category": "HC06_PARTIAL_OCCLUSION",
+      "filename": "HC06_002.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.12,
+          "y": 0.1
+        },
+        {
+          "x": 0.88,
+          "y": 0.1
+        },
+        {
+          "x": 0.88,
+          "y": 0.9
+        },
+        {
+          "x": 0.12,
+          "y": 0.9
+        }
+      ]
+    },
+    {
+      "id": "HC07_001",
+      "category": "HC07_CROPPED_DOCUMENT",
+      "filename": "HC07_001.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.02,
+          "y": 0.02
+        },
+        {
+          "x": 0.98,
+          "y": 0.02
+        },
+        {
+          "x": 0.98,
+          "y": 0.98
+        },
+        {
+          "x": 0.02,
+          "y": 0.98
+        }
+      ]
+    },
+    {
+      "id": "HC08_001",
+      "category": "HC08_SMALL_DOCUMENT",
+      "filename": "HC08_001.png",
+      "contains_document": true,
+      "difficulty": "medium",
+      "ground_truth": [
+        {
+          "x": 0.35,
+          "y": 0.25
+        },
+        {
+          "x": 0.65,
+          "y": 0.25
+        },
+        {
+          "x": 0.65,
+          "y": 0.75
+        },
+        {
+          "x": 0.35,
+          "y": 0.75
+        }
+      ]
+    },
+    {
+      "id": "HC09_001",
+      "category": "HC09_MULTIPLE_DOCUMENTS",
+      "filename": "HC09_001.png",
+      "contains_document": true,
+      "difficulty": "hard",
+      "ground_truth": [
+        {
+          "x": 0.25,
+          "y": 0.15
+        },
+        {
+          "x": 0.85,
+          "y": 0.15
+        },
+        {
+          "x": 0.85,
+          "y": 0.85
+        },
+        {
+          "x": 0.25,
+          "y": 0.85
+        }
+      ]
+    },
+    {
+      "id": "HC10_001",
+      "category": "HC10_NON_DOCUMENT_NEGATIVES",
+      "filename": "HC10_001.png",
+      "contains_document": false,
+      "difficulty": "hard",
+      "ground_truth": null
+    },
+    {
+      "id": "HC10_002",
+      "category": "HC10_NON_DOCUMENT_NEGATIVES",
+      "filename": "HC10_002.png",
+      "contains_document": false,
+      "difficulty": "hard",
+      "ground_truth": null
+    },
+    {
+      "id": "HC10_003",
+      "category": "HC10_NON_DOCUMENT_NEGATIVES",
+      "filename": "HC10_003.png",
+      "contains_document": false,
+      "difficulty": "hard",
+      "ground_truth": null
+    },
+    {
+      "id": "HC10_004",
+      "category": "HC10_NON_DOCUMENT_NEGATIVES",
+      "filename": "HC10_004.png",
+      "contains_document": false,
+      "difficulty": "hard",
+      "ground_truth": null
+    },
+    {
+      "id": "HC10_005",
+      "category": "HC10_NON_DOCUMENT_NEGATIVES",
+      "filename": "HC10_005.png",
+      "contains_document": false,
+      "difficulty": "hard",
+      "ground_truth": null
+    },
+    {
+      "id": "HC11_001",
+      "category": "HC11_DOCUMENT_LIKE_OBJECTS",
+      "filename": "HC11_001.png",
+      "contains_document": false,
+      "is_document_like": true,
+      "difficulty": "hard",
+      "ground_truth": null
+    },
+    {
+      "id": "HC11_002",
+      "category": "HC11_DOCUMENT_LIKE_OBJECTS",
+      "filename": "HC11_002.png",
+      "contains_document": false,
+      "is_document_like": true,
+      "difficulty": "hard",
+      "ground_truth": null
+    },
+    {
+      "id": "HC11_003",
+      "category": "HC11_DOCUMENT_LIKE_OBJECTS",
+      "filename": "HC11_003.png",
+      "contains_document": false,
+      "is_document_like": true,
+      "difficulty": "hard",
+      "ground_truth": null
+    }
+  ]
+}

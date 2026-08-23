@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ScanVuongGroundTruthRecord",
+  "type": "object",
+  "required": ["id", "contains_document"],
+  "properties": {
+    "id": { "type": "string" },
+    "category": { "type": "string" },
+    "contains_document": { "type": "boolean" },
+    "corners": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "required": ["x", "y"],
+        "properties": {
+          "x": { "type": "number", "minimum": 0, "maximum": 1 },
+          "y": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "notes": { "type": "string" }
+  }
+}

@@ -1,0 +1,98 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Scanic ML Parity Test</title>
+</head>
+<body>
+  <div id="status">Running test cases...</div>
+  <script type="module">
+    import { scanDocument } from './node_modules/scanic/dist/scanic.js';
+
+    function loadImage(url) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = url;
+      });
+    }
+
+    async function runTest() {
+      const results = [];
+      const ML_ASSETS = '/node_modules/scanic-ml/dist/';
+
+      // Test A: Synthetic Tilted Page (800x600)
+      const cA = document.createElement('canvas');
+      cA.width = 800; cA.height = 600;
+      const ctxA = cA.getContext('2d');
+      ctxA.fillStyle = '#1e293b'; ctxA.fillRect(0, 0, 800, 600);
+      ctxA.fillStyle = '#ffffff'; ctxA.beginPath();
+      ctxA.moveTo(150, 100); ctxA.lineTo(680, 130); ctxA.lineTo(650, 520); ctxA.lineTo(120, 480);
+      ctxA.closePath(); ctxA.fill();
+
+      const resA = await scanDocument(cA, {
+        detector: 'ml',
+        ml: { assetBaseUrl: ML_ASSETS }
+      });
+      results.push({ name: 'A_synthetic_tilted', corners: resA.corners, confidence: resA.confidence, width: 800, height: 600 });
+
+      // Test B: Synthetic Portrait Page (600x800)
+      const cB = document.createElement('canvas');
+      cB.width = 600; cB.height = 800;
+      const ctxB = cB.getContext('2d');
+      ctxB.fillStyle = '#0f172a'; ctxB.fillRect(0, 0, 600, 800);
+      ctxB.fillStyle = '#f8fafc'; ctxB.beginPath();
+      ctxB.moveTo(80, 120); ctxB.lineTo(520, 90); ctxB.lineTo(490, 720); ctxB.lineTo(100, 690);
+      ctxB.closePath(); ctxB.fill();
+
+      const resB = await scanDocument(cB, {
+        detector: 'ml',
+        ml: { assetBaseUrl: ML_ASSETS }
+      });
+      results.push({ name: 'B_synthetic_portrait', corners: resB.corners, confidence: resB.confidence, width: 600, height: 800 });
+
+      // Test C: Private Dataset Image #1
+      const img1 = await loadImage('/previews/thumb_1.jpg');
+      const c1 = document.createElement('canvas');
+      c1.width = img1.naturalWidth; c1.height = img1.naturalHeight;
+      c1.getContext('2d').drawImage(img1, 0, 0);
+      const res1 = await scanDocument(c1, { detector: 'ml', ml: { assetBaseUrl: ML_ASSETS } });
+      results.push({ name: 'C_dataset_image_1', corners: res1.corners, confidence: res1.confidence, width: c1.width, height: c1.height });
+
+      // Test D: Private Dataset Image #7
+      const img7 = await loadImage('/previews/thumb_7.jpg');
+      const c7 = document.createElement('canvas');
+      c7.width = img7.naturalWidth; c7.height = img7.naturalHeight;
+      c7.getContext('2d').drawImage(img7, 0, 0);
+      const res7 = await scanDocument(c7, { detector: 'ml', ml: { assetBaseUrl: ML_ASSETS } });
+      results.push({ name: 'D_dataset_image_7', corners: res7.corners, confidence: res7.confidence, width: c7.width, height: c7.height });
+
+      // Test E: Private Dataset Image #11
+      const img11 = await loadImage('/previews/thumb_11.jpg');
+      const c11 = document.createElement('canvas');
+      c11.width = img11.naturalWidth; c11.height = img11.naturalHeight;
+      c11.getContext('2d').drawImage(img11, 0, 0);
+      const res11 = await scanDocument(c11, { detector: 'ml', ml: { assetBaseUrl: ML_ASSETS } });
+      results.push({ name: 'E_dataset_image_11', corners: res11.corners, confidence: res11.confidence, width: c11.width, height: c11.height });
+
+      document.getElementById('status').textContent = 'Completed!';
+      await fetch('/api/parity_done', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(results)
+      });
+    }
+
+    runTest().catch(err => {
+      document.getElementById('status').textContent = 'ERROR: ' + err.message;
+      fetch('/api/parity_done', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: err.message })
+      });
+    });
+  </script>
+</body>
+</html>

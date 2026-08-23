@@ -18,6 +18,9 @@ __pycache__/
 *.local
 .vercel
 
-# Benchmark tools, outputs & caches
-benchmark/
+# Benchmark outputs, caches, node_modules & private datasets
 benchmark-output/
+benchmark-private/
+benchmark/.cache/
+benchmark/node_modules/
+benchmark/hard_cases/data/

@@ -1,0 +1,440 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScanVuông — Document Corner Detection Human Reviewer</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card: #151d30;
+      --border: #26334d;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --primary: #38bdf8;
+      --ok: #22c55e;
+      --minor: #eab308;
+      --wrong: #ef4444;
+      --none: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      background: #070a12;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 1.15rem; font-weight: 700; color: var(--primary); letter-spacing: -0.02em; }
+    .badge {
+      font-size: 0.85rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr 360px;
+      flex: 1;
+      height: calc(100vh - 58px);
+      overflow: hidden;
+    }
+    /* Left Sidebar */
+    .sidebar {
+      background: #0f172a;
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .img-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: all 0.15s ease;
+    }
+    .img-item:hover { border-color: var(--primary); transform: translateY(-1px); }
+    .img-item.active { border-color: var(--primary); background: #1e3a5f; box-shadow: 0 0 0 1px var(--primary); }
+    .img-item img { width: 52px; height: 52px; object-fit: cover; border-radius: 6px; }
+    .img-meta { font-size: 0.8rem; overflow: hidden; flex: 1; }
+    .img-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .img-sub { color: var(--muted); font-size: 0.75rem; margin-top: 2px; }
+    .status-check { color: var(--ok); font-weight: bold; margin-left: auto; }
+
+    /* Center Viewer */
+    .viewer-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      position: relative;
+      background: #04070e;
+      overflow: hidden;
+    }
+    .canvas-box {
+      max-width: 100%;
+      max-height: calc(100vh - 130px);
+      border-radius: 8px;
+      box-shadow: 0 12px 35px rgba(0,0,0,0.6);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      border: 1px solid var(--border);
+    }
+    canvas { max-width: 100%; max-height: calc(100vh - 130px); display: block; object-fit: contain; }
+    .layer-panel {
+      position: absolute;
+      top: 25px;
+      left: 25px;
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 0.8rem;
+      z-index: 10;
+    }
+    .layer-title { font-weight: 700; color: var(--muted); text-transform: uppercase; font-size: 0.7rem; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+    .layer-row { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+    .color-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+    /* Right Evaluation Panel */
+    .eval-area {
+      background: #0f172a;
+      border-left: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .card-header { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; color: var(--primary); }
+    .det-block {
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .det-block:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .det-name { font-size: 0.85rem; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+    .btn-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+    .btn-rating {
+      background: #090e1a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 2px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      border-radius: 5px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.1s ease;
+    }
+    .btn-rating:hover { opacity: 0.9; }
+    .btn-rating.active-AUTO_OK { background: var(--ok); color: #000; border-color: var(--ok); }
+    .btn-rating.active-MINOR_ADJUST { background: var(--minor); color: #000; border-color: var(--minor); }
+    .btn-rating.active-WRONG { background: var(--wrong); color: #fff; border-color: var(--wrong); }
+    .btn-rating.active-NO_DETECTION { background: var(--none); color: #fff; border-color: var(--none); }
+
+    .nav-bar { display: flex; gap: 10px; margin-top: 10px; }
+    .btn-nav {
+      flex: 1;
+      padding: 10px;
+      border-radius: 6px;
+      background: #334155;
+      color: white;
+      border: none;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .btn-nav:hover { background: #475569; }
+    .btn-save-main { background: var(--ok); color: #000; font-weight: 800; }
+    .btn-save-main:hover { background: #16a34a; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ScanVuông — Document Corner Detection Human Reviewer</h1>
+    <div style="display:flex; gap:12px; align-items:center;">
+      <span class="badge" id="progressBadge">0 / 25 reviewed</span>
+      <button class="btn-nav btn-save-main" onclick="saveReviewsToServer()">Lưu Kết Quả</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar"></div>
+
+    <!-- Main Viewer -->
+    <div class="viewer-area">
+      <div class="layer-panel" id="layerPanel">
+        <div class="layer-title">Lớp Polygon</div>
+      </div>
+      <div class="canvas-box">
+        <canvas id="mainCanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Rating Panel -->
+    <div class="eval-area">
+      <div class="card">
+        <div class="card-header">Đánh Giá Từng Detector</div>
+        <div id="detectorList"></div>
+      </div>
+
+      <div class="card">
+        <div class="nav-bar">
+          <button class="btn-nav" onclick="prevImage()">← Trước</button>
+          <button class="btn-nav" style="background:#2563eb;" onclick="nextImage()">Tiếp →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let manifest = [];
+    let currentIndex = 0;
+    let reviews = {};
+
+    // By default, only CURRENT and SCANIC_ML are activated
+    let activeLayers = {
+      CURRENT: true,
+      SCANIC_ML: true,
+      QUADSCAN: false,
+      HYBRID_SCANIC: false
+    };
+
+    const COLORS = {
+      CURRENT: '#3b82f6',       // Vivid Blue
+      SCANIC_ML: '#22c55e',     // Bright Green
+      QUADSCAN: '#f97316',      // Orange
+      HYBRID_SCANIC: '#06b6d4'  // Cyan
+    };
+
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d');
+    let currentImg = new Image();
+
+    async function init() {
+      const mRes = await fetch('/api/manifest');
+      manifest = await mRes.json();
+
+      try {
+        const rRes = await fetch('/api/reviews');
+        if (rRes.ok) reviews = await rRes.json();
+      } catch (e) { reviews = {}; }
+
+      setupLayers();
+      renderSidebar();
+      loadImageIndex(0);
+    }
+
+    function setupLayers() {
+      const panel = document.getElementById('layerPanel');
+      Object.keys(activeLayers).forEach(name => {
+        const row = document.createElement('label');
+        row.className = 'layer-row';
+        row.innerHTML = `
+          <input type="checkbox" ${activeLayers[name] ? 'checked' : ''} onchange="toggleLayer('${name}', this.checked)">
+          <span class="color-dot" style="background:${COLORS[name]}"></span>
+          <span>${name}</span>
+        `;
+        panel.appendChild(row);
+      });
+    }
+
+    function toggleLayer(name, isChecked) {
+      activeLayers[name] = isChecked;
+      drawCanvas();
+    }
+
+    function renderSidebar() {
+      const sb = document.getElementById('sidebar');
+      sb.innerHTML = '';
+      manifest.forEach((item, idx) => {
+        const isDone = reviews[item.id] && reviews[item.id].CURRENT && reviews[item.id].SCANIC_ML;
+        const div = document.createElement('div');
+        div.className = `img-item ${idx === currentIndex ? 'active' : ''}`;
+        div.onclick = () => loadImageIndex(idx);
+        div.innerHTML = `
+          <img src="/previews/${item.thumb}" loading="lazy">
+          <div class="img-meta">
+            <div class="img-title">#${item.id} — ${item.filename}</div>
+            <div class="img-sub">${item.width}x${item.height}</div>
+          </div>
+          ${isDone ? '<span class="status-check">✓</span>' : ''}
+        `;
+        sb.appendChild(div);
+      });
+      updateProgress();
+    }
+
+    function updateProgress() {
+      let count = 0;
+      manifest.forEach(item => {
+        if (reviews[item.id] && reviews[item.id].CURRENT && reviews[item.id].SCANIC_ML) count++;
+      });
+      document.getElementById('progressBadge').textContent = `${count} / ${manifest.length} reviewed`;
+    }
+
+    function loadImageIndex(idx) {
+      currentIndex = idx;
+      document.querySelectorAll('.img-item').forEach((el, i) => {
+        el.classList.toggle('active', i === idx);
+      });
+
+      const item = manifest[idx];
+      currentImg = new Image();
+      currentImg.onload = () => {
+        canvas.width = currentImg.naturalWidth;
+        canvas.height = currentImg.naturalHeight;
+        drawCanvas();
+      };
+      currentImg.src = `/previews/${item.thumb}`;
+
+      renderRatings(item);
+    }
+
+    function drawCanvas() {
+      if (!currentImg.complete) return;
+      const w = canvas.width, h = canvas.height;
+      ctx.drawImage(currentImg, 0, 0, w, h);
+
+      const item = manifest[currentIndex];
+      const dets = item.detections;
+
+      Object.keys(activeLayers).forEach(name => {
+        if (!activeLayers[name]) return;
+        const det = dets[name];
+        if (!det || !det.corners || det.corners.length !== 4) return;
+
+        const color = COLORS[name];
+        const pts = det.corners.map(p => ({ x: p.x * w, y: p.y * h }));
+
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(3, Math.round(w / 300));
+        ctx.fillStyle = color + '20';
+
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.fill();
+
+        // Corners
+        const r = Math.max(6, Math.round(w / 160));
+        pts.forEach(p => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        });
+        ctx.restore();
+      });
+    }
+
+    function renderRatings(item) {
+      const container = document.getElementById('detectorList');
+      container.innerHTML = '';
+
+      if (!reviews[item.id]) reviews[item.id] = {};
+      const curReviews = reviews[item.id];
+
+      ['CURRENT', 'SCANIC_ML', 'QUADSCAN', 'HYBRID_SCANIC'].forEach(detName => {
+        const val = curReviews[detName] || '';
+        const block = document.createElement('div');
+        block.className = 'det-block';
+        block.innerHTML = `
+          <div class="det-name" style="color:${COLORS[detName]}">
+            <span class="color-dot" style="background:${COLORS[detName]}"></span>
+            ${detName}
+          </div>
+          <div class="btn-row">
+            <button class="btn-rating ${val === 'AUTO_OK' ? 'active-AUTO_OK' : ''}" onclick="rate('${detName}', 'AUTO_OK')">AUTO_OK</button>
+            <button class="btn-rating ${val === 'MINOR_ADJUST' ? 'active-MINOR_ADJUST' : ''}" onclick="rate('${detName}', 'MINOR_ADJUST')">MINOR</button>
+            <button class="btn-rating ${val === 'WRONG' ? 'active-WRONG' : ''}" onclick="rate('${detName}', 'WRONG')">WRONG</button>
+            <button class="btn-rating ${val === 'NO_DETECTION' ? 'active-NO_DETECTION' : ''}" onclick="rate('${detName}', 'NO_DETECTION')">NO_DET</button>
+          </div>
+        `;
+        container.appendChild(block);
+      });
+    }
+
+    function rate(detName, verdict) {
+      const item = manifest[currentIndex];
+      if (!reviews[item.id]) reviews[item.id] = {};
+      reviews[item.id][detName] = verdict;
+      renderRatings(item);
+      renderSidebar();
+    }
+
+    function nextImage() {
+      if (currentIndex < manifest.length - 1) loadImageIndex(currentIndex + 1);
+    }
+
+    function prevImage() {
+      if (currentIndex > 0) loadImageIndex(currentIndex - 1);
+    }
+
+    async function saveReviewsToServer() {
+      try {
+        const res = await fetch('/api/save_reviews', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(reviews)
+        });
+        if (res.ok) {
+          alert('Đã lưu kết quả review thành công vào review_results.json!');
+        } else {
+          alert('Lỗi lưu review');
+        }
+      } catch (e) {
+        alert('Lỗi kết nối: ' + e.message);
+      }
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight') nextImage();
+      if (e.key === 'ArrowLeft') prevImage();
+    });
+
+    window.onload = init;
+  </script>
+</body>
+</html>
