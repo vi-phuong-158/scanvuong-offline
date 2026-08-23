@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ScanVuông — Pilot Capture & Annotation Assistant (100% Offline)</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-border: #334155;
+    --text: #f8fafc;
+    --text-muted: #94a3b8;
+    --primary: #38bdf8;
+    --success: #4ade80;
+    --warning: #facc15;
+    --danger: #f87171;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--panel-border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  h1 { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .badge { background: #0284c7; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 999px; }
+  .top-controls { display: flex; gap: 8px; align-items: center; }
+  button, .file-label {
+    background: #334155;
+    color: var(--text);
+    border: 1px solid #475569;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  button:hover, .file-label:hover { background: #475569; }
+  button.primary { background: #0284c7; border-color: #38bdf8; }
+  button.primary:hover { background: #0369a1; }
+  button.success { background: #065f46; border-color: #34d399; color: #fff; }
+  button.success:hover { background: #047857; }
+  input[type="file"] { display: none; }
+  
+  main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* Left Panel: Checklist */
+  #left-panel {
+    width: 290px;
+    background: var(--panel);
+    border-right: 1px solid var(--panel-border);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+  }
+
+  /* Center: Canvas */
+  #canvas-container {
+    flex: 1;
+    position: relative;
+    background: #090d16;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    user-select: none;
+  }
+  canvas {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    cursor: crosshair;
+  }
+
+  /* Right Panel: Controls */
+  #right-panel {
+    width: 340px;
+    background: var(--panel);
+    border-left: 1px solid var(--panel-border);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+  }
+
+  .section-title { font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; }
+  .cat-item {
+    background: #0f172a;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    cursor: pointer;
+  }
+  .cat-item.active { border-color: var(--primary); background: #082f49; }
+  .cat-header { display: flex; justify-content: space-between; font-weight: 600; }
+  .cat-desc { font-size: 11px; color: var(--text-muted); line-height: 1.3; }
+  .cat-count { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: #334155; }
+  .cat-count.met { background: #064e3b; color: #34d399; }
+
+  .overall-progress {
+    background: #0f172a;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+  }
+  .progress-bar-bg { background: #334155; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .progress-bar-fill { background: #38bdf8; height: 100%; width: 0%; transition: width 0.3s; }
+
+  .corner-card {
+    background: #0f172a;
+    border: 1px solid var(--panel-border);
+    padding: 6px 10px;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .corner-card.active { border-color: var(--primary); background: #082f49; }
+  .corner-coords { font-family: monospace; color: var(--primary); font-size: 11px; }
+
+  input[type="text"], select {
+    background: #0f172a;
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    width: 100%;
+  }
+
+  .instructions {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    background: #0f172a;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px dashed var(--panel-border);
+  }
+  .instructions kbd {
+    background: #334155;
+    color: #fff;
+    padding: 1px 3px;
+    border-radius: 3px;
+    font-size: 9px;
+  }
+  .status-box {
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .status-valid { background: #064e3b; color: #34d399; border: 1px solid #059669; }
+  .status-unconfirmed { background: #78350f; color: #fbbf24; border: 1px solid #d97706; }
+  .status-invalid { background: #7f1d1d; color: #f87171; border: 1px solid #dc2626; }
+
+  /* Modal Dialog */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.75);
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .modal-box {
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    padding: 20px;
+    width: 90%;
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .modal-title { font-size: 15px; font-weight: 700; color: #f87171; }
+  .modal-list { background: #0f172a; border: 1px solid #334155; padding: 10px; border-radius: 6px; font-size: 12px; max-height: 200px; overflow-y: auto; list-style-type: disc; margin-left: 20px; }
+  .modal-list li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>
+    <span>ScanVuông Pilot Capture Assistant</span>
+    <span class="badge">100% Offline • 0 Network Upload • Local Filesystem Only</span>
+  </h1>
+  <div class="top-controls">
+    <label class="file-label" for="file-input">📷 Thêm ảnh (Batch)</label>
+    <input type="file" id="file-input" accept="image/*" multiple>
+    <button id="btn-export-bundle" class="primary">💾 Xuất Gói Pilot (Official)</button>
+    <button id="btn-export-partial" style="font-size: 11px; opacity: 0.8;">⚠️ Xuất Nháp</button>
+  </div>
+</header>
+
+<main>
+  <!-- Left Panel: Category Checklist -->
+  <aside id="left-panel">
+    <div class="overall-progress">
+      <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600;">
+        <span>Tiến độ Xác Nhận</span>
+        <span id="overall-counter">0 / 20 ảnh</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div id="progress-bar" class="progress-bar-fill"></div>
+      </div>
+    </div>
+
+    <div class="section-title">Danh mục yêu cầu (20 ảnh)</div>
+    
+    <div class="cat-item" data-cat="RW01_WHITE_ON_WHITE">
+      <div class="cat-header">
+        <span>1. RW01 White on White</span>
+        <span class="cat-count" id="count-RW01_WHITE_ON_WHITE">0/5</span>
+      </div>
+      <div class="cat-desc">Giấy trắng trên bàn trắng/gạch sáng, tương phản mép thấp.</div>
+    </div>
+
+    <div class="cat-item" data-cat="RW02_PARTIAL_OCCLUSION">
+      <div class="cat-header">
+        <span>2. RW02 Partial Occlusion</span>
+        <span class="cat-count" id="count-RW02_PARTIAL_OCCLUSION">0/3</span>
+      </div>
+      <div class="cat-desc">Ngón tay cầm góc/mép, kẹp giấy hoặc sticky note che góc.</div>
+    </div>
+
+    <div class="cat-item" data-cat="RW03_STRONG_PERSPECTIVE">
+      <div class="cat-header">
+        <span>3. RW03 Strong Perspective</span>
+        <span class="cat-count" id="count-RW03_STRONG_PERSPECTIVE">0/4</span>
+      </div>
+      <div class="cat-desc">Chụp nghiêng góc hẹp (&lt;35°), chụp chéo từ các phía.</div>
+    </div>
+
+    <div class="cat-item" data-cat="RW04_SHADOW_UNEVEN_LIGHT">
+      <div class="cat-header">
+        <span>4. RW04 Shadow & Light</span>
+        <span class="cat-count" id="count-RW04_SHADOW_UNEVEN_LIGHT">0/3</span>
+      </div>
+      <div class="cat-desc">Bóng đổ ngang qua văn bản, ánh sáng đèn bàn lệch một bên.</div>
+    </div>
+
+    <div class="cat-item" data-cat="RW05_NEAR_FRAME">
+      <div class="cat-header">
+        <span>5. RW05 Near Frame</span>
+        <span class="cat-count" id="count-RW05_NEAR_FRAME">0/2</span>
+      </div>
+      <div class="cat-desc">Tài liệu đặt sát mép khung hình (&gt;92% diện tích ảnh).</div>
+    </div>
+
+    <div class="cat-item" data-cat="NEG_DOCUMENT_LIKE">
+      <div class="cat-header">
+        <span>6. NEG Document-Like</span>
+        <span class="cat-count" id="count-NEG_DOCUMENT_LIKE">0/3</span>
+      </div>
+      <div class="cat-desc">Laptop mở, màn hình tablet, hộp carton, khung tranh chữ nhật.</div>
+    </div>
+  </aside>
+
+  <!-- Center Canvas -->
+  <div id="canvas-container">
+    <canvas id="view-canvas"></canvas>
+  </div>
+
+  <!-- Right Panel: Annotation Controls -->
+  <aside id="right-panel">
+    <div style="display: flex; justify-content: space-between; align-items: center; background: #0f172a; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--panel-border);">
+      <button id="btn-prev" style="padding: 3px 8px;">◀ Trước</button>
+      <span id="nav-text" style="font-size: 12px; font-weight: 600;">Ảnh 0 / 0</span>
+      <button id="btn-next" style="padding: 3px 8px;">Sau ▶</button>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <label for="input-filename" style="font-size: 11px; color: var(--text-muted);">Tên file & SHA-256:</label>
+      <input type="text" id="input-filename" readonly>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <label for="select-cat-edit" style="font-size: 11px; color: var(--text-muted);">Gán danh mục (Category):</label>
+      <select id="select-cat-edit">
+        <option value="RW01_WHITE_ON_WHITE">RW01 — White on White (Giấy trắng trên nền sáng)</option>
+        <option value="RW02_PARTIAL_OCCLUSION">RW02 — Partial Occlusion (Ngón tay/kẹp che góc)</option>
+        <option value="RW03_STRONG_PERSPECTIVE">RW03 — Strong Perspective (Chụp nghiêng góc hẹp)</option>
+        <option value="RW04_SHADOW_UNEVEN_LIGHT">RW04 — Shadow & Light (Bóng đổ / ánh sáng loang)</option>
+        <option value="RW05_NEAR_FRAME">RW05 — Near Frame (Sát 4 mép camera)</option>
+        <option value="NEG_DOCUMENT_LIKE">NEG-B — Document-Like Object (Laptop/Tablet/Hộp)</option>
+      </select>
+    </div>
+
+    <div id="status-box" class="status-box status-unconfirmed">⚠ Chưa xác nhận 4 góc</div>
+
+    <button id="btn-confirm-annotation" class="success" style="width: 100%; justify-content: center; padding: 8px;">
+      ✓ Xác nhận 4 góc ảnh này
+    </button>
+
+    <div class="section-title">4 Góc Ground Truth (TL → TR → BR → BL)</div>
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <div class="corner-card active" data-index="0" id="card-0">
+        <span style="color: #38bdf8; font-weight: 600;">1. TL (Top-Left)</span>
+        <span class="corner-coords" id="coords-0">(0.00, 0.00)</span>
+      </div>
+      <div class="corner-card" data-index="1" id="card-1">
+        <span style="color: #4ade80; font-weight: 600;">2. TR (Top-Right)</span>
+        <span class="corner-coords" id="coords-1">(0.00, 0.00)</span>
+      </div>
+      <div class="corner-card" data-index="2" id="card-2">
+        <span style="color: #facc15; font-weight: 600;">3. BR (Bottom-Right)</span>
+        <span class="corner-coords" id="coords-2">(0.00, 0.00)</span>
+      </div>
+      <div class="corner-card" data-index="3" id="card-3">
+        <span style="color: #f87171; font-weight: 600;">4. BL (Bottom-Left)</span>
+        <span class="corner-coords" id="coords-3">(0.00, 0.00)</span>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 6px; margin-top: 2px;">
+      <button id="btn-reset-corners" style="flex: 1;">🔄 Mặc định</button>
+      <button id="btn-delete-img" style="background: #7f1d1d; border-color: #dc2626; color: #fff;">🗑 Xoá ảnh</button>
+    </div>
+
+    <div class="instructions">
+      <strong>Phím tắt:</strong><br>
+      • <kbd>1</kbd>, <kbd>2</kbd>, <kbd>3</kbd>, <kbd>4</kbd>: Chọn góc active.<br>
+      • <kbd>Mũi tên</kbd>: Vi chỉnh góc 1px (Shift: 5px).<br>
+      • <kbd>Enter</kbd>: Xác nhận 4 góc & sang ảnh sau.<br>
+      • <kbd>[</kbd> / <kbd>]</kbd>: Ảnh trước / sau.
+    </div>
+  </aside>
+</main>
+
+<!-- Preflight Error Modal -->
+<div id="modal-overlay" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title">⛔ Không Thể Xuất Pilot Manifest</div>
+    <p style="font-size: 13px; color: var(--text-muted);">Gói dữ liệu chưa đạt điều kiện nghiệm thu độc lập. Vui lòng khắc phục các điểm sau:</p>
+    <ul id="modal-error-list" class="modal-list"></ul>
+    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
+      <button id="btn-close-modal" class="primary">Đã hiểu</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const TARGETS = {
+    'RW01_WHITE_ON_WHITE': 5,
+    'RW02_PARTIAL_OCCLUSION': 3,
+    'RW03_STRONG_PERSPECTIVE': 4,
+    'RW04_SHADOW_UNEVEN_LIGHT': 3,
+    'RW05_NEAR_FRAME': 2,
+    'NEG_DOCUMENT_LIKE': 3
+  };
+
+  let items = [];
+  let currentIndex = -1;
+  let activeCorner = 0;
+  let isDragging = false;
+  let dragIndex = -1;
+
+  const canvas = document.getElementById('view-canvas');
+  const ctx = canvas.getContext('2d');
+
+  function getDefaultCorners() {
+    return [
+      { x: 0.15, y: 0.15 },
+      { x: 0.85, y: 0.15 },
+      { x: 0.85, y: 0.85 },
+      { x: 0.15, y: 0.85 }
+    ];
+  }
+
+  // Strict Geometry Validator
+  function validateStrictGeometry(pts) {
+    if (!pts || !Array.isArray(pts) || pts.length !== 4) {
+      return { valid: false, reason: 'Phải có đúng 4 góc' };
+    }
+    for (let i = 0; i < 4; i++) {
+      const p = pts[i];
+      if (!p || typeof p.x !== 'number' || typeof p.y !== 'number' || isNaN(p.x) || isNaN(p.y) || !isFinite(p.x) || !isFinite(p.y)) {
+        return { valid: false, reason: `Góc ${i} toạ độ không hợp lệ` };
+      }
+      if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) {
+        return { valid: false, reason: `Góc ${i} (${p.x.toFixed(4)}, ${p.y.toFixed(4)}) ngoài phạm vi [0.0, 1.0]` };
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      for (let j = i + 1; j < 4; j++) {
+        const dist = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y);
+        if (dist < 0.01) return { valid: false, reason: `Góc ${i} và ${j} quá gần (< 0.01)` };
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      const next = (i + 1) % 4;
+      const edgeLen = Math.hypot(pts[next].x - pts[i].x, pts[next].y - pts[i].y);
+      if (edgeLen < 0.01) return { valid: false, reason: `Cạnh ${i}->${next} suy biến (< 0.01)` };
+    }
+    let area = 0;
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+    }
+    area = Math.abs(area) / 2;
+    if (area < 0.01) return { valid: false, reason: `Diện tích quá nhỏ (${(area*100).toFixed(1)}% < 1%)` };
+    if (area > 0.99) return { valid: false, reason: `Diện tích quá lớn (${(area*100).toFixed(1)}% > 99%)` };
+
+    let sign = 0;
+    for (let i = 0; i < 4; i++) {
+      const p0 = pts[i];
+      const p1 = pts[(i + 1) % 4];
+      const p2 = pts[(i + 2) % 4];
+      const cp = (p1.x - p0.x) * (p2.y - p1.y) - (p1.y - p0.y) * (p2.x - p1.x);
+      if (Math.abs(cp) < 1e-7) return { valid: false, reason: `3 điểm thẳng hàng tại cạnh ${i}` };
+      const curSign = cp > 0 ? 1 : -1;
+      if (sign === 0) sign = curSign;
+      else if (sign !== curSign) return { valid: false, reason: 'Đa giác lõm hoặc tự cắt chéo' };
+    }
+    return { valid: true };
+  }
+
+  function updateChecklist() {
+    const counts = {};
+    for (const k of Object.keys(TARGETS)) counts[k] = 0;
+
+    let confirmedCount = 0;
+    for (const it of items) {
+      if (it.contains_document && it.annotation_confirmed) {
+        if (counts[it.category] !== undefined) counts[it.category]++;
+        confirmedCount++;
+      } else if (!it.contains_document) {
+        if (counts[it.category] !== undefined) counts[it.category]++;
+        confirmedCount++;
+      }
+    }
+
+    for (const [cat, target] of Object.entries(TARGETS)) {
+      const c = counts[cat] || 0;
+      const el = document.getElementById(`count-${cat}`);
+      if (el) {
+        el.textContent = `${c}/${target}`;
+        el.className = c >= target ? 'cat-count met' : 'cat-count';
+      }
+    }
+
+    document.getElementById('overall-counter').textContent = `${confirmedCount} / 20 xác nhận`;
+    const pct = Math.min(100, Math.round((confirmedCount / 20) * 100));
+    document.getElementById('progress-bar').style.width = `${pct}%`;
+  }
+
+  function updateCards() {
+    if (currentIndex === -1 || !items[currentIndex]) return;
+    const cur = items[currentIndex];
+    const corners = cur.corners || getDefaultCorners();
+
+    for (let i = 0; i < 4; i++) {
+      const card = document.getElementById(`card-${i}`);
+      const coords = document.getElementById(`coords-${i}`);
+      card.classList.toggle('active', i === activeCorner);
+      coords.textContent = `(${corners[i].x.toFixed(4)}, ${corners[i].y.toFixed(4)})`;
+    }
+
+    const valBox = document.getElementById('status-box');
+    const confirmBtn = document.getElementById('btn-confirm-annotation');
+
+    if (!cur.contains_document) {
+      valBox.className = 'status-box status-valid';
+      valBox.textContent = '✓ Nhãn Negative (Không chứa tài liệu)';
+      confirmBtn.style.display = 'none';
+    } else {
+      confirmBtn.style.display = 'inline-flex';
+      const geomVal = validateStrictGeometry(corners);
+      if (!geomVal.valid) {
+        valBox.className = 'status-box status-invalid';
+        valBox.textContent = `✗ ${geomVal.reason}`;
+        confirmBtn.disabled = true;
+      } else if (!cur.annotation_confirmed) {
+        valBox.className = 'status-box status-unconfirmed';
+        valBox.textContent = '⚠ Chưa xác nhận 4 góc (Vui lòng bấm nút dưới)';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '✓ Xác nhận 4 góc ảnh này';
+        confirmBtn.className = 'primary';
+      } else {
+        valBox.className = 'status-box status-valid';
+        valBox.textContent = '✓ Đã xác nhận 4 góc (Human-Confirmed)';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '✓ Đã xác nhận 4 góc (Bấm để xác nhận lại)';
+        confirmBtn.className = 'success';
+      }
+    }
+  }
+
+  function render() {
+    if (currentIndex === -1 || !items[currentIndex]) {
+      canvas.width = 800;
+      canvas.height = 600;
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, 800, 600);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Thêm ảnh bằng nút "📷 Thêm ảnh" hoặc kéo thả ảnh vào đây', 400, 300);
+      return;
+    }
+
+    const item = items[currentIndex];
+    canvas.width = item.img.width;
+    canvas.height = item.img.height;
+    ctx.drawImage(item.img, 0, 0);
+
+    if (!item.contains_document) return;
+
+    const corners = item.corners;
+    ctx.lineWidth = Math.max(2, Math.round(canvas.width / 400));
+    ctx.strokeStyle = item.annotation_confirmed ? '#4ade80' : '#38bdf8';
+    ctx.fillStyle = item.annotation_confirmed ? 'rgba(74, 222, 128, 0.15)' : 'rgba(56, 189, 248, 0.15)';
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x * canvas.width, corners[0].y * canvas.height);
+    for (let i = 1; i < 4; i++) {
+      ctx.lineTo(corners[i].x * canvas.width, corners[i].y * canvas.height);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Handles
+    const colors = ['#38bdf8', '#4ade80', '#facc15', '#f87171'];
+    const radius = Math.max(8, Math.round(canvas.width / 120));
+
+    for (let i = 0; i < 4; i++) {
+      const px = corners[i].x * canvas.width;
+      const py = corners[i].y * canvas.height;
+
+      ctx.beginPath();
+      ctx.arc(px, py, radius, 0, Math.PI * 2);
+      ctx.fillStyle = colors[i];
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(2, Math.round(radius / 4));
+      ctx.stroke();
+
+      if (i === activeCorner) {
+        ctx.beginPath();
+        ctx.arc(px, py, radius + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  }
+
+  function loadIndex(idx) {
+    if (idx < 0 || idx >= items.length) return;
+    currentIndex = idx;
+    const it = items[currentIndex];
+    document.getElementById('input-filename').value = `${it.filename} (${it.sha256.slice(0, 10)}...)`;
+    document.getElementById('select-cat-edit').value = it.category;
+    document.getElementById('nav-text').textContent = `Ảnh ${currentIndex + 1} / ${items.length}`;
+    updateCards();
+    render();
+  }
+
+  async function computeSha256(buffer) {
+    const hashBuf = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuf));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function ingestFiles(files) {
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue;
+      const arrayBuf = await file.arrayBuffer();
+      const sha256 = await computeSha256(arrayBuf);
+
+      // Check duplicate within batch
+      if (items.some(x => x.sha256 === sha256)) {
+        console.warn('Duplicate photo detected, skipping:', file.name);
+        continue;
+      }
+
+      let category = 'RW01_WHITE_ON_WHITE';
+      for (const cat of Object.keys(TARGETS)) {
+        if (file.name.includes(cat)) { category = cat; break; }
+      }
+      if (/doclike|laptop|tablet|box|screen/i.test(file.name)) category = 'NEG_DOCUMENT_LIKE';
+
+      const isDoc = category !== 'NEG_DOCUMENT_LIKE';
+
+      const img = new Image();
+      const dataUrl = URL.createObjectURL(file);
+      await new Promise(resolve => {
+        img.onload = resolve;
+        img.src = dataUrl;
+      });
+
+      items.push({
+        id: `PILOT_${file.name.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 24)}`,
+        filename: file.name,
+        sha256,
+        category,
+        contains_document: isDoc,
+        annotation_confirmed: !isDoc, // Negatives are confirmed by default
+        corners: isDoc ? getDefaultCorners() : null,
+        dimensions: { width: img.width, height: img.height },
+        img,
+        file
+      });
+    }
+
+    updateChecklist();
+    if (currentIndex === -1 && items.length > 0) loadIndex(0);
+    else updateCards();
+  }
+
+  document.getElementById('file-input').addEventListener('change', (e) => {
+    if (e.target.files.length > 0) ingestFiles(Array.from(e.target.files));
+  });
+
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer.files.length > 0) ingestFiles(Array.from(e.dataTransfer.files));
+  });
+
+  document.querySelectorAll('.cat-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const cat = el.dataset.cat;
+      if (currentIndex !== -1 && items[currentIndex]) {
+        items[currentIndex].category = cat;
+        items[currentIndex].contains_document = (cat !== 'NEG_DOCUMENT_LIKE');
+        items[currentIndex].annotation_confirmed = (cat === 'NEG_DOCUMENT_LIKE');
+        if (items[currentIndex].contains_document && !items[currentIndex].corners) {
+          items[currentIndex].corners = getDefaultCorners();
+        }
+        document.getElementById('select-cat-edit').value = cat;
+        updateChecklist();
+        updateCards();
+        render();
+      }
+    });
+  });
+
+  document.getElementById('select-cat-edit').addEventListener('change', (e) => {
+    if (currentIndex !== -1 && items[currentIndex]) {
+      const cat = e.target.value;
+      items[currentIndex].category = cat;
+      items[currentIndex].contains_document = (cat !== 'NEG_DOCUMENT_LIKE');
+      items[currentIndex].annotation_confirmed = (cat === 'NEG_DOCUMENT_LIKE');
+      if (items[currentIndex].contains_document && !items[currentIndex].corners) {
+        items[currentIndex].corners = getDefaultCorners();
+      }
+      updateChecklist();
+      updateCards();
+      render();
+    }
+  });
+
+  document.getElementById('btn-confirm-annotation').addEventListener('click', () => {
+    if (currentIndex !== -1 && items[currentIndex]) {
+      const cur = items[currentIndex];
+      if (cur.contains_document) {
+        const val = validateStrictGeometry(cur.corners);
+        if (!val.valid) {
+          alert(`Không thể xác nhận: ${val.reason}`);
+          return;
+        }
+        cur.annotation_confirmed = true;
+      }
+      updateChecklist();
+      updateCards();
+      render();
+      // Auto-advance to next photo
+      if (currentIndex < items.length - 1) {
+        loadIndex(currentIndex + 1);
+      }
+    }
+  });
+
+  document.getElementById('btn-prev').addEventListener('click', () => loadIndex(currentIndex - 1));
+  document.getElementById('btn-next').addEventListener('click', () => loadIndex(currentIndex + 1));
+
+  document.getElementById('btn-reset-corners').addEventListener('click', () => {
+    if (currentIndex !== -1 && items[currentIndex] && items[currentIndex].contains_document) {
+      items[currentIndex].corners = getDefaultCorners();
+      items[currentIndex].annotation_confirmed = false;
+      updateChecklist();
+      updateCards();
+      render();
+    }
+  });
+
+  document.getElementById('btn-delete-img').addEventListener('click', () => {
+    if (currentIndex !== -1 && items[currentIndex]) {
+      items.splice(currentIndex, 1);
+      updateChecklist();
+      if (items.length === 0) {
+        currentIndex = -1;
+        render();
+      } else {
+        loadIndex(Math.max(0, currentIndex - 1));
+      }
+    }
+  });
+
+  document.querySelectorAll('.corner-card').forEach(card => {
+    card.addEventListener('click', () => {
+      activeCorner = parseInt(card.dataset.index, 10);
+      updateCards();
+      render();
+    });
+  });
+
+  function getCanvasPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    };
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (currentIndex === -1 || !items[currentIndex] || !items[currentIndex].contains_document) return;
+    const pos = getCanvasPos(e);
+    const radius = Math.max(16, Math.round(canvas.width / 60));
+    const corners = items[currentIndex].corners;
+
+    dragIndex = -1;
+    for (let i = 0; i < 4; i++) {
+      const cx = corners[i].x * canvas.width;
+      const cy = corners[i].y * canvas.height;
+      if (Math.hypot(pos.x - cx, pos.y - cy) <= radius) {
+        dragIndex = i;
+        activeCorner = i;
+        isDragging = true;
+        items[currentIndex].annotation_confirmed = false;
+        updateCards();
+        render();
+        return;
+      }
+    }
+
+    corners[activeCorner] = {
+      x: Math.max(0, Math.min(1, Number((pos.x / canvas.width).toFixed(4)))),
+      y: Math.max(0, Math.min(1, Number((pos.y / canvas.height).toFixed(4))))
+    };
+    items[currentIndex].annotation_confirmed = false;
+    isDragging = true;
+    dragIndex = activeCorner;
+    activeCorner = (activeCorner + 1) % 4;
+    updateCards();
+    render();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging || dragIndex === -1 || currentIndex === -1 || !items[currentIndex].contains_document) return;
+    const pos = getCanvasPos(e);
+    items[currentIndex].corners[dragIndex] = {
+      x: Math.max(0, Math.min(1, Number((pos.x / canvas.width).toFixed(4)))),
+      y: Math.max(0, Math.min(1, Number((pos.y / canvas.height).toFixed(4))))
+    };
+    updateCards();
+    render();
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+    dragIndex = -1;
+  });
+
+  async function exportManifest(isOfficial = true) {
+    if (items.length === 0) {
+      alert('Chưa có ảnh nào để xuất!');
+      return;
+    }
+
+    const errors = [];
+    if (isOfficial) {
+      // 1. Quota Check
+      const counts = {};
+      for (const k of Object.keys(TARGETS)) counts[k] = 0;
+      for (const it of items) {
+        if (counts[it.category] !== undefined) counts[it.category]++;
+      }
+      for (const [cat, target] of Object.entries(TARGETS)) {
+        const c = counts[cat] || 0;
+        if (c < target) errors.push(`Danh mục ${cat}: thiếu ${target - c} ảnh (đạt ${c}/${target})`);
+      }
+
+      // 2. Unconfirmed & Geometry Check
+      for (const it of items) {
+        if (it.contains_document) {
+          if (!it.annotation_confirmed) {
+            errors.push(`Ảnh '${it.filename}': chưa xác nhận 4 góc (human-confirmation)`);
+          }
+          const geomVal = validateStrictGeometry(it.corners);
+          if (!geomVal.valid) {
+            errors.push(`Ảnh '${it.filename}': hình học không hợp lệ (${geomVal.reason})`);
+          }
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      const modal = document.getElementById('modal-overlay');
+      const list = document.getElementById('modal-error-list');
+      list.innerHTML = '';
+      for (const err of errors) {
+        const li = document.createElement('li');
+        li.textContent = err;
+        list.appendChild(li);
+      }
+      modal.style.display = 'flex';
+      return;
+    }
+
+    const manifest = {
+      timestamp: new Date().toISOString(),
+      provenance: 'CAMERA_REAL',
+      dataset: isOfficial ? 'REAL_WORLD_PILOT_V1' : 'REAL_WORLD_PILOT_PARTIAL',
+      is_official_evidence: isOfficial,
+      total_images: items.length,
+      cases: items.map(it => ({
+        id: it.id,
+        filename: it.filename,
+        sha256: it.sha256,
+        category: it.category,
+        contains_document: it.contains_document,
+        annotation_confirmed: it.annotation_confirmed === true,
+        annotation_method: it.annotation_confirmed ? 'HUMAN_CONFIRMED' : 'UNCONFIRMED',
+        dimensions: it.dimensions,
+        corners: it.contains_document ? it.corners.map(p => ({ x: Number(p.x.toFixed(4)), y: Number(p.y.toFixed(4)) })) : null
+      }))
+    };
+
+    const jsonStr = JSON.stringify(manifest, null, 2);
+
+    // Try File System Access API if available
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: isOfficial ? 'pilot_manifest.json' : 'pilot_manifest_partial.json',
+          types: [{
+            description: 'JSON Manifest',
+            accept: { 'application/json': ['.json'] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(jsonStr);
+        await writable.close();
+        alert('✓ Đã lưu pilot_manifest.json thành công vào thư mục bạn chọn!');
+        return;
+      } catch (err) {
+        if (err.name !== 'AbortError') console.warn('SaveFilePicker fallback:', err);
+      }
+    }
+
+    // Fallback normal download
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = isOfficial ? 'pilot_manifest.json' : 'pilot_manifest_partial.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    alert('ℹ Manifest đã tải xuống. Nếu file nằm trong Downloads, bạn có thể chạy runner với cờ --manifest "duong/dan/pilot_manifest.json" hoặc chuyển file vào thư mục ảnh.');
+  }
+
+  document.getElementById('btn-export-bundle').addEventListener('click', () => exportManifest(true));
+  document.getElementById('btn-export-partial').addEventListener('click', () => exportManifest(false));
+  document.getElementById('btn-close-modal').addEventListener('click', () => {
+    document.getElementById('modal-overlay').style.display = 'none';
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (['1', '2', '3', '4'].includes(e.key)) {
+      activeCorner = parseInt(e.key, 10) - 1;
+      updateCards();
+      render();
+    } else if (e.key === 'Enter') {
+      document.getElementById('btn-confirm-annotation').click();
+    } else if (e.key === '[') {
+      loadIndex(currentIndex - 1);
+    } else if (e.key === ']') {
+      loadIndex(currentIndex + 1);
+    } else if (e.key.toLowerCase() === 'r') {
+      document.getElementById('btn-reset-corners').click();
+    } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && currentIndex !== -1 && items[currentIndex]?.contains_document) {
+      e.preventDefault();
+      const step = e.shiftKey ? 0.01 : 0.002;
+      const c = items[currentIndex].corners[activeCorner];
+      if (e.key === 'ArrowUp') c.y = Math.max(0, c.y - step);
+      if (e.key === 'ArrowDown') c.y = Math.min(1, c.y + step);
+      if (e.key === 'ArrowLeft') c.x = Math.max(0, c.x - step);
+      if (e.key === 'ArrowRight') c.x = Math.min(1, c.x + step);
+      c.x = Number(c.x.toFixed(4));
+      c.y = Number(c.y.toFixed(4));
+      items[currentIndex].annotation_confirmed = false;
+      updateCards();
+      render();
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>
