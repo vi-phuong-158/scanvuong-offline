@@ -16,7 +16,15 @@
     clearBtn: $('#clearBtn'), fileName: $('#fileName'), pageSize: $('#pageSize'), quality: $('#quality'),
     marginToggle: $('#marginToggle'), exportBtn: $('#exportBtn'), exportProgress: $('#exportProgress'),
     progressBar: $('#progressBar'), progressLabel: $('#progressLabel'), exportSummary: $('#exportSummary'),
-    exportNotice: $('#exportNotice'), toast: $('#toast'), installBtn: $('#installBtn'), offlineBadge: $('#offlineBadge')
+    exportNotice: $('#exportNotice'), toast: $('#toast'), installBtn: $('#installBtn'), offlineBadge: $('#offlineBadge'),
+    // Mode select + Scan ID (front/back → single A4 PDF)
+    modeSelect: $('#modeSelect'), modeDocBtn: $('#modeDocBtn'), modeIdBtn: $('#modeIdBtn'), switchModeBtn: $('#switchModeBtn'),
+    idWorkspace: $('#idWorkspace'), idStepBadge: $('#idStepBadge'), idStepHint: $('#idStepHint'),
+    idChooseBtn: $('#idChooseBtn'), idCameraBtn: $('#idCameraBtn'), idFileInput: $('#idFileInput'), idCameraInput: $('#idCameraInput'),
+    idBackStepBtn: $('#idBackStepBtn'), idConfirmBtn: $('#idConfirmBtn'), idEditorSlot: $('#idEditorSlot'),
+    idPreviewSection: $('#idPreviewSection'), idPreviewCanvas: $('#idPreviewCanvas'),
+    idEditFrontBtn: $('#idEditFrontBtn'), idEditBackBtn: $('#idEditBackBtn'), idExportBtn: $('#idExportBtn'),
+    idExportProgress: $('#idExportProgress'), idProgressBar: $('#idProgressBar'), idProgressLabel: $('#idProgressLabel'), idExportNotice: $('#idExportNotice')
   };
 
   const state = {
@@ -26,7 +34,13 @@
     deferredInstallPrompt: null,
     renderToken: 0,
     dragId: null,
-    preview: { image: null, mapping: null, pageId: null, dragCorner: -1, enhancedCanvas: null, enhancedKey: '' }
+    preview: { image: null, mapping: null, pageId: null, dragCorner: -1, enhancedCanvas: null, enhancedKey: '' },
+    // Which top-level workflow is active: null (mode not chosen yet, showing
+    // #modeSelect) | 'document' (existing multi-page flow) | 'id' (Scan ID:
+    // front/back → single A4 PDF). Independent of state.pages so the two
+    // workflows can never mix data — see docs/brain/03-decisions.md.
+    mode: null,
+    idScan: { step: 'front', front: null, back: null }
   };
 
   const DEFAULT_CORNERS = [
@@ -79,7 +93,9 @@
     els.processingText.textContent = text;
     els.processingOverlay.classList.toggle('hidden', !busy);
     [els.detectBtn, els.resetCropBtn, els.rotateBtn, els.moveUpBtn, els.moveDownBtn, els.deleteBtn, els.autoAllBtn, els.exportBtn, els.clearBtn,
-     els.fileName, els.pageSize, els.quality, els.marginToggle]
+     els.fileName, els.pageSize, els.quality, els.marginToggle,
+     els.switchModeBtn, els.idChooseBtn, els.idCameraBtn, els.idConfirmBtn, els.idBackStepBtn,
+     els.idEditFrontBtn, els.idEditBackBtn, els.idExportBtn]
       .forEach(el => { if (el) el.disabled = busy; });
     $$('.filter-chip').forEach(el => { el.disabled = busy; });
   }
@@ -90,6 +106,20 @@
 
   function getPageIndex(id) {
     return state.pages.findIndex(p => p.id === id);
+  }
+
+  // The shared editor (canvas, corner drag, detect/reset/rotate, filter chips)
+  // is reused as-is by both workflows — it just needs to know which
+  // page-shaped object is "active" right now. Document mode's active page is
+  // the selected thumbnail; Scan ID's is whichever side (front/back) the
+  // wizard is currently on (null during the A4 preview step, which has no
+  // editable page). See docs/brain/01-architecture.md.
+  function activePage() {
+    if (state.mode === 'id') {
+      const s = state.idScan;
+      return s.step === 'front' ? s.front : (s.step === 'back' ? s.back : null);
+    }
+    return selectedPage();
   }
 
   function updateShell() {
@@ -223,6 +253,7 @@
     try {
       const rotated = drawRotatedToCanvas(source, page.rotation, 560);
       const detection = detectDocument(rotated);
+      if (state.mode === 'id') applyIdAspectHint(detection, rotated.width, rotated.height);
       page.corners = detection.corners;
       page.confidence = detection.confidence;
       page.width = rotated.width;
@@ -231,6 +262,24 @@
       source.close?.();
     }
     if (rerender) { renderThumbs(); renderSelected(); updateSummaryOnly(); }
+  }
+
+  // ID-1 card ratio (85.60×53.98mm ≈ 1.586:1) used only as a review hint, not
+  // to reshape the crop: a quad whose aspect is very far from a card's is
+  // more likely a bad detection than an odd document, so its confidence gets
+  // capped at the review threshold. This only ever LOWERS confidence — it
+  // never raises it and never touches the shared detectDocument()/
+  // orderCorners() math — so document mode is completely unaffected.
+  const ID_CARD_ASPECT = 85.60 / 53.98;
+  function applyIdAspectHint(detection, w, h) {
+    const c = detection.corners.map(p => ({ x: p.x * w, y: p.y * h }));
+    const quadW = (dist(c[0], c[1]) + dist(c[3], c[2])) / 2;
+    const quadH = (dist(c[0], c[3]) + dist(c[1], c[2])) / 2;
+    if (quadW <= 1 || quadH <= 1) return detection;
+    const ratio = Math.max(quadW, quadH) / Math.min(quadW, quadH);
+    const deviation = Math.abs(ratio - ID_CARD_ASPECT) / ID_CARD_ASPECT;
+    if (deviation > 0.35) detection.confidence = Math.min(detection.confidence, 0.5);
+    return detection;
   }
 
   function detectDocument(canvas) {
@@ -409,7 +458,7 @@
   }
 
   async function renderSelected() {
-    const page = selectedPage();
+    const page = activePage();
     if (!page) {
       state.preview.image?.close?.();
       state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
@@ -428,7 +477,7 @@
   }
 
   function renderConfidenceHint() {
-    const page = selectedPage();
+    const page = activePage();
     if (!page) return;
     const warn = page.confidence < .58;
     els.confidenceDot.classList.toggle('warn', warn);
@@ -451,7 +500,7 @@
   }
 
   function drawEditor() {
-    const page = selectedPage(), source = state.preview.image;
+    const page = activePage(), source = state.preview.image;
     if (!page || !source || state.preview.pageId !== page.id) return;
     const stage = els.editorCanvas.parentElement;
     const cssW = Math.max(280, stage.clientWidth), cssH = Math.max(320, stage.clientHeight);
@@ -500,7 +549,7 @@
     if(best>=0){state.preview.dragCorner=best;els.editorCanvas.setPointerCapture(e.pointerId);drawEditor();}
   });
   els.editorCanvas.addEventListener('pointermove', (e) => {
-    const idx=state.preview.dragCorner,map=state.preview.mapping,page=selectedPage(); if(idx<0||!map||!page)return;
+    const idx=state.preview.dragCorner,map=state.preview.mapping,page=activePage(); if(idx<0||!map||!page)return;
     // Something else (e.g. an in-flight detect/export) can flip state.busy
     // true after the drag already started via pointerdown's guard — bail out
     // of the drag immediately rather than keep writing to page.corners.
@@ -514,7 +563,7 @@
     if(state.busy)return;
     // Re-label TL/TR/BR/BL only once the drag ends. Re-ordering on every
     // pointermove can move the handle out from under the finger mid-drag.
-    const page=selectedPage(); if(page)page.corners=orderCorners(page.corners);
+    const page=activePage(); if(page)page.corners=orderCorners(page.corners);
     renderThumbs();drawEditor();updateSummaryOnly();
   }
   els.editorCanvas.addEventListener('pointerup',endCornerDrag); els.editorCanvas.addEventListener('pointercancel',endCornerDrag);
@@ -835,6 +884,180 @@
 
   function canvasToJpeg(canvas,quality){return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('Không tạo được ảnh JPEG.')),'image/jpeg',quality));}
 
+  // ---------- Scan ID: front/back → single A4 page ----------
+  // Composes two already-cropped/warped/filtered card canvases (the exact
+  // output of renderPageCanvas(), reused unchanged) onto one A4-portrait
+  // raster: front on top, back on bottom, same target width so a big/small
+  // source resolution difference between the two sides never shows up as a
+  // size difference on the page. "Bản in đẹp" is the only preset (V1) — a
+  // physical-size (85.60×53.98mm true-scale) preset is backlog, see
+  // docs/brain/04-current-tasks.md.
+  const A4_PORTRAIT_RATIO = 841.89 / 595.28;
+  function composeIdA4(frontCanvas, backCanvas) {
+    const pageW = 1240, pageH = Math.round(pageW * A4_PORTRAIT_RATIO);
+    const canvas = document.createElement('canvas');
+    canvas.width = pageW; canvas.height = pageH;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, pageW, pageH);
+
+    const margin = Math.round(pageW * 0.06);
+    const cardW = pageW - margin * 2;
+    const gap = Math.round(pageH * 0.045);
+    const zoneH = (pageH - gap) / 2;
+
+    const drawCard = (source, zoneY) => {
+      const ratio = source.height / source.width;
+      let dw = cardW, dh = dw * ratio;
+      const maxH = zoneH - margin * 0.6;
+      if (dh > maxH) { dh = maxH; dw = dh / ratio; }
+      const dx = (pageW - dw) / 2, dy = zoneY + (zoneH - dh) / 2;
+      ctx.drawImage(source, 0, 0, source.width, source.height, dx, dy, dw, dh);
+    };
+    drawCard(frontCanvas, 0);
+    drawCard(backCanvas, zoneH + gap);
+    return canvas;
+  }
+
+  function resetIdScan() {
+    const s = state.idScan;
+    if (s.front) URL.revokeObjectURL(s.front.url);
+    if (s.back) URL.revokeObjectURL(s.back.url);
+    state.idScan = { step: 'front', front: null, back: null };
+  }
+
+  async function addIdFile(file) {
+    if (!file || !isSupportedImage(file)) { toast('Hãy chọn ảnh JPG, PNG hoặc WEBP.'); return; }
+    const step = state.idScan.step;
+    if (step !== 'front' && step !== 'back') return;
+    const prev = state.idScan[step];
+    if (prev) URL.revokeObjectURL(prev.url);
+    const side = {
+      id: uid(), file, name: file.name || (step === 'front' ? 'MatTruoc' : 'MatSau'),
+      url: URL.createObjectURL(file), corners: cloneCorners(DEFAULT_CORNERS),
+      confidence: 0, rotation: 0, filter: 'auto', width: 0, height: 0
+    };
+    state.idScan[step] = side;
+    renderModeShell();
+    setBusy(true, 'Đang nhận mép…');
+    try { await detectPage(side, false); } finally { setBusy(false); }
+    renderModeShell();
+  }
+
+  function setIdProgress(percent, label) {
+    els.idExportProgress.classList.remove('hidden');
+    els.idProgressBar.style.width = `${clamp(percent, 0, 100)}%`;
+    els.idProgressLabel.textContent = label;
+  }
+
+  // Same freeze-before-render discipline as exportPdf()/snapshotExportJob():
+  // read state.idScan exactly once, before setBusy(true), and never touch
+  // state.idScan again inside the async render/compose/build chain below.
+  async function exportIdPdf() {
+    if (state.busy) return;
+    const { front, back } = state.idScan;
+    if (!front || !back) { toast('Cần đủ cả mặt trước và mặt sau trước khi xuất.'); return; }
+    const job = {
+      front: { file: front.file, name: front.name, corners: cloneCorners(front.corners), rotation: front.rotation, filter: front.filter },
+      back: { file: back.file, name: back.name, corners: cloneCorners(back.corners), rotation: back.rotation, filter: back.filter },
+      fileName: 'ScanVuong-ID'
+    };
+    setBusy(true, 'Đang xuất PDF…'); els.idExportNotice.classList.add('hidden'); setIdProgress(5, 'Đang dựng mặt trước…');
+    try {
+      const frontCanvas = await renderPageCanvas(job.front, 1600);
+      setIdProgress(45, 'Đang dựng mặt sau…');
+      const backCanvas = await renderPageCanvas(job.back, 1600);
+      setIdProgress(75, 'Đang ghép trang A4…');
+      const composed = composeIdA4(frontCanvas, backCanvas);
+      const blob = await canvasToJpeg(composed, 0.92);
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      setIdProgress(92, 'Đang đóng gói PDF…');
+      const pdf = buildPdf([{ bytes, width: composed.width, height: composed.height }], 'a4', false);
+      const name = job.fileName + '.pdf';
+      const a = document.createElement('a'); a.href = URL.createObjectURL(pdf); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      setIdProgress(100, `Hoàn tất · ${(pdf.size / 1024 / 1024).toFixed(2)} MB`);
+      toast(`Đã xuất ${name} · ${(pdf.size / 1024 / 1024).toFixed(2)} MB`, 3500);
+    } catch (err) {
+      console.error(err);
+      els.idExportNotice.textContent = `Không xuất được PDF: ${err.message || err}`;
+      els.idExportNotice.classList.remove('hidden');
+      toast('Có lỗi khi xuất PDF.');
+    } finally {
+      setBusy(false);
+      setTimeout(() => els.idExportProgress.classList.add('hidden'), 5000);
+    }
+  }
+
+  // Lower-resolution rehearsal of exactly the export pipeline above
+  // (renderPageCanvas → composeIdA4), so what the A4 preview shows is the
+  // same geometry/filter/order the exported PDF will contain.
+  async function renderIdPreview() {
+    const { front, back } = state.idScan;
+    const canvas = els.idPreviewCanvas;
+    const stage = canvas.parentElement;
+    const cssW = Math.max(280, stage.clientWidth), cssH = Math.max(320, stage.clientHeight);
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = `${cssW}px`; canvas.style.height = `${cssH}px`;
+    const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH); ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, cssW, cssH);
+    if (!front || !back) return;
+    setBusy(true, 'Đang dựng trang A4…');
+    try {
+      const [fc, bc] = await Promise.all([renderPageCanvas(front, 900), renderPageCanvas(back, 900)]);
+      const composed = composeIdA4(fc, bc);
+      const scale = Math.min((cssW - 24) / composed.width, (cssH - 24) / composed.height);
+      const dw = composed.width * scale, dh = composed.height * scale, ox = (cssW - dw) / 2, oy = (cssH - dh) / 2;
+      ctx.fillStyle = '#fff'; ctx.fillRect(ox, oy, dw, dh);
+      ctx.drawImage(composed, ox, oy, dw, dh);
+    } finally { setBusy(false); }
+  }
+
+  // ---------- Mode switching (Scan tài liệu / Scan ID) ----------
+  const editorCardEl = $('.editor');
+  const exportPanelEl = $('.export-panel');
+
+  function relocateEditor(mode) {
+    if (mode === 'id') els.idEditorSlot.appendChild(editorCardEl);
+    else els.workspace.insertBefore(editorCardEl, exportPanelEl);
+    editorCardEl.classList.toggle('id-hosted', mode === 'id');
+  }
+
+  function enterMode(mode) {
+    state.mode = mode;
+    relocateEditor(mode);
+    renderModeShell();
+  }
+
+  function updateIdShell() {
+    if (state.mode !== 'id') return;
+    const s = state.idScan;
+    const label = s.step === 'front' ? 'Mặt trước' : s.step === 'back' ? 'Mặt sau' : 'Xem trước';
+    els.idStepBadge.textContent = label;
+    els.idStepHint.textContent = s.step === 'front' ? 'Chụp hoặc chọn ảnh mặt trước căn cước.'
+      : s.step === 'back' ? 'Chụp hoặc chọn ảnh mặt sau căn cước.' : '';
+    els.idWorkspace.classList.toggle('hidden', s.step === 'preview');
+    els.idPreviewSection.classList.toggle('hidden', s.step !== 'preview');
+    els.idBackStepBtn.classList.toggle('hidden', s.step !== 'back');
+    els.idConfirmBtn.textContent = s.step === 'front' ? 'Xác nhận mặt trước →' : 'Xác nhận mặt sau →';
+    const current = activePage();
+    els.idConfirmBtn.disabled = state.busy || !current || !current.file;
+    if (s.step === 'preview') renderIdPreview();
+    else renderSelected();
+  }
+
+  // Single entry point for top-level visibility: mode-select screen vs
+  // document workflow vs Scan ID workflow. Mirrors how updateShell() already
+  // owns emptyState/workspace visibility for document mode.
+  function renderModeShell() {
+    els.modeSelect.classList.toggle('hidden', state.mode !== null);
+    els.switchModeBtn.classList.toggle('hidden', state.mode === null);
+    if (state.mode !== 'document') { els.emptyState.classList.add('hidden'); els.workspace.classList.add('hidden'); }
+    if (state.mode !== 'id') { els.idWorkspace.classList.add('hidden'); els.idPreviewSection.classList.add('hidden'); }
+    if (state.mode === 'document') updateShell();
+    else if (state.mode === 'id') updateIdShell();
+  }
+
   // ---------- Minimal PDF writer ----------
   const enc=new TextEncoder();
   function concatBytes(parts){let len=0;for(const p of parts)len+=p.length;const out=new Uint8Array(len);let off=0;for(const p of parts){out.set(p,off);off+=p.length;}return out;}
@@ -933,24 +1156,59 @@
   // Every handler below guards on state.busy itself — during an export the
   // matching buttons are also disabled, but drag/drop and other code paths
   // don't go through `disabled`, so the guard has to live in the handler.
-  els.fileInput.addEventListener('change',async e=>{if(state.busy){e.target.value='';return;}await addFiles(e.target.files);e.target.value='';});
-  els.cameraInput.addEventListener('change',async e=>{if(state.busy){e.target.value='';return;}await addFiles(e.target.files);e.target.value='';});
+  els.fileInput.addEventListener('change',async e=>{if(state.busy||state.mode!=='document'){e.target.value='';return;}await addFiles(e.target.files);e.target.value='';});
+  els.cameraInput.addEventListener('change',async e=>{if(state.busy||state.mode!=='document'){e.target.value='';return;}await addFiles(e.target.files);e.target.value='';});
   ['dragenter','dragover'].forEach(ev=>els.dropZone.addEventListener(ev,e=>{e.preventDefault();els.dropZone.classList.add('dragging');}));
   ['dragleave','drop'].forEach(ev=>els.dropZone.addEventListener(ev,e=>{e.preventDefault();els.dropZone.classList.remove('dragging');}));
-  els.dropZone.addEventListener('drop',e=>{if(state.busy)return;addFiles(e.dataTransfer.files);}); els.dropZone.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();els.fileInput.click();}});
+  els.dropZone.addEventListener('drop',e=>{if(state.busy||state.mode!=='document')return;addFiles(e.dataTransfer.files);}); els.dropZone.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();els.fileInput.click();}});
 
-  els.detectBtn.addEventListener('click',async()=>{if(state.busy)return;const p=selectedPage();if(!p)return;setBusy(true,'Đang nhận lại mép giấy…');try{await detectPage(p);}finally{setBusy(false);}});
-  els.resetCropBtn.addEventListener('click',()=>{if(state.busy)return;const p=selectedPage();if(!p)return;p.corners=cloneCorners(DEFAULT_CORNERS);p.confidence=.4;renderThumbs();renderSelected();updateSummaryOnly();});
-  els.rotateBtn.addEventListener('click',()=>{if(state.busy)return;const p=selectedPage();if(!p)return;p.rotation=(p.rotation+90)%360;p.corners=rotateCorners90(p.corners);renderSelected();renderThumbs();});
+  els.detectBtn.addEventListener('click',async()=>{if(state.busy)return;const p=activePage();if(!p)return;setBusy(true,'Đang nhận lại mép giấy…');try{await detectPage(p);}finally{setBusy(false);}});
+  els.resetCropBtn.addEventListener('click',()=>{if(state.busy)return;const p=activePage();if(!p)return;p.corners=cloneCorners(DEFAULT_CORNERS);p.confidence=.4;renderThumbs();renderSelected();updateSummaryOnly();});
+  els.rotateBtn.addEventListener('click',()=>{if(state.busy)return;const p=activePage();if(!p)return;p.rotation=(p.rotation+90)%360;p.corners=rotateCorners90(p.corners);renderSelected();renderThumbs();});
   els.deleteBtn.addEventListener('click',()=>removeSelected());
   function removeSelected(){if(state.busy)return;const i=getPageIndex(state.selectedId);if(i<0)return;const [p]=state.pages.splice(i,1);URL.revokeObjectURL(p.url);state.selectedId=state.pages[Math.min(i,state.pages.length-1)]?.id||null;updateShell();}
   els.moveUpBtn.addEventListener('click',()=>moveSelected(-1));els.moveDownBtn.addEventListener('click',()=>moveSelected(1));
   function moveSelected(delta){if(state.busy)return;const i=getPageIndex(state.selectedId),j=i+delta;if(i<0||j<0||j>=state.pages.length)return;[state.pages[i],state.pages[j]]=[state.pages[j],state.pages[i]];renderThumbs();}
   els.clearBtn.addEventListener('click',()=>{if(state.busy)return;if(!state.pages.length)return;if(!confirm('Xóa toàn bộ ảnh khỏi phiên làm việc này?'))return;state.pages.forEach(p=>URL.revokeObjectURL(p.url));state.pages=[];state.selectedId=null;updateShell();});
   els.autoAllBtn.addEventListener('click',async()=>{if(state.busy)return;setBusy(true,'Đang nhận lại tất cả…');try{for(let i=0;i<state.pages.length;i++){els.processingText.textContent=`Đang nhận mép ${i+1}/${state.pages.length}…`;await detectPage(state.pages[i],false);await sleepFrame();}}finally{setBusy(false);updateShell();}});
-  $$('.filter-chip').forEach(btn=>btn.addEventListener('click',()=>{if(state.busy)return;const p=selectedPage();if(!p)return;p.filter=btn.dataset.filter;$$('.filter-chip').forEach(b=>b.classList.toggle('active',b===btn));drawEditor();}));
+  $$('.filter-chip').forEach(btn=>btn.addEventListener('click',()=>{if(state.busy)return;const p=activePage();if(!p)return;p.filter=btn.dataset.filter;$$('.filter-chip').forEach(b=>b.classList.toggle('active',b===btn));drawEditor();}));
   els.exportBtn.addEventListener('click',exportPdf);
   window.addEventListener('resize',()=>{clearTimeout(window._scanResize);window._scanResize=setTimeout(drawEditor,80);});
+
+  // ---------- Mode select / Scan ID events ----------
+  els.modeDocBtn.addEventListener('click', () => { if (state.busy) return; enterMode('document'); });
+  els.modeIdBtn.addEventListener('click', () => { if (state.busy) return; enterMode('id'); });
+
+  els.switchModeBtn.addEventListener('click', () => {
+    if (state.busy) return;
+    const hasDocWork = state.mode === 'document' && state.pages.length > 0;
+    const hasIdWork = state.mode === 'id' && (state.idScan.front || state.idScan.back);
+    if ((hasDocWork || hasIdWork) && !confirm('Chuyển chế độ sẽ xóa ảnh đang xử lý. Tiếp tục?')) return;
+    if (state.mode === 'document') { state.pages.forEach(p => URL.revokeObjectURL(p.url)); state.pages = []; state.selectedId = null; }
+    if (state.mode === 'id') resetIdScan();
+    state.preview.image?.close?.();
+    state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
+    state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';
+    state.mode = null;
+    renderModeShell();
+  });
+
+  els.idChooseBtn.addEventListener('click', () => { if (state.busy) return; els.idFileInput.click(); });
+  els.idCameraBtn.addEventListener('click', () => { if (state.busy) return; els.idCameraInput.click(); });
+  els.idFileInput.addEventListener('change', async e => { if (state.busy || state.mode !== 'id') { e.target.value = ''; return; } await addIdFile(e.target.files[0]); e.target.value = ''; });
+  els.idCameraInput.addEventListener('change', async e => { if (state.busy || state.mode !== 'id') { e.target.value = ''; return; } await addIdFile(e.target.files[0]); e.target.value = ''; });
+
+  els.idConfirmBtn.addEventListener('click', () => {
+    if (state.busy) return;
+    const cur = activePage(); if (!cur || !cur.file) return;
+    if (state.idScan.step === 'front') state.idScan.step = 'back';
+    else if (state.idScan.step === 'back') state.idScan.step = 'preview';
+    renderModeShell();
+  });
+  els.idBackStepBtn.addEventListener('click', () => { if (state.busy || state.idScan.step !== 'back') return; state.idScan.step = 'front'; renderModeShell(); });
+  els.idEditFrontBtn.addEventListener('click', () => { if (state.busy) return; state.idScan.step = 'front'; renderModeShell(); });
+  els.idEditBackBtn.addEventListener('click', () => { if (state.busy) return; state.idScan.step = 'back'; renderModeShell(); });
+  els.idExportBtn.addEventListener('click', exportIdPdf);
 
   // PWA install + offline state
   window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();state.deferredInstallPrompt=e;els.installBtn.classList.remove('hidden');});
@@ -959,5 +1217,5 @@
   addEventListener('online',updateOnlineBadge);addEventListener('offline',updateOnlineBadge);updateOnlineBadge();
   if('serviceWorker'in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('./sw.js').catch(err=>console.warn('Service worker:',err));
 
-  updateShell();
+  renderModeShell();
 })();

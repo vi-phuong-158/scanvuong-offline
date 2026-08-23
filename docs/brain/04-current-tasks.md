@@ -18,6 +18,14 @@ _(trống)_
 - **Ưu tiên:** Cao — đây là gate duy nhất còn chặn verdict `SCANVUONG_V1_LOCAL_ACCEPTANCE_PASS`.
 - **Trạng thái:** Bị chặn hai lần liên tiếp (2026-08-22) vì môi trường không có Chrome/Edge thật khả dụng (Claude in Chrome extension không kết nối; browser pane nhúng tái hiện đúng lỗi "unknown error occurred when fetching the script" dù `fetch('./sw.js')` trả về 200 hợp lệ — kết luận là giới hạn môi trường nhúng, không phải lỗi app). Cần người dùng tự chạy checklist thủ công hoặc bật Claude in Chrome extension.
 
+### Scan ID: preset kích thước thật (physical-size, 85.60×53.98mm in-scale-thật)
+- **Mô tả:** V1 Scan ID chỉ có một layout preset ("Bản in đẹp" — thẻ phóng lớn vừa phải, tận dụng
+  trang giấy). Preset thứ hai render thẻ đúng kích thước vật lý thật (cần physical DPI/print scaling
+  chính xác) được yêu cầu backlog rõ ràng thay vì giả vờ hỗ trợ, vì đảm bảo DPI in chính xác vượt quá
+  kiến trúc canvas-raster-cố-định hiện tại của `composeIdA4()`.
+- **Liên quan:** `composeIdA4()` trong `app.js`.
+- **Ưu tiên:** Thấp — không được yêu cầu làm ngay, chỉ ghi lại để không bị quên hoặc bị coi là thiếu sót.
+
 ### Cải thiện auto-detect trên nền tương phản thấp
 - **Mô tả:** Case "giấy trắng trên nền sáng" (Case C trong bộ rehearsal) vẫn để lại ~8% sai số góc — hiện được xử lý đúng bằng cách đánh dấu "cần kiểm tra" thay vì cắt sai, nhưng bản thân độ chính xác detector còn có thể cải thiện.
 - **Liên quan:** `componentQuad()`, `edgeQuad()` trong `app.js`.
@@ -35,6 +43,10 @@ _(trống)_
 
 ## Đã hoàn thành gần đây
 
+- [2026-08-23] Thêm tính năng Scan ID (mặt trước/mặt sau căn cước → 1 trang A4) — workflow riêng qua
+  `state.mode`/`state.idScan`, dùng chung 100% pipeline detect/crop/phối cảnh/filter/PDF writer của
+  document mode qua `activePage()`. Xem chi tiết trong [03-decisions.md](03-decisions.md) và
+  [06-ai-working-log.md](06-ai-working-log.md). Branch `feat/scan-id`, chưa merge vào `main`.
 - [2026-08-23] Thêm tính năng Auto Enhance ("Tự động đẹp") — pixel pipeline thật (background shading correction, auto levels, local contrast, sharpen) dùng chung cho preview và export; nâng cấp filter Đen trắng sang cùng cơ chế. Xem chi tiết trong [03-decisions.md](03-decisions.md) và [06-ai-working-log.md](06-ai-working-log.md). Branch `feat/auto-enhance`, chưa merge vào `main`.
 - [2026-08-22] Đóng băng export state (snapshot bất biến trước `setBusy(true)`), khoá mọi mutation handler khi `busy`, sửa SW refresh lifecycle (`event.waitUntil`), bỏ số commit hard-code trong docs, thêm CI (`static-validation.yml` + `scripts/validate_static.py`) và regression harness dependency-free (`scripts/regression_export_busy.js`) — xem chi tiết trong [06-ai-working-log.md](06-ai-working-log.md). `GATE-01` **không** bị ảnh hưởng bởi task này — vẫn đang mở, chưa chạy trên Chrome/Edge thật.
 - [2026-08-22] Audit toàn bộ source, sửa các lỗi phát hiện qua rehearsal chức năng (xem [03-decisions.md](03-decisions.md)), viết `AGENTS.md`/`CLAUDE.md`/`README.md` đầu tiên cho dự án, `git init` cục bộ, cập nhật `PROJECTS.md` ở workspace root.

@@ -117,6 +117,81 @@
 - **Đánh đổi:** Trang thật sự gần như trắng tinh (không một chữ nào) sẽ được enhance nhẹ nhàng hơn thay vì bị kéo tương phản cực mạnh — chấp nhận được, vì mục tiêu Auto Enhance là làm tài liệu có nội dung trông giống bản scan, không phải tạo tương phản giả trên trang trắng.
 - **Người quyết định:** Claude, phát hiện qua rehearsal định lượng bổ sung (case suy biến "không có nội dung tối"), trước khi mở PR — không phải bug do người dùng report.
 
+## [2026-08-23] Scan ID: workflow riêng qua `state.mode`, không nhét vào `state.pages`
+
+- **Quyết định:** Thêm màn hình chọn chế độ ở đầu app (`#modeSelect`: "Scan tài liệu" / "Scan ID"),
+  giữ trong `state.mode` (`null`|`'document'`|`'id'`). Scan ID có state riêng `state.idScan =
+  {step,front,back}` — front/back là object CÙNG SHAPE với một phần tử `state.pages` (để tái dùng mọi
+  hàm hiện có: `detectPage`, `renderPageCanvas`, `enhanceCanvas`, rotate, v.v.) nhưng đặt trong field
+  riêng, KHÔNG đẩy vào mảng `state.pages`. Điểm nối duy nhất giữa hai workflow là hàm mới
+  `activePage()`, trả về `selectedPage()` (document) hoặc `state.idScan.front/back` theo
+  `state.idScan.step` (id) — toàn bộ cụm Editor/Corners/Perspective/Filter dùng `activePage()` thay
+  vì `selectedPage()` trực tiếp và không có logic detect/homography/warp/filter thứ hai nào được viết
+  riêng cho ID mode.
+- **Lý do:** Yêu cầu rõ ràng "không nhét ID front/back vào `state.pages` một cách khó hiểu nếu điều đó
+  làm hỏng document workflow" và "không duplicate homography/detection logic". Một mảng `state.pages`
+  dùng chung cho cả hai sẽ kéo theo rủi ro thật: multi-page reorder/xoá/export của document mode vô
+  tình áp dụng lên ảnh ID (ví dụ người dùng kéo-thả làm đảo front/back, hoặc xuất PDF tài liệu lẫn
+  ảnh căn cước vào cùng file) — rủi ro riêng tư nghiêm trọng hơn nhiều so với document thường. Tách
+  hẳn field loại bỏ khả năng này ở tầng cấu trúc dữ liệu, không phải quy ước code.
+- **Đánh đổi:** Thêm một lớp gián tiếp (`activePage()`) ở mọi nơi cụm Editor từng gọi `selectedPage()`
+  trực tiếp — chấp nhận được vì đó là 6-7 call site, mỗi chỗ đổi đúng một dòng, và loại bỏ hoàn toàn
+  nguy cơ viết trùng pipeline detect/warp/filter cho ID mode.
+- **Người quyết định:** Claude, theo yêu cầu trực tiếp của người dùng (feature Scan ID).
+
+## [2026-08-23] Scan ID: `.editor` card dùng chung được RELOCATE (di chuyển DOM), không nhân bản
+
+- **Quyết định:** `.editor` card (canvas, toolbar detect/reset/rotate, filter chips) chỉ tồn tại một
+  lần trong `index.html`. `relocateEditor(mode)` di chuyển node này bằng `appendChild`/`insertBefore`
+  giữa `#idEditorSlot` (bên trong `#idWorkspace`, có `display:contents` để vẫn là grid item trực tiếp)
+  và vị trí gốc trong `#workspace` (document mode), thay vì tạo một `<canvas>`/bộ toolbar thứ hai cho
+  ID mode.
+- **Lý do:** Nhân bản DOM cho ID mode sẽ buộc phải nhân bản luôn logic `drawEditor()`/pointer drag
+  handlers/`ensureEnhancedPreview()` (vì chúng gắn cứng vào `els.editorCanvas` qua querySelector một
+  lần lúc khởi động) — đúng thứ "duplicate scanner logic" mà yêu cầu cấm. Di chuyển node giữ nguyên
+  100% event listener đã gắn (listener gắn vào phần tử, không phải vào vị trí DOM của nó) và chỉ cần
+  một dòng để chuyển ngữ cảnh.
+- **Đánh đổi:** Cần class modifier `id-hosted` trên `.editor` để ẩn nhóm nút riêng của document mode
+  (↑ Trước/↓ Sau/Xóa trang) khi đang ở ID mode qua CSS, thay vì tách hẳn hai bộ nút — chấp nhận được,
+  các nút đó vẫn an toàn nếu lỡ bấm (no-op trên `state.pages` rỗng/`state.selectedId=null`).
+- **Người quyết định:** Claude, theo yêu cầu trực tiếp của người dùng.
+
+## [2026-08-23] Scan ID: `composeIdA4()` scale theo chiều rộng chung, không theo độ phân giải nguồn
+
+- **Quyết định:** `composeIdA4(frontCanvas, backCanvas)` vẽ lên canvas cố định 1240×1754 (tỷ lệ A4
+  dọc). Mỗi mặt được vẽ ở cùng một chiều rộng mục tiêu (`cardW`, phần trăm cố định của chiều rộng
+  trang) rồi co theo chiều cao vùng riêng của nó nếu tỷ lệ khung hình quá cao (ví dụ một mặt bị xoay
+  thành gần vuông-đứng) để không tràn trang — trường hợp đó đổi "cùng chiều rộng tuyệt đối" lấy
+  "không bao giờ méo/tràn trang".
+- **Lý do:** Yêu cầu rõ ràng "hai ảnh resolution rất khác nhau... trên A4 vẫn cùng kích thước" (ví dụ
+  mặt trước 4000×2500, mặt sau 1600×1000). Scale theo pixel nguồn sẽ khiến ảnh phân giải cao hơn hiển
+  thị to hơn trên trang dù thẻ vật lý cùng kích thước — sai với kỳ vọng người dùng. Xác nhận bằng
+  rehearsal trình duyệt thật: mặt trước 800×500 và mặt sau 4000×2500 (5 lần độ phân giải) đều ra
+  ~1092px chiều rộng trên trang.
+- **Đánh đổi:** Trường hợp hiếm (thẻ bị xoay thành hình gần vuông-đứng) sẽ không có "cùng chiều rộng"
+  tuyệt đối với mặt còn lại — chấp nhận được vì ID card thật luôn là hình chữ nhật ngang, trường hợp
+  này chỉ xảy ra nếu người dùng xoay sai hướng.
+- **Người quyết định:** Claude, phát hiện qua rehearsal có chủ đích (xoay một mặt 90° để kiểm tra Test
+  C, phát hiện tác dụng phụ lên "cùng chiều rộng" và xác nhận đây là fallback an toàn, không phải bug,
+  bằng cách kiểm tra `dw/dh` luôn giữ đúng tỷ lệ nguồn — không có méo hình ở bất kỳ nhánh nào).
+
+## [2026-08-23] Scan ID: `applyIdAspectHint()` chỉ hạ confidence, không đổi detector lõi
+
+- **Quyết định:** Thêm `applyIdAspectHint(detection, w, h)`, gọi từ `detectPage()` chỉ khi
+  `state.mode==='id'`, so tỷ lệ khung hình quad phát hiện được với tỷ lệ thẻ ID-1 (85.60×53.98mm ≈
+  1.586:1, không phụ thuộc chiều — dùng `max/min` nên không quan trọng ngang hay dọc). Lệch >35% thì
+  trần `detection.confidence` ở 0.5 (dưới ngưỡng review 0.58). Hàm này KHÔNG được sửa
+  `detectDocument()`/`componentQuad()`/`edgeQuad()`/`orderCorners()`.
+- **Lý do:** Yêu cầu "detector ID có thể dùng tỷ lệ ID-1 làm prior/hint... nhưng không được làm
+  detector quá aggressive" và "flag review thay vì confidently crop sai" — đúng nguyên tắc đã có của
+  `detectDocument()`. Chỉ hạ, không bao giờ nâng, đảm bảo hint này không thể khiến một crop tệ được
+  tự tin chấp nhận (rủi ro cao hơn nhiều so với việc thi thoảng đánh dấu nhầm một crop tốt là "cần
+  kiểm tra").
+- **Đánh đổi:** Không có — đây là một lớp phủ (overlay) đọc/hạ confidence sau khi `detectDocument()`
+  đã chạy xong, không thay đổi chi phí hay hành vi của pipeline detect chính, và document mode hoàn
+  toàn không bị ảnh hưởng (hàm chỉ chạy khi `state.mode==='id'`).
+- **Người quyết định:** Claude, theo yêu cầu trực tiếp của người dùng.
+
 ## Template cho entry mới
 
 ```
