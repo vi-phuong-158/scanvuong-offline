@@ -41,5 +41,14 @@ jobs:
       - name: Regression harness (Service Worker update safety)
         run: node scripts/regression_sw_update.cjs
 
+      - name: Benchmark engine unit tests (dependency-free)
+        run: node scripts/test_benchmark_engine.cjs
+
+      - name: Install benchmark dev dependencies
+        run: npm ci --prefix benchmark
+
+      - name: Synthetic Hard-Case Benchmark Gate
+        run: node scripts/benchmark_hard_cases.cjs --synthetic-only
+
       - name: Static validation (JSON/AST/assets/privacy boundary)
         run: python3 scripts/validate_static.py
