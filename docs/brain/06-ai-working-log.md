@@ -18,6 +18,16 @@
 
 ---
 
+## [2026-08-23] Deploy production lên Vercel
+
+- **Agent:** Codex
+- **Thay đổi:** Deploy phiên bản mới nhất của nhánh `main` (bao gồm Document mode và Scan ID A4 mode) lên production Vercel (`https://scanvuong-offline.vercel.app`), liên kết với GitHub repository `vi-phuong-158/scanvuong-offline`, cập nhật `.gitignore` và bảng môi trường trong `docs/brain/05-testing-and-deploy.md`.
+- **File đã sửa:** `.gitignore`, `docs/brain/05-testing-and-deploy.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Người dùng yêu cầu deploy trực tiếp lên Vercel sau khi merge PR #4.
+- **Kiểm tra:** Kiểm tra phản hồi HTTP 200 từ `https://scanvuong-offline.vercel.app`, xác nhận các security headers (`nosniff`, `no-referrer`, `camera=(self)`), kiểm tra `https://scanvuong-offline.vercel.app/sw.js` trả về header `Service-Worker-Allowed: /`.
+
+---
+
 ## [2026-08-23] Final Hardening Scan ID PR #4 (Layout A4: width 65%, gap 28mm, vertically centered block, regression 52/52)
 
 - **Agent:** Codex

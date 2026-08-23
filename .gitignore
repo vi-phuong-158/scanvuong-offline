@@ -16,3 +16,4 @@ __pycache__/
 # Local scratch output — never ignore app assets, icons, sw.js or the manifest,
 # they are all required for the PWA to work offline.
 *.local
+.vercel
