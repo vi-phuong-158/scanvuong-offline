@@ -4,7 +4,9 @@
 
 **Không OCR · Không máy chủ · Không cơ sở dữ liệu · Không đăng nhập · Không gửi ảnh đi đâu cả.**
 
-## Chức năng V1
+Mở app sẽ hỏi bạn muốn **Scan tài liệu** (nhiều trang) hay **Scan ID** (căn cước/thẻ hai mặt).
+
+## Scan tài liệu (V1)
 
 - Chọn nhiều ảnh JPG/PNG/WEBP cùng lúc, hoặc kéo-thả ảnh vào cửa sổ.
 - Chụp ảnh trực tiếp bằng camera trên điện thoại.
@@ -17,6 +19,14 @@
 - Chất lượng **Cao / Tiêu chuẩn / Nhẹ / Cố gắng dưới 2 MB**.
 - Tùy chọn chừa lề trắng nhỏ.
 - Cài như ứng dụng (PWA) và dùng được khi không có mạng.
+
+## Scan ID (căn cước / thẻ 2 mặt)
+
+- Chụp/chọn **mặt trước**, rồi **mặt sau** — mỗi mặt có auto-crop, chỉnh tay 4 góc và xoay 90° y hệt Scan tài liệu.
+- Hai mặt được ghép tự động lên **một trang A4 dọc duy nhất** (mặt trước ở trên, mặt sau ở dưới, cùng chiều rộng, không méo, không lật).
+- Dùng cùng bộ lọc **Tự động đẹp** làm mặc định (không phải Đen trắng) để giữ màu ảnh/con dấu/mã QR.
+- Không thể xuất PDF nếu thiếu một trong hai mặt — ứng dụng sẽ báo rõ thay vì âm thầm xuất bản thiếu.
+- **Không OCR, không đọc số căn cước, không nhận diện khuôn mặt, không trích xuất thông tin cá nhân** — xem [00-project-overview.md](docs/brain/00-project-overview.md).
 
 ## Chạy trên Windows
 

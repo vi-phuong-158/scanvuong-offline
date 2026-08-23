@@ -150,6 +150,49 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .toast { position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 50; max-width: min(90vw,520px); background: #0f172a; color: white; padding: 11px 15px; border-radius: 11px; box-shadow: 0 12px 35px rgba(0,0,0,.25); font-size: 13px; }
 
+/* Mode select (Scan tài liệu vs Scan ID) */
+.mode-select { display: flex; flex-direction: column; align-items: center; gap: 22px; text-align: center; padding: 12px; }
+.mode-select h2 { margin: 0; font-size: clamp(23px,4vw,30px); }
+.mode-cards { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+.mode-card {
+  width: 260px; min-height: 180px; border: 1px solid var(--line); border-radius: 18px;
+  background: var(--surface-2); cursor: pointer; padding: 26px 20px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;
+  transition: .15s ease;
+}
+.mode-card:hover { border-color: var(--primary); background: var(--primary-soft); transform: translateY(-2px); }
+.mode-card .mode-icon { font-size: 40px; line-height: 1; margin-bottom: 4px; }
+.mode-card strong { font-size: 17px; }
+
+/* The shared .editor card is relocated (not duplicated) between #workspace
+   and #idWorkspace via this slot — display:contents keeps it a direct grid
+   item of whichever workspace grid currently hosts it. */
+.editor-slot { display: contents; }
+.editor.id-hosted .editor-toolbar .tool-group:last-child { display: none; }
+
+.id-workspace { grid-template-columns: 230px minmax(0,1fr); }
+.id-capture-actions { padding: 14px; display: grid; gap: 8px; border-bottom: 1px solid var(--line); }
+
+.id-preview-section { padding: 18px; display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+.id-preview-head h2 { margin: 0 0 4px; font-size: 18px; }
+.id-preview-head p { margin: 0; }
+.id-preview-stage { background: #111827; border-radius: 14px; min-height: 480px; display: grid; place-items: center; overflow: hidden; }
+#idPreviewCanvas { display: block; max-width: 100%; max-height: 100%; }
+.id-preview-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.id-preview-actions .export-btn { flex: 1; min-width: 160px; }
+
+@media (max-width: 1080px) {
+  .id-workspace { grid-template-columns: 190px minmax(0,1fr); }
+}
+
+@media (max-width: 720px) {
+  .mode-cards { flex-direction: column; align-items: stretch; }
+  .mode-card { width: 100%; }
+  .id-workspace { grid-template-columns: 1fr; }
+  .id-preview-stage { min-height: 52vh; }
+  .id-preview-actions { flex-direction: column; }
+}
+
 @media (min-width: 1081px) {
   /* Bound the workspace row so a long page list scrolls inside the sidebar
      instead of stretching the editor far below the fold. */

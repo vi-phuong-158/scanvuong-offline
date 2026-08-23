@@ -26,12 +26,31 @@
     </div>
     <div class="top-actions">
       <span id="offlineBadge" class="badge">Xử lý trên thiết bị</span>
+      <button id="switchModeBtn" class="btn ghost hidden" type="button">Đổi chế độ</button>
       <button id="installBtn" class="btn ghost hidden" type="button">Cài ứng dụng</button>
     </div>
   </header>
 
   <main class="app-shell">
-    <section id="emptyState" class="empty-state card">
+    <section id="modeSelect" class="empty-state card">
+      <div class="mode-select">
+        <h2>Bạn muốn scan gì?</h2>
+        <div class="mode-cards">
+          <button id="modeDocBtn" class="mode-card" type="button">
+            <span class="mode-icon" aria-hidden="true">📄</span>
+            <strong>Scan tài liệu</strong>
+            <span class="muted">Một hoặc nhiều trang giấy, xuất PDF nhiều trang</span>
+          </button>
+          <button id="modeIdBtn" class="mode-card" type="button">
+            <span class="mode-icon" aria-hidden="true">🪪</span>
+            <strong>Scan ID</strong>
+            <span class="muted">Mặt trước + mặt sau → 1 trang A4</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section id="emptyState" class="empty-state card hidden">
       <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-label="Chọn ảnh tài liệu">
         <div class="drop-icon" aria-hidden="true">
           <svg viewBox="0 0 48 48"><path d="M14 5h20a5 5 0 0 1 5 5v28a5 5 0 0 1-5 5H14a5 5 0 0 1-5-5V10a5 5 0 0 1 5-5Zm0 4a1 1 0 0 0-1 1v28a1 1 0 0 0 1 1h20a1 1 0 0 0 1-1V10a1 1 0 0 0-1-1H14Zm3 22 6-7 4 5 3-3 5 6H17Zm12-15a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
@@ -147,10 +166,52 @@
         <p id="exportNotice" class="notice hidden"></p>
       </aside>
     </section>
+
+    <section id="idWorkspace" class="workspace id-workspace hidden">
+      <aside class="sidebar card">
+        <div class="sidebar-head">
+          <div>
+            <strong id="idStepBadge">Mặt trước</strong>
+            <span id="idStepHint" class="muted">Chụp hoặc chọn ảnh mặt trước căn cước.</span>
+          </div>
+        </div>
+        <div class="id-capture-actions">
+          <button id="idChooseBtn" class="btn primary full" type="button">Chọn ảnh</button>
+          <button id="idCameraBtn" class="btn secondary full" type="button">Chụp ảnh</button>
+        </div>
+        <div class="sidebar-footer">
+          <button id="idBackStepBtn" class="btn secondary full hidden" type="button">← Quay lại mặt trước</button>
+          <button id="idConfirmBtn" class="btn primary full" type="button" disabled>Xác nhận mặt trước →</button>
+        </div>
+      </aside>
+      <div id="idEditorSlot" class="editor-slot"></div>
+    </section>
+
+    <section id="idPreviewSection" class="id-preview-section card hidden">
+      <div class="id-preview-head">
+        <h2>Xem trước trang A4</h2>
+        <p class="muted">Mặt trước ở trên, mặt sau ở dưới, cùng một trang A4 dọc.</p>
+      </div>
+      <div class="id-preview-stage">
+        <canvas id="idPreviewCanvas"></canvas>
+      </div>
+      <div class="id-preview-actions">
+        <button id="idEditFrontBtn" class="btn secondary" type="button">Sửa mặt trước</button>
+        <button id="idEditBackBtn" class="btn secondary" type="button">Sửa mặt sau</button>
+        <button id="idExportBtn" class="btn primary export-btn" type="button">Xuất PDF</button>
+      </div>
+      <div id="idExportProgress" class="progress-wrap hidden" aria-live="polite">
+        <div class="progress-track"><div id="idProgressBar" class="progress-bar"></div></div>
+        <span id="idProgressLabel">Đang chuẩn bị…</span>
+      </div>
+      <p id="idExportNotice" class="notice hidden"></p>
+    </section>
   </main>
 
   <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />
   <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
+  <input id="idFileInput" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+  <input id="idCameraInput" type="file" accept="image/*" capture="environment" hidden />
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 

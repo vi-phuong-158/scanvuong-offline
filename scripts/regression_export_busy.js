@@ -65,6 +65,11 @@ function makeEl() {
     addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
     removeEventListener() {},
     appendChild(child) { this.children.push(child); return child; },
+    insertBefore(child, ref) {
+      const idx = this.children.indexOf(ref);
+      if (idx === -1) this.children.push(child); else this.children.splice(idx, 0, child);
+      return child;
+    },
     remove() {},
     click() { return this.dispatch('click'); },
     getBoundingClientRect() { return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight }; },
@@ -160,18 +165,31 @@ const ELEMENT_IDS = [
   'deleteBtn', 'autoAllBtn', 'clearBtn', 'fileName', 'pageSize', 'quality', 'marginToggle', 'exportBtn',
   'exportProgress', 'progressBar', 'progressLabel', 'exportSummary', 'exportNotice', 'toast', 'installBtn',
   'offlineBadge',
+  // Mode select + Scan ID (present so app.js's `els` map resolves; this
+  // harness only drives the document-mode flow, see regression_scan_id.js
+  // for the Scan ID-specific harness).
+  'modeSelect', 'modeDocBtn', 'modeIdBtn', 'switchModeBtn',
+  'idWorkspace', 'idStepBadge', 'idStepHint', 'idChooseBtn', 'idCameraBtn', 'idFileInput', 'idCameraInput',
+  'idBackStepBtn', 'idConfirmBtn', 'idEditorSlot', 'idPreviewSection', 'idPreviewCanvas',
+  'idEditFrontBtn', 'idEditBackBtn', 'idExportBtn', 'idExportProgress', 'idProgressBar', 'idProgressLabel', 'idExportNotice',
 ];
 
 function buildSandbox() {
   const elementsById = {};
-  for (const id of ELEMENT_IDS) elementsById[id] = id === 'editorCanvas' ? makeCanvasEl() : makeEl();
+  const CANVAS_IDS = new Set(['editorCanvas', 'idPreviewCanvas']);
+  for (const id of ELEMENT_IDS) elementsById[id] = CANVAS_IDS.has(id) ? makeCanvasEl() : makeEl();
   elementsById.editorCanvas.parentElement = makeEl();
+  elementsById.idPreviewCanvas.parentElement = makeEl();
   elementsById.fileInput.files = [];
   elementsById.cameraInput.files = [];
+  elementsById.idFileInput.files = [];
+  elementsById.idCameraInput.files = [];
   elementsById.fileName.value = 'ScanVuong';
   elementsById.pageSize.value = 'a4';
   elementsById.quality.value = 'standard';
   elementsById.marginToggle.checked = false;
+  const editorStub = makeEl();
+  const exportPanelStub = makeEl();
 
   const filterChips = ['document', 'bw', 'original'].map((f, i) => {
     const el = makeEl();
@@ -189,6 +207,8 @@ function buildSandbox() {
     querySelector(sel) {
       if (sel.startsWith('#')) return elementsById[sel.slice(1)] || null;
       if (sel === '.filter-chip') return filterChips[0];
+      if (sel === '.editor') return editorStub;
+      if (sel === '.export-panel') return exportPanelStub;
       return null;
     },
     querySelectorAll(sel) { return sel === '.filter-chip' ? filterChips.slice() : []; },
@@ -287,6 +307,10 @@ function parsePdfPageSizes(buf) {
 async function main() {
   const { testApi, elementsById, filterChips, getLastAnchor } = loadApp();
   const { state } = testApi;
+
+  console.log('Setup: entering document mode (fileInput/cameraInput/dropZone are guarded to no-op outside it)');
+  await elementsById.modeDocBtn.dispatch('click');
+  assert(state.mode === 'document', 'setup: modeDocBtn click enters document mode');
 
   console.log('Setup: adding 3 synthetic pages (A, B, C — distinct sizes so PDF page order is verifiable)');
   elementsById.fileInput.files = [

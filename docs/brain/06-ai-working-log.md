@@ -18,6 +18,75 @@
 
 ---
 
+## [2026-08-23] Final Hardening Scan ID PR #4 (Layout A4: width 65%, gap 28mm, vertically centered block, regression 52/52)
+
+- **Agent:** Codex
+- **Thay đổi:**
+  1. Tách và hoàn thiện `calculateIdA4Layout(frontW, frontH, backW, backH, options)`: giữ card target width 65% A4 (`806px`), giảm khoảng cách giữa 2 mặt thẻ xuống **28 mm** (`165px`), căn giữa dọc toàn bộ cụm thẻ (`front + gap + back`) trên trang A4 (`topWhitespace ≈ bottomWhitespace = 291px`), và hỗ trợ contain/fit-inside cho odd/portrait aspect ratios mà không bị méo/stretch.
+  2. Xoá bỏ hoàn toàn assertion false-positive `|| true` trong `scripts/regression_scan_id.js`, nâng cấp bộ kiểm thử lên 52 checks bao quát trọn vẹn: bất biến hình học (equal width 65%, aspect ratio, khoảng cách 28mm, căn giữa dọc/ngang, viền A4), portrait fallback, state machine, busy lock, snapshot isolation, Object URL cleanup, PDF 1 page A4 portrait.
+  3. Thực hiện meta-test scratch chứng minh 4 đột biến cố tình (sai gap 70mm, lệch vertical centering, phá equal width, méo aspect ratio) đều bị harness phát hiện và FAIL đúng assertion.
+  4. Xác nhận synthetic PDF rendering pixel-level qua Python PIL (không mirror, không flip, đúng màu 4 góc marker, đúng toạ độ).
+  5. Cập nhật mô tả PR #4 trên GitHub phản ánh chính xác thông số implementation mới nhất.
+- **File đã sửa:** `app.js`, `scripts/regression_scan_id.js`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/05-testing-and-deploy.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Yêu cầu Final Hardening cho PR #4 (Scan ID) trước khi merge.
+- **Kiểm tra:** `node --check app.js` PASS, `node --check sw.js` PASS, `node scripts/regression_export_busy.js` PASS (29/29), `node scripts/regression_scan_id.js` PASS (52/52), `python scripts/validate_static.py` PASS (7/7). Synthetic PDF verification: xuất PDF 1 trang A4 portrait, giải mã JPEG nhúng kiểm tra pixel marker (TL/TR/BR/BL), xác nhận không mirror, không flip, front ở trên, back ở dưới, gap 165px (~28mm), vertical delta <= 1px.
+
+---
+
+## [2026-08-23] Thêm tính năng Scan ID (mặt trước/mặt sau căn cước → 1 trang A4)
+
+- **Agent:** Claude Code
+- **Thay đổi:** Thêm workflow "Scan ID" độc lập với document mode hiện có. Màn hình bắt đầu mới
+  (`#modeSelect`) cho chọn "Scan tài liệu" hoặc "Scan ID", giữ trong `state.mode`. Scan ID có wizard
+  3 bước (`state.idScan.step`: `front`→`back`→`preview`) — mỗi bước dùng LẠI đúng editor UI của
+  document mode (canvas, detect/reset/rotate, filter chips, kéo tay 4 góc) qua kỹ thuật "relocate DOM
+  node" (`relocateEditor()` di chuyển node `.editor` giữa `#workspace`/`#idEditorSlot` bằng
+  appendChild/insertBefore, không nhân bản) và hàm mới `activePage()` (thay `selectedPage()` trong
+  toàn bộ cụm Editor/Corners/Filter — trả về trang document đang chọn hoặc mặt front/back đang sửa
+  tuỳ `state.mode`). Sau khi xác nhận cả hai mặt, bước "preview" ghép chúng lên một canvas A4 dọc cố
+  định (`composeIdA4()`, raster 1240×1754, mặt trước trên/mặt sau dưới, cùng chiều rộng target bất kể
+  độ phân giải nguồn, không nhãn in trên trang) và `exportIdPdf()` xuất đúng 1 trang PDF
+  (`ScanVuong-ID.pdf`) bằng cách tái dùng `renderPageCanvas()`+`canvasToJpeg()`+`buildPdf()` không đổi
+  — không viết lại homography/warp/PDF writer. Thêm hint nhẹ `applyIdAspectHint()` trong `detectPage()`
+  (chỉ khi `state.mode==='id'`): so tỷ lệ quad phát hiện được với tỷ lệ thẻ ID-1, lệch >35% thì hạ trần
+  confidence xuống dưới ngưỡng review — không đổi `detectDocument()`/`orderCorners()` lõi. Nút "Đổi chế
+  độ" ở header cho quay lại màn hình chọn (confirm nếu có dữ liệu chưa xuất), revoke Object URL khi
+  thay ảnh hoặc rời workflow.
+- **File đã sửa:** `app.js` (thêm `state.mode`/`state.idScan`, `activePage()`, `applyIdAspectHint()`,
+  `composeIdA4()`, `resetIdScan()`, `addIdFile()`, `setIdProgress()`, `exportIdPdf()`,
+  `renderIdPreview()`, `relocateEditor()`, `enterMode()`, `updateIdShell()`, `renderModeShell()`; đổi
+  6-7 call site trong cụm Editor từ `selectedPage()` sang `activePage()`; mở rộng `setBusy()`'s
+  disabled-list; guard `fileInput`/`cameraInput`/dropZone theo `state.mode==='document'`),
+  `index.html` (thêm `#modeSelect`, `#switchModeBtn`, `#idWorkspace`, `#idPreviewSection`,
+  `#idFileInput`/`#idCameraInput`), `styles.css` (mode-select cards, `.editor-slot`, `.id-workspace`,
+  `.id-preview-section`), `scripts/regression_scan_id.js` (mới — harness dependency-free riêng cho
+  Scan ID), `scripts/regression_export_busy.js` (thêm ID vào `ELEMENT_IDS`/fake DOM, thêm bước "vào
+  document mode" ở đầu vì `fileInput` giờ bị guard theo `state.mode`), `.github/workflows/static-validation.yml`
+  (thêm bước chạy `regression_scan_id.js`), `README.md`/`docs/brain/00-01-03-04.md`.
+- **Lý do:** Yêu cầu trực tiếp của người dùng: người dùng cần scan hai mặt căn cước và in gọn trên
+  một trang, không OCR/không đọc thông tin cá nhân, tái dùng tối đa pipeline detect/crop/phối
+  cảnh/filter/PDF đã có thay vì viết scanner thứ hai.
+- **Kiểm tra:** `node --check app.js`/`sw.js` PASS; `python scripts/validate_static.py` 7/7 PASS;
+  `node scripts/regression_export_busy.js` 29/29 PASS (document mode không bị phá — xác nhận qua bước
+  "vào document mode" mới thêm ở đầu harness); `node scripts/regression_scan_id.js` 37/37 PASS (front/back
+  giữ đúng state riêng, step machine front→back→preview và "Sửa mặt trước/sau" đúng, xuất PDF khi
+  thiếu một mặt bị từ chối có toast, mọi handler Scan ID bị khoá khi `state.busy`, snapshot export
+  miễn nhiễm với việc null `state.idScan` giữa chừng render, Object URL được revoke khi thay ảnh/rời
+  mode). Rehearsal trình duyệt thật (server.py, xoá SW/cache cũ trước khi test): mode-select hiển thị
+  đúng mặc định; document mode y hệt hành vi cũ (import→detect→filter→export PDF 1 trang A4, không
+  request nào rời origin); Scan ID — chụp front/back qua cả `idFileInput` lẫn `idCameraInput`, xoay
+  90° một mặt, xuất PDF thật rồi **giải mã JPEG nhúng để đo lại pixel** (không đọc canvas nội bộ):
+  đúng 1 trang A4 (595.28×841.89pt, raster ảnh 1240×1754), marker màu TL/TR/BR/BL đặt ở 4 góc ảnh
+  tổng hợp cho thấy KHÔNG mirror/lật kể cả sau khi xoay 90° (marker map đúng theo phép xoay chiều kim
+  đồng hồ), mặt trước luôn ở nửa trên trang/mặt sau nửa dưới, và mặt trước 800×500 + mặt sau
+  4000×2500 (chênh 5 lần độ phân giải) vẫn ra cùng chiều rộng ~1092px trên trang; toast từ chối xuất
+  khi thiếu mặt sau hoạt động đúng kể cả khi ép gọi trực tiếp nút Export; không lỗi console; mobile
+  viewport 375×812 và desktop 1366×768 không tràn ngang, nút chạm đủ lớn (42px cao, full-width).
+  Perspective correction/manual-corner-drag cho ID mode không test riêng bằng ảnh xiên tổng hợp trong
+  phiên này vì đó là code path 100% dùng chung, không đổi, với document mode (đã kiểm chứng trước đó
+  trong lịch sử dự án) — chỉ phần mới của Scan ID (state machine, composer, busy-guard, aspect-hint,
+  privacy) được rehearsal kỹ trong phiên này.
+
 ## [2026-08-23] Thêm tính năng Auto Enhance (Tự động đẹp)
 
 - **Agent:** Claude Code

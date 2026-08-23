@@ -66,11 +66,12 @@ Không nằm trong phạm vi công việc thường xuyên — dự án là stat
 
 ## CI
 
-`.github/workflows/static-validation.yml` chạy trên `push`/`pull_request`: `node --check app.js`/`sw.js`, parse JSON của `manifest.webmanifest`/`vercel.json`, `ast.parse` `server.py`, xác nhận asset trong `ASSETS` của `sw.js` tồn tại trên đĩa, quét không có URL runtime CDN/external, và quét ranh giới riêng tư (không `XMLHttpRequest`/`sendBeacon`/`WebSocket`/`localStorage`/`sessionStorage`/`indexedDB`/cookie/`fetch` trong `app.js`). Logic quét nằm trong `scripts/validate_static.py` (Python stdlib only, không dependency mới).
+`.github/workflows/static-validation.yml` chạy trên `push`/`pull_request`: `node --check app.js`/`sw.js`, `node scripts/regression_export_busy.js`, `node scripts/regression_scan_id.js`, parse JSON của `manifest.webmanifest`/`vercel.json`, `ast.parse` `server.py`, xác nhận asset trong `ASSETS` của `sw.js` tồn tại trên đĩa, quét không có URL runtime CDN/external, và quét ranh giới riêng tư (không `XMLHttpRequest`/`sendBeacon`/`WebSocket`/`localStorage`/`sessionStorage`/`indexedDB`/cookie/`fetch` trong `app.js`). Logic quét nằm trong `scripts/validate_static.py` (Python stdlib only, không dependency mới).
 
-## Regression harness (export snapshot / busy lock)
+## Regression harnesses
 
-`node scripts/regression_export_busy.js` — script Node dependency-free, chạy `app.js` thật (không sửa file trên đĩa) trong một fake DOM tối giản (qua module `vm`), rồi lái qua đúng các event handler thật (`fileInput` change, kéo-thả thumbnail, click các nút, click `exportBtn`) để chứng minh: xuất PDF khi đang chạy vẫn giữ đúng thứ tự trang dù `state.pages` bị đảo trực tiếp giữa chừng, filter/rotation/corners đổi sau khi đã tạo snapshot không ảnh hưởng PDF xuất ra, và mọi handler mutate trang đều bị chặn khi `state.busy === true`. Không cần trình duyệt thật (chỉ Node), nên script này **có chạy trong CI** (`.github/workflows/static-validation.yml`), cộng thêm chạy thủ công khi sửa `exportPdf()`/`setBusy()`/các handler liên quan.
+- `node scripts/regression_export_busy.js` — script Node dependency-free cho Document mode: chứng minh export snapshot đóng băng trang và export settings (`pageSize`/`margin`/`fileName`/`quality`), và mọi mutation handler bị khoá khi `state.busy === true`.
+- `node scripts/regression_scan_id.js` — script Node dependency-free cho Scan ID: chứng minh front/back tách biệt khỏi `state.pages`, state machine `front→back→preview` và "Sửa mặt trước/sau", từ chối xuất khi thiếu mặt, khoá busy toàn diện, export snapshot isolation, thu hồi Object URL, bất biến hình học layout A4 (equal width 65% độc lập resolution nguồn, khoảng cách 28 mm, căn giữa dọc toàn block, bảo toàn aspect ratio, trong viền trang), và PDF 1 trang A4 portrait. Chạy trong CI.
 
 ## Lưu ý
 

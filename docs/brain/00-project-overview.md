@@ -4,6 +4,10 @@
 
 ScanVuông biến ảnh chụp tài liệu giấy thành file PDF sạch, thẳng, có thể đọc được — hoàn toàn trên thiết bị của người dùng, không cần mạng, không cần tài khoản, không gửi tài liệu đi đâu cả.
 
+Ứng dụng có hai workflow độc lập, chọn ở màn hình bắt đầu (`state.mode`):
+- **Document mode** (mặc định lịch sử): nhiều trang → nhiều/1 trang PDF theo tỷ lệ tài liệu hoặc A4.
+- **ID mode** ("Scan ID", thêm 2026-08-23): đúng 2 ảnh (mặt trước/mặt sau một thẻ/căn cước) → ghép lên **một trang A4 duy nhất**. Xem [01-architecture.md](01-architecture.md) mục "ID mode" và quyết định trong [03-decisions.md](03-decisions.md).
+
 ## Người dùng chính
 
 - Người cần số hoá nhanh một vài tờ giấy (đơn từ, hoá đơn, biên bản) bằng điện thoại hoặc máy tính, không muốn cài app nặng hay tạo tài khoản.
@@ -21,15 +25,17 @@ ScanVuông biến ảnh chụp tài liệu giấy thành file PDF sạch, thẳn
 - 4 bộ lọc ảnh: Tự động đẹp (mặc định, pixel pipeline thật) / Tài liệu màu / Đen trắng / Gốc.
 - Xuất PDF: khổ A4 tự xoay hoặc theo tỷ lệ tài liệu, nhiều mức chất lượng, chế độ "cố gắng dưới 2 MB".
 - Cài đặt như PWA và dùng offline sau lần tải đầu.
+- **Scan ID**: workflow riêng — mặt trước + mặt sau một thẻ/căn cước → auto-crop/phối cảnh từng mặt (tái dùng đúng pipeline trên) → ghép lên 1 trang A4 dọc ("Bản in đẹp": thẻ phóng lớn vừa phải, không phải kích thước thật) → xuất PDF 1 trang. Không thể xuất nếu thiếu một mặt.
 
 ### Ngoài scope
 
-- OCR / trích xuất chữ — quyết định thiết kế của V1, không phải tính năng thiếu.
+- OCR / trích xuất chữ — quyết định thiết kế của V1, không phải tính năng thiếu. Áp dụng cho cả Scan ID: không đọc số căn cước, không nhận diện khuôn mặt, không parse QR/NFC/chip, không eKYC.
 - Lưu trữ đám mây, đăng nhập, tài khoản, chia sẻ tài liệu.
 - Cơ sở dữ liệu hoặc bất kỳ hình thức lưu trữ lâu dài nào của tài liệu.
 - Bất kỳ API AI/LLM nào.
 - Backend hoặc máy chủ quản lý tài liệu.
 - Ký PDF, watermark, đồng bộ nhiều thiết bị, ứng dụng native (Electron/Tauri/Android/iOS).
+- Scan ID: preset kích thước thật (85.60×53.98mm, in-scale-thật) — backlog, xem [04-current-tasks.md](04-current-tasks.md). Nhãn "Mặt trước/Mặt sau" in trên PDF/preview — không làm trong V1 (giữ thiết kế sạch theo yêu cầu), UI wizard vẫn hiển thị "đang ở mặt nào" ở bước capture qua `idStepBadge`.
 
 ## Điểm khác biệt / giá trị cốt lõi
 
