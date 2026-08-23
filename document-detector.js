@@ -457,30 +457,32 @@
     if (typeof fallbackFn === 'function') {
       try {
         const fallbackRes = fallbackFn(source, options);
-        if (fallbackRes && fallbackRes.corners && fallbackRes.corners.length === 4) {
+        if (fallbackRes && fallbackRes.corners && Array.isArray(fallbackRes.corners) && fallbackRes.corners.length === 4) {
           const geom = validateGeometry(fallbackRes.corners);
-          return {
-            corners: geom.valid ? clampCorners(fallbackRes.corners) : fallbackRes.corners,
-            documentScore: fallbackRes.confidence !== undefined ? fallbackRes.confidence : 0.55,
-            geometryValid: geom.valid,
-            geometryScore: geom.valid ? Number((geom.areaRatio * 1.2).toFixed(4)) : 0,
-            source: 'CURRENT_FALLBACK',
-            error: null
-          };
+          if (geom.valid) {
+            return {
+              corners: clampCorners(fallbackRes.corners),
+              documentScore: fallbackRes.confidence !== undefined ? fallbackRes.confidence : 0.55,
+              geometryValid: true,
+              geometryScore: Number((geom.areaRatio * 1.2).toFixed(4)),
+              source: 'CURRENT_FALLBACK',
+              error: null
+            };
+          }
         }
       } catch (fbErr) {
         // Fallback threw
       }
     }
 
-    // Step 3: Safe default corners
+    // Step 3: Safe default corners (used when ML fails/invalid AND classical fails/invalid/throws)
     return {
       corners: DEFAULT_CORNERS.map(p => ({ ...p })),
       documentScore: 0.5,
-      geometryValid: false,
-      geometryScore: 0,
+      geometryValid: true,
+      geometryScore: 0.5,
       source: 'DEFAULT_FALLBACK',
-      error: 'Both ML and classical detectors failed'
+      error: 'Both ML and classical detectors failed or returned invalid geometry'
     };
   }
 

@@ -314,7 +314,7 @@ async function runTests() {
   }
 
   // -------------------------------------------------------------
-  // Gate 8: Safe Default Corners when Both Fail
+  // Gate 8: Safe Default Corners Fallback
   // -------------------------------------------------------------
   console.log('\n--- Gate 8: Safe Default Corners Fallback ---');
   DocumentDetector.__test.resetState();
@@ -327,6 +327,90 @@ async function runTests() {
   assert(res8.corners.length === 4, 'Gate 8: returns 4 default corners');
   assert(res8.corners[0].x === 0.045 && res8.corners[0].y === 0.045, 'Gate 8: corners match DEFAULT_CORNERS');
   console.log('DEFAULT_FALLBACK: PASS');
+
+  // -------------------------------------------------------------
+  // Gate 9: Classical-Invalid Fallback Chain (Reject Invalid Geometry)
+  // -------------------------------------------------------------
+  console.log('\n--- Gate 9: Classical-Invalid Fallback Chain ---');
+
+  // Test 1: ML fail + classical returns NaN corner -> DEFAULT_FALLBACK
+  DocumentDetector.__test.resetState();
+  DocumentDetector.__test.setRuntimeFactory(() => Promise.reject(new Error('ML fail')));
+  const res9a = await DocumentDetector.detect(testCanvas, {
+    fallbackDetector: () => ({ corners: [{ x: NaN, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }] })
+  });
+  assert(res9a.source === 'DEFAULT_FALLBACK', `Test 1 (classical NaN): source is DEFAULT_FALLBACK (got ${res9a.source})`);
+  assert(res9a.geometryValid === true, 'Test 1: safe default geometry is valid');
+
+  // Test 2: ML fail + classical returns Infinity -> DEFAULT_FALLBACK
+  DocumentDetector.__test.resetState();
+  DocumentDetector.__test.setRuntimeFactory(() => Promise.reject(new Error('ML fail')));
+  const res9b = await DocumentDetector.detect(testCanvas, {
+    fallbackDetector: () => ({ corners: [{ x: Infinity, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 }] })
+  });
+  assert(res9b.source === 'DEFAULT_FALLBACK', `Test 2 (classical Infinity): source is DEFAULT_FALLBACK (got ${res9b.source})`);
+
+  // Test 3: ML fail + classical returns bow-tie / self-intersecting quad -> DEFAULT_FALLBACK
+  DocumentDetector.__test.resetState();
+  DocumentDetector.__test.setRuntimeFactory(() => Promise.reject(new Error('ML fail')));
+  const res9c = await DocumentDetector.detect(testCanvas, {
+    fallbackDetector: () => ({ corners: [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.9 }, { x: 0.9, y: 0.1 }, { x: 0.1, y: 0.9 }] })
+  });
+  assert(res9c.source === 'DEFAULT_FALLBACK', `Test 3 (classical bow-tie quad): source is DEFAULT_FALLBACK (got ${res9c.source})`);
+
+  // Test 4: ML fail + classical returns collapsed/tiny quad (<5% area) -> DEFAULT_FALLBACK
+  DocumentDetector.__test.resetState();
+  DocumentDetector.__test.setRuntimeFactory(() => Promise.reject(new Error('ML fail')));
+  const res9d = await DocumentDetector.detect(testCanvas, {
+    fallbackDetector: () => ({ corners: [{ x: 0.1, y: 0.1 }, { x: 0.12, y: 0.1 }, { x: 0.12, y: 0.12 }, { x: 0.1, y: 0.12 }] })
+  });
+  assert(res9d.source === 'DEFAULT_FALLBACK', `Test 4 (classical collapsed quad): source is DEFAULT_FALLBACK (got ${res9d.source})`);
+
+  // Test 5: ML fail + classical returns object with <4 corners -> DEFAULT_FALLBACK
+  DocumentDetector.__test.resetState();
+  DocumentDetector.__test.setRuntimeFactory(() => Promise.reject(new Error('ML fail')));
+  const res9e = await DocumentDetector.detect(testCanvas, {
+    fallbackDetector: () => ({ corners: [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 }, { x: 0.9, y: 0.9 }] })
+  });
+  assert(res9e.source === 'DEFAULT_FALLBACK', `Test 5 (classical 3 corners): source is DEFAULT_FALLBACK (got ${res9e.source})`);
+
+  // Test 6: ML fail + classical throws -> DEFAULT_FALLBACK
+  DocumentDetector.__test.resetState();
+  DocumentDetector.__test.setRuntimeFactory(() => Promise.reject(new Error('ML fail')));
+  const res9f = await DocumentDetector.detect(testCanvas, {
+    fallbackDetector: () => { throw new Error('Classical exception'); }
+  });
+  assert(res9f.source === 'DEFAULT_FALLBACK', `Test 6 (classical throws): source is DEFAULT_FALLBACK (got ${res9f.source})`);
+
+  // Test 7: ML fail + classical valid -> CURRENT_FALLBACK
+  DocumentDetector.__test.resetState();
+  DocumentDetector.__test.setRuntimeFactory(() => Promise.reject(new Error('ML fail')));
+  const res9g = await DocumentDetector.detect(testCanvas, {
+    fallbackDetector: dummyClassicalDetector
+  });
+  assert(res9g.source === 'CURRENT_FALLBACK', `Test 7 (classical valid): source is CURRENT_FALLBACK (got ${res9g.source})`);
+  assert(res9g.geometryValid === true, 'Test 7: classical fallback geometry is valid');
+
+  // Test 8: ML valid -> SCANIC_ML
+  DocumentDetector.__test.resetState();
+  ensureValidRuntime();
+  const res9h = await DocumentDetector.detect(testCanvas, defaultOptions);
+  assert(res9h.source === 'SCANIC_ML', `Test 8 (ML valid): source is SCANIC_ML (got ${res9h.source})`);
+  assert(res9h.geometryValid === true, 'Test 8: ML geometry is valid');
+
+  // -------------------------------------------------------------
+  // Gate 10: Default Corners Invariant Verification
+  // -------------------------------------------------------------
+  console.log('\n--- Gate 10: Default Corners Invariant ---');
+  const dCorners = DocumentDetector.DEFAULT_CORNERS;
+  assert(Array.isArray(dCorners) && dCorners.length === 4, 'DEFAULT_CORNERS has exactly 4 points');
+  assert(dCorners.every(p => Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1), 'DEFAULT_CORNERS coordinates finite in [0, 1]');
+  assert(DocumentDetector.isConvexQuad(dCorners) === true, 'DEFAULT_CORNERS is strictly convex');
+  const dArea = DocumentDetector.polygonArea(dCorners);
+  assert(dArea >= 0.05 && dArea <= 0.995, `DEFAULT_CORNERS area is reasonable (got ${(dArea * 100).toFixed(1)}%)`);
+  const dGeom = DocumentDetector.validateGeometry(dCorners);
+  assert(dGeom.valid === true, 'validateGeometry(DEFAULT_CORNERS).valid === true');
+  console.log('DEFAULT_CORNERS_INVARIANT: PASS');
 
   console.log(`\n==================================================`);
   console.log(`RESULTS: ${checks - failures}/${checks} checks passed.`);

@@ -267,9 +267,12 @@
         detection = detectDocument(rotated);
       }
       if (state.mode === 'id') applyIdAspectHint(detection, rotated.width, rotated.height);
-      page.corners = detection.corners;
-      page.confidence = detection.confidence;
-      page.detectorSource = detection.source;
+      const safeCorners = (detection && detection.corners && Array.isArray(detection.corners) && detection.corners.length === 4)
+        ? detection.corners
+        : [{ x: 0.045, y: 0.045 }, { x: 0.955, y: 0.045 }, { x: 0.955, y: 0.955 }, { x: 0.045, y: 0.955 }];
+      page.corners = safeCorners;
+      page.confidence = detection && typeof detection.confidence === 'number' ? detection.confidence : 0.55;
+      page.detectorSource = detection && detection.source ? detection.source : 'DEFAULT_FALLBACK';
       page.width = rotated.width;
       page.height = rotated.height;
     } finally {

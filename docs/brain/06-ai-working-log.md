@@ -16,6 +16,27 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-08-23] Fix fail-safe classical fallback geometry validation & expand regression gates
+
+- **Agent:** Codex
+- **Thay đổi:**
+  1. Khắc phục blocker fail-safe trong `document-detector.js`: khi ML lỗi và gọi `fallbackDetector`, chỉ chấp nhận trả về `source: 'CURRENT_FALLBACK'` nếu `validateGeometry(fallbackRes.corners).valid === true`. Nếu classical fallback trả toạ độ invalid (NaN, Infinity, bow-tie tự cắt, diện tích $<5\%$, ít hơn 4 điểm, hoặc ném ngoại lệ), luồng tiếp tục chuyển xuống `DEFAULT_FALLBACK` với safe default corners `DEFAULT_CORNERS`.
+  2. Bổ sung defensive contract nhẹ trong `app.js` (`detectPage`): bảo đảm `page.corners` luôn luôn nhận đúng 4 toạ độ hợp lệ.
+  3. Mở rộng bộ kiểm thử `scripts/regression_ml_detector.js` lên 53 checks bao gồm Gate 9 (Classical-Invalid Fallback Chain cho cả 8 scenarios: NaN, Infinity, bow-tie, collapsed quad, $<4$ điểm, exception, classical valid, ML valid) và Gate 10 (assert bất biến hình học `DEFAULT_CORNERS` tự thân hợp lệ).
+- **File đã sửa:** `document-detector.js`, `app.js`, `scripts/regression_ml_detector.js`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Đảm bảo không bao giờ để bất kỳ bộ 4 góc invalid nào lọt vào crop UI khi cả ML lẫn classical detector thất bại.
+- **Kiểm tra:**
+  - `node --check app.js`, `node --check document-detector.js`, `node --check sw.js` PASS.
+  - `node scripts/regression_ml_detector.js` PASS (53/53).
+  - `node scripts/regression_export_busy.js` PASS (29/29).
+  - `node scripts/regression_scan_id.js` PASS (52/52).
+  - `node scripts/regression_sw_update.cjs` PASS (9/9).
+  - `node scripts/rehearsal_dataset.cjs` PASS (25/25 images, max delta 0.000068).
+  - `node scripts/acceptance_offline_pwa.cjs` PASS (100% real offline Chromium).
+  - `python scripts/validate_static.py` PASS (8/8).
+
+---
+
 ## [2026-08-23] Productionize Scanic ML Document Corner Detection & Final Release Gates
 
 - **Agent:** Codex
