@@ -1,4 +1,4 @@
-const CACHE = 'scanvuong-v2.1.0';
+const CACHE = 'vigil-lens-v2.2.0';
 const ASSETS = [
   './',
   './index.html',
@@ -24,7 +24,7 @@ self.addEventListener('install', e => e.waitUntil(
 
 self.addEventListener('activate', e => e.waitUntil(
   caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k.startsWith('scanvuong-') && k !== CACHE).map(k => caches.delete(k))))
+    .then(keys => Promise.all(keys.filter(k => (k.startsWith('scanvuong-') || k.startsWith('vigil-lens-')) && k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim())
 ));
 

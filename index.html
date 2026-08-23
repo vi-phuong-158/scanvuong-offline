@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="ScanVuông - Quét tài liệu, chỉnh phối cảnh và xuất PDF hoàn toàn trên thiết bị." />
-  <title>ScanVuông — Scan PDF Offline</title>
+  <meta name="description" content="Vigil Lens by VPH — Quét tài liệu, chỉnh phối cảnh và xuất PDF chất lượng cao hoàn toàn trên thiết bị." />
+  <title>Vigil Lens — Quét tài liệu & Xuất PDF Offline</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
@@ -17,15 +17,18 @@
   <!-- Header / Topbar -->
   <header class="topbar">
     <div class="brand">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M4 16v3a1 1 0 0 0 1 1h3M16 20h3a1 1 0 0 0 1-1v-3" />
-          <rect x="7" y="7" width="10" height="10" rx="1.5" />
+      <div class="brand-mark" aria-hidden="true" title="Vigil Lens by VPH">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <!-- Optical focus brackets / 4 corner marks -->
+          <path d="M4 7V4h3M17 4h3v3M4 17v3h3M17 20h3v-3" stroke-width="2.2" />
+          <!-- Optical lens center geometric V -->
+          <path d="m8 9 4 7 4-7" stroke-width="2.2" stroke-linejoin="round" />
+          <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
         </svg>
       </div>
       <div class="brand-text">
-        <h1>ScanVuông</h1>
-        <p>Scan PDF offline</p>
+        <h1>Vigil Lens</h1>
+        <p>by VPH</p>
       </div>
     </div>
     <div class="top-actions">
@@ -63,9 +66,9 @@
     <section id="modeSelect" class="mode-select-section card">
       <div class="mode-select-container">
         <div class="mode-select-header">
-          <div class="mode-brand-badge">ScanVuông Utility</div>
+          <div class="mode-brand-badge">VIGIL ECOSYSTEM</div>
           <h2>Bạn muốn scan gì?</h2>
-          <p class="muted">Chọn chế độ quét tài liệu — hoàn toàn offline, bảo mật trên thiết bị</p>
+          <p class="muted">See clearly. Capture precisely. Quét tài liệu hoàn toàn offline trên thiết bị.</p>
         </div>
         <div class="mode-cards">
           <button id="modeDocBtn" class="mode-card" type="button">
@@ -281,7 +284,7 @@
           <label class="field">
             <span class="field-label">Tên file</span>
             <div class="filename-wrap">
-              <input id="fileName" type="text" value="ScanVuong" maxlength="80" autocomplete="off" />
+              <input id="fileName" type="text" value="VigilLens" maxlength="80" autocomplete="off" />
               <span>.pdf</span>
             </div>
           </label>

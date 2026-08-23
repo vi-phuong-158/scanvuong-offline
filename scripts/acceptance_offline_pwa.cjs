@@ -6,7 +6,7 @@ const os = require('os');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = 8769;
-const PROFILE_DIR = path.join(os.tmpdir(), 'scanvuong_offline_profile_' + Date.now());
+const PROFILE_DIR = path.join(os.tmpdir(), 'vigil_lens_offline_profile_' + Date.now());
 
 fs.mkdirSync(PROFILE_DIR, { recursive: true });
 
@@ -63,7 +63,7 @@ const injectedScript = `
           results.swReady = !!reg;
 
           const cacheKeys = await caches.keys();
-          const activeCacheName = cacheKeys.find(k => k.startsWith('scanvuong-')) || 'scanvuong-v2.1.0';
+          const activeCacheName = cacheKeys.find(k => k.startsWith('vigil-lens-') || k.startsWith('scanvuong-')) || 'vigil-lens-v2.2.0';
           const cache = await caches.open(activeCacheName);
           const keys = await cache.keys();
           results.cachedCount = keys.length;

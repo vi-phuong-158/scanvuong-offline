@@ -188,7 +188,7 @@ Workflow độc lập với document mode, chọn ở màn hình bắt đầu (`
         ──► renderPageCanvas(job.front), renderPageCanvas(job.back)   [HÀM DÙNG CHUNG, không viết lại]
         ──► composeIdA4(frontCanvas, backCanvas)                     [canvas 1240×1754, A4 portrait]
         ──► canvasToJpeg() ──► buildPdf([...], 'a4', false)          [HÀM DÙNG CHUNG]
-        ──► PDF 1 trang, tên mặc định "ScanVuong-ID.pdf"
+         ──► PDF 1 trang, tên mặc định "VigilLens-ID.pdf"
 ```
 
 Nguyên tắc thiết kế then chốt (đã kiểm chứng bằng regression + rehearsal trình duyệt thật, xem

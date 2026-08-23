@@ -1015,7 +1015,7 @@
     const job = {
       front: { file: front.file, name: front.name, corners: cloneCorners(front.corners), rotation: front.rotation, filter: front.filter },
       back: { file: back.file, name: back.name, corners: cloneCorners(back.corners), rotation: back.rotation, filter: back.filter },
-      fileName: 'ScanVuong-ID'
+      fileName: 'VigilLens-ID'
     };
     setBusy(true, 'Đang xuất PDF…'); els.idExportNotice.classList.add('hidden'); setIdProgress(5, 'Đang dựng mặt trước…');
     try {
@@ -1135,7 +1135,7 @@
     });
     objects[catalogId-1]=`<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
     objects[pagesId-1]=`<< /Type /Pages /Kids [${pageIds.map(id=>`${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
-    const chunks=[strBytes('%PDF-1.4\n%ScanVuong\n')], offsets=[0]; let position=chunks[0].length;
+    const chunks=[strBytes('%PDF-1.4\n%VigilLens\n')], offsets=[0]; let position=chunks[0].length;
     objects.forEach((obj,idx)=>{
       offsets[idx+1]=position; const head=strBytes(`${idx+1} 0 obj\n`),tail=strBytes('\nendobj\n'); chunks.push(head);position+=head.length;
       if(typeof obj==='string'){const body=strBytes(obj);chunks.push(body);position+=body.length;}
@@ -1178,7 +1178,7 @@
       quality: els.quality.value,
       pageSize: els.pageSize.value,
       margin: els.marginToggle.checked,
-      fileName: sanitizeFilename(els.fileName.value||'ScanVuong')
+      fileName: sanitizeFilename(els.fileName.value||'VigilLens')
     };
   }
 
@@ -1203,7 +1203,7 @@
     finally{setBusy(false);setTimeout(()=>els.exportProgress.classList.add('hidden'),5000);}
   }
 
-  function sanitizeFilename(name){return name.trim().replace(/[\\/:*?"<>|]+/g,'-').replace(/\s+/g,' ').slice(0,80)||'ScanVuong';}
+  function sanitizeFilename(name){return name.trim().replace(/[\\/:*?"<>|]+/g,'-').replace(/\s+/g,' ').slice(0,80)||'VigilLens';}
 
   function rotateCorners90(corners){return orderCorners(corners.map(p=>({x:1-p.y,y:p.x})));}
 

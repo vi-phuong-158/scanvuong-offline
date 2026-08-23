@@ -16,6 +16,34 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-08-23] Rebrand toàn diện ứng dụng thành VPH Vigil Lens
+
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Brand Architecture:** Thiết lập kiến trúc thương hiệu chuẩn hóa: Master brand: **VPH**, Ecosystem: **VIGIL**, Product name: **Vigil Lens**, Signature: **by VPH**, Tagline: **See clearly. Capture precisely.**
+  2. **Giao diện & Biểu tượng:**
+     - Thiết kế mới biểu tượng SVG Topbar: kết hợp chữ **V** hình học quang học, các ngoặc lấy nét (focus brackets) và 4 điểm góc tài liệu.
+     - Cập nhật tiêu đề Topbar thành **Vigil Lens**, phụ đề `by VPH`.
+     - Cập nhật huy hiệu `VIGIL ECOSYSTEM` và thông điệp tagline trên màn hình chọn chế độ.
+  3. **Metadata & PWA:** Cập nhật `title`, `meta description` trong `index.html` và `name`, `short_name`, `description` trong `manifest.webmanifest`.
+  4. **Export Defaults:** Cập nhật tên file xuất mặc định trong `index.html` (`VigilLens`), `app.js` (`VigilLens` và `VigilLens-ID`) cùng PDF header chunk (`%PDF-1.4\n%VigilLens\n`).
+  5. **Service Worker:** Nâng cấp cache name lên `vigil-lens-v2.2.0`, hỗ trợ tự động dọn sạch cache cũ tiền tố `scanvuong-*` và `vigil-lens-*`.
+  6. **Documentation & Validation:** Cập nhật toàn diện `README.md`, `docs/brain/`, static check `_no_legacy_brand_in_user_facing` trong `scripts/validate_static.py` và các kịch bản kiểm thử regression.
+- **File đã sửa:** `index.html`, `styles.css`, `app.js`, `manifest.webmanifest`, `sw.js`, `README.md`, `scripts/validate_static.py`, `scripts/regression_export_busy.js`, `scripts/regression_scan_id.js`, `scripts/acceptance_offline_pwa.cjs`, `docs/brain/00-project-overview.md`, `docs/brain/01-architecture.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Định vị sản phẩm thành công cụ quét tài liệu quang học độ chính xác cao thuộc hệ sinh thái VIGIL, đảm bảo tính nhất quán và khả năng mở rộng trong tương lai.
+- **Kiểm tra:**
+  - `python scripts/validate_static.py` PASS (9/9 checks, 0 legacy brand in user-facing).
+  - `node --check app.js`, `node --check sw.js`, `node --check document-detector.js` PASS.
+  - `node scripts/regression_export_busy.js` PASS (29/29).
+  - `node scripts/regression_scan_id.js` PASS (52/52).
+  - `node scripts/regression_ml_detector.js` PASS (53/53).
+  - `node scripts/regression_sw_update.cjs` PASS (9/9).
+  - `node scripts/rehearsal_dataset.cjs` PASS (25/25 images).
+  - `node scripts/test_touch_targets.cjs` PASS (140/140 checks).
+  - `node scripts/acceptance_offline_pwa.cjs` PASS.
+
+---
+
 ## [2026-08-23] Review độc lập & đóng toàn bộ acceptance gaps cho PR #8 (Mobile-First UI Redesign)
 
 - **Agent:** Codex

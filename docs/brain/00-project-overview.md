@@ -2,11 +2,11 @@
 
 ## Mục tiêu
 
-ScanVuông biến ảnh chụp tài liệu giấy thành file PDF sạch, thẳng, có thể đọc được — hoàn toàn trên thiết bị của người dùng, không cần mạng, không cần tài khoản, không gửi tài liệu đi đâu cả.
+**Vigil Lens** (VPH Vigil Lens — thuộc hệ sinh thái **VIGIL**, tagline: *See clearly. Capture precisely.*) biến ảnh chụp tài liệu giấy thành file PDF sạch, thẳng, có thể đọc được — hoàn toàn trên thiết bị của người dùng, không cần mạng, không cần tài khoản, không gửi tài liệu đi đâu cả.
 
 Ứng dụng có hai workflow độc lập, chọn ở màn hình bắt đầu (`state.mode`):
 - **Document mode** (mặc định lịch sử): nhiều trang → nhiều/1 trang PDF theo tỷ lệ tài liệu hoặc A4.
-- **ID mode** ("Scan ID", thêm 2026-08-23): đúng 2 ảnh (mặt trước/mặt sau một thẻ/căn cước) → ghép lên **một trang A4 duy nhất**. Xem [01-architecture.md](01-architecture.md) mục "ID mode" và quyết định trong [03-decisions.md](03-decisions.md).
+- **ID mode** ("Scan ID"): đúng 2 ảnh (mặt trước/mặt sau một thẻ/căn cước) → ghép lên **một trang A4 duy nhất**. Xem [01-architecture.md](01-architecture.md) mục "ID mode" và quyết định trong [03-decisions.md](03-decisions.md).
 
 ## Người dùng chính
 
@@ -22,7 +22,7 @@ ScanVuông biến ảnh chụp tài liệu giấy thành file PDF sạch, thẳn
 - Tự động phát hiện 4 góc tờ giấy kèm mức độ tin cậy; trang chưa chắc chắn được đánh dấu để người dùng tự kiểm tra, không âm thầm cắt sai.
 - Chỉnh tay 4 điểm góc, sửa phối cảnh, xoay 90°.
 - Quản lý nhiều trang: xoá, sắp xếp lại, xem thumbnail.
-- 4 bộ lọc ảnh: Tự động đẹp (mặc định, pixel pipeline thật) / Tài liệu màu / Đen trắng / Gốc.
+- 4 bộ lọc ảnh: Tự động (mặc định, pixel pipeline thật) / Màu / Đen trắng / Gốc.
 - Xuất PDF: khổ A4 tự xoay hoặc theo tỷ lệ tài liệu, nhiều mức chất lượng, chế độ "cố gắng dưới 2 MB".
 - Cài đặt như PWA và dùng offline sau lần tải đầu.
 - **Scan ID**: workflow riêng — mặt trước + mặt sau một thẻ/căn cước → auto-crop/phối cảnh từng mặt (tái dùng đúng pipeline trên) → ghép lên 1 trang A4 dọc ("Bản in đẹp": thẻ phóng lớn vừa phải, không phải kích thước thật) → xuất PDF 1 trang. Không thể xuất nếu thiếu một mặt.
@@ -39,7 +39,7 @@ ScanVuông biến ảnh chụp tài liệu giấy thành file PDF sạch, thẳn
 
 ## Điểm khác biệt / giá trị cốt lõi
 
-Khác với các app scan phổ biến, ScanVuông không có backend, không phụ thuộc thư viện ngoài (không framework, không CDN, không package manager) và xử lý ảnh 100% bằng Canvas/WebGL ngay trong trình duyệt. Đây là lựa chọn thiết kế có chủ đích để tối đa hoá quyền riêng tư và khả năng chạy offline, đổi lại việc không có OCR hay tính năng AI.
+Khác với các app scan phổ biến, Vigil Lens không có backend, không phụ thuộc thư viện ngoài (không framework, không CDN, không package manager) và xử lý ảnh 100% bằng Canvas/WebGL ngay trong trình duyệt. Đây là lựa chọn thiết kế có chủ đích để tối đa hoá quyền riêng tư và khả năng chạy offline, đổi lại việc không có OCR hay tính năng AI.
 
 ## Trạng thái dự án (2026-08-23)
 

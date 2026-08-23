@@ -1,4 +1,4 @@
-"""Local static server for ScanVuong. Standard library only, no dependencies."""
+"""Local static server for Vigil Lens. Standard library only, no dependencies."""
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 import os
@@ -11,7 +11,7 @@ os.chdir(ROOT)
 PORTS = [8765, 8766, 8767, 8768]
 
 
-class ScanVuongHandler(SimpleHTTPRequestHandler):
+class VigilLensHandler(SimpleHTTPRequestHandler):
     # Older Python releases do not know these types; the PWA needs them right.
     extensions_map = {
         **SimpleHTTPRequestHandler.extensions_map,
@@ -38,11 +38,11 @@ class ScanVuongHandler(SimpleHTTPRequestHandler):
 def serve():
     for port in PORTS:
         try:
-            httpd = ThreadingHTTPServer(('127.0.0.1', port), ScanVuongHandler)
+            httpd = ThreadingHTTPServer(('127.0.0.1', port), VigilLensHandler)
         except OSError:
             continue
         url = f'http://127.0.0.1:{port}'
-        print(f'ScanVuong dang chay tai: {url}')
+        print(f'Vigil Lens dang chay tai: {url}')
         print('Nhan Ctrl+C de dung ung dung.')
         try:
             webbrowser.open(url)
@@ -51,7 +51,7 @@ def serve():
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print('\nDa dung ScanVuong.')
+            print('\nDa dung Vigil Lens.')
         finally:
             httpd.server_close()
         return

@@ -1,119 +1,120 @@
-# ScanVuông — Scan PDF Offline
+﻿# Vigil Lens
 
-Ứng dụng web/PWA nhỏ gọn để biến ảnh chụp tài liệu thành PDF: tự nhận 4 góc tờ giấy, sửa phối cảnh, chỉnh tay góc cắt, làm rõ tài liệu và xuất PDF. Toàn bộ xử lý diễn ra ngay trên máy/điện thoại của bạn.
+> **See clearly. Capture precisely.**
+
+A private, precision-focused document scanner by VPH.
+
+---
+
+## VPH Vigil Ecosystem
+
+**Vigil Lens** là một phần của hệ sinh thái công cụ **VIGIL** mang tinh thần observation, detection, precision và security workflows. Ứng dụng tập trung thực hiện xuất sắc chu trình cốt lõi:
+
+$$\text{Capture} \longrightarrow \text{Detect} \longrightarrow \text{Correct} \longrightarrow \text{Export}$$
 
 **Không OCR · Không máy chủ · Không cơ sở dữ liệu · Không đăng nhập · Không gửi ảnh đi đâu cả.**
 
-Mở app sẽ hỏi bạn muốn **Scan tài liệu** (nhiều trang) hay **Scan ID** (căn cước/thẻ hai mặt).
+---
 
-## Scan tài liệu (V1)
+## Tính năng chính
 
-- Chọn nhiều ảnh JPG/PNG/WEBP cùng lúc, hoặc kéo-thả ảnh vào cửa sổ.
-- Chụp ảnh trực tiếp bằng camera trên điện thoại.
-- Tự phát hiện mép tờ giấy; trang nào chưa chắc chắn sẽ được **đánh dấu cảnh báo** thay vì cắt bừa.
-- Kéo trực tiếp 4 điểm góc để sửa vùng cắt.
-- Sửa phối cảnh (ảnh chụp xiên thành ảnh thẳng) khi xuất PDF.
-- Xoay 90°, xóa trang, đổi thứ tự trang (nút ↑ ↓ trên mọi thiết bị, kéo-thả trên máy tính).
-- 4 chế độ ảnh: **Tự động đẹp** (mặc định, tự làm sáng nền/tối chữ/nét hơn) / **Tài liệu màu** / **Đen trắng** / **Gốc**.
-- Khổ **A4 tự xoay** (dọc/ngang theo từng trang) hoặc **theo tỷ lệ tài liệu**.
-- Chất lượng **Cao / Tiêu chuẩn / Nhẹ / Cố gắng dưới 2 MB**.
-- Tùy chọn chừa lề trắng nhỏ.
-- Cài như ứng dụng (PWA) và dùng được khi không có mạng.
+### 1. Scan tài liệu (Nhiều trang)
+- Chọn nhiều ảnh JPG/PNG/WEBP cùng lúc hoặc kéo-thả trực tiếp.
+- Chụp ảnh bằng camera thiết bị (mobile-first).
+- Tự động nhận diện 4 góc mép giấy bằng mô hình Machine Learning cục bộ (DocCornerNet / ONNX Runtime Web WASM) kèm classical CV & geometry guard.
+- Tinh chỉnh thủ công 4 điểm góc với kích thước touch target đạt chuẩn $\ge 44\times 44\text{px}$.
+- Sửa phối cảnh quang học (homography warp) qua WebGL (hoặc CPU fallback an toàn).
+- 4 chế độ lọc hình ảnh: **Tự động** (làm sáng nền, đậm nét chữ) / **Màu** / **Đen trắng** / **Gốc**.
+- Tùy chọn khổ xuất: **A4 tự xoay** (dọc/ngang theo từng trang) hoặc **Theo tỷ lệ tài liệu**.
+- 4 mức chất lượng xuất: **Cao** / **Tiêu chuẩn** / **Nhẹ** / **Cố gắng dưới 2 MB**.
+- Tạo file PDF nhị phân trực tiếp trên trình duyệt (không thư viện ngoài, không telemetry).
 
-## Scan ID (căn cước / thẻ 2 mặt)
+### 2. Scan ID (Căn cước / Thẻ hai mặt)
+- Chụp hoặc chọn **mặt trước** và **mặt sau** độc lập.
+- Tự động nhận diện góc và cho phép căn chỉnh từng mặt.
+- Tự động ghép 2 mặt lên **một trang A4 dọc duy nhất** theo tỷ lệ chuẩn, căn giữa đối xứng và giữ nguyên màu ảnh/mã QR.
+- Bảo vệ dữ liệu cá nhân: không OCR, không trích xuất số thẻ, không nhận diện khuôn mặt.
 
-- Chụp/chọn **mặt trước**, rồi **mặt sau** — mỗi mặt có auto-crop, chỉnh tay 4 góc và xoay 90° y hệt Scan tài liệu.
-- Hai mặt được ghép tự động lên **một trang A4 dọc duy nhất** (mặt trước ở trên, mặt sau ở dưới, cùng chiều rộng, không méo, không lật).
-- Dùng cùng bộ lọc **Tự động đẹp** làm mặc định (không phải Đen trắng) để giữ màu ảnh/con dấu/mã QR.
-- Không thể xuất PDF nếu thiếu một trong hai mặt — ứng dụng sẽ báo rõ thay vì âm thầm xuất bản thiếu.
-- **Không OCR, không đọc số căn cước, không nhận diện khuôn mặt, không trích xuất thông tin cá nhân** — xem [00-project-overview.md](docs/brain/00-project-overview.md).
+---
 
-## Chạy trên Windows
+## Chạy ứng dụng
 
-Cách dễ nhất (máy đã có Python):
+### Chạy cục bộ trên máy tính (Windows / macOS / Linux)
 
-1. Giải nén / mở thư mục `scanvuong-offline`.
-2. Bấm đúp vào **`start-windows.bat`**.
-3. Trình duyệt sẽ tự mở `http://127.0.0.1:8765`.
-4. Muốn dừng: quay lại cửa sổ đen và bấm `Ctrl + C`.
+1. Mở thư mục dự án trong Terminal.
+2. Khởi chạy máy chủ cục bộ:
+   ```bash
+   python server.py
+   # hoặc: python -m http.server 8765
+   # hoặc click đúp: start-windows.bat (trên Windows)
+   ```
+3. Truy cập địa chỉ `http://127.0.0.1:8765` trên trình duyệt.
 
-Nếu muốn tự gõ lệnh, mở thư mục này trong Terminal rồi chạy:
+### Cài đặt PWA trên điện thoại (Android / iOS)
 
-```bash
-python -m http.server 8765
-```
+1. Triển khai thư mục tĩnh lên một host HTTPS (Vercel, Cloudflare Pages, GitHub Pages...).
+2. Mở trình duyệt Chrome/Safari và chọn **Cài đặt ứng dụng** (**Add to Home Screen**).
+3. Ứng dụng sẽ được lưu vào Service Worker Cache (`vigil-lens-v2.2.0`) và hoạt động **100% Offline** không cần kết nối mạng.
 
-rồi mở trình duyệt tới `http://127.0.0.1:8765`.
+---
 
-> `start-windows.bat` chỉ chạy một máy chủ tĩnh trên chính máy bạn (`127.0.0.1`). Nó **không** cần quyền quản trị, **không** cài thêm gì và **không** thay đổi cài đặt hệ thống.
+## Quyền riêng tư & Bảo mật
 
-**Nếu máy chưa có Python:** file `.bat` sẽ báo "Khong tim thay Python tren may". Bạn có thể mở thẳng `index.html` bằng trình duyệt để dùng các chức năng cơ bản, nhưng chế độ cài đặt PWA và cache offline **cần** chạy qua `localhost` hoặc HTTPS. Ứng dụng không tự tải Python về; nếu cần, hãy tự cài Python từ python.org rồi chạy lại file `.bat`.
+- **Xử lý 100% tại chỗ:** Mọi thao tác từ xử lý ảnh, chạy AI nhận diện góc đến đóng gói PDF đều chạy trực tiếp trong trang bằng Canvas/WebGL/WASM.
+- **Không upload, không backend:** Không có bất kỳ lệnh gọi API mạng, tracking hay phân tích dữ liệu nào.
+- **Không lưu trữ vĩnh viễn:** Không sử dụng `localStorage`, `sessionStorage`, `indexedDB` hay cookie. Khi đóng tab hoặc phiên làm việc, toàn bộ dữ liệu tạm trong bộ nhớ RAM tự động giải phóng.
 
-## Dùng trên điện thoại Android
+---
 
-Thư mục này là một trang tĩnh, nên để cài lên điện thoại bạn cần đưa nó lên một địa chỉ HTTPS (Vercel, Cloudflare Pages, GitHub Pages… đều phù hợp — đây là việc bạn chủ động làm, ứng dụng không tự gửi gì đi).
-
-1. Deploy toàn bộ thư mục này lên một host tĩnh HTTPS.
-2. Mở địa chỉ đó bằng Chrome trên điện thoại.
-3. Chọn **Cài ứng dụng** / **Add to Home screen** (nút "Cài ứng dụng" cũng hiện sẵn trong ứng dụng khi trình duyệt cho phép).
-4. Mở app từ màn hình chính và dùng như một ứng dụng bình thường.
-
-Nút **Chụp ảnh** sẽ mở camera sau của máy.
-
-## Chế độ offline hoạt động thế nào
-
-- **Lần đầu bạn phải tải được ứng dụng** (qua `localhost` hoặc HTTPS). Đây là lúc trình duyệt tải HTML/CSS/JS/icon về.
-- Service Worker (`sw.js`) lưu sẵn bộ khung ứng dụng vào cache của trình duyệt.
-- **Từ lần sau, mở app không cần mạng.** Khi có mạng, app vẫn âm thầm tải bản mới về cache để lần mở kế tiếp là bản cập nhật.
-- **Ảnh tài liệu của bạn không bao giờ được gửi lên máy chủ** — kể cả khi đang online. Việc deploy chỉ để phục vụ mấy file HTML/CSS/JS tĩnh.
-- Mở trực tiếp bằng `file://` sẽ **không** bật được Service Worker; đó là giới hạn của trình duyệt, không phải lỗi ứng dụng.
-
-## Riêng tư
-
-- Không có backend. Không có API. Không có tài khoản.
-- Ảnh được đọc bằng File API, xử lý bằng Canvas/WebGL, PDF được tạo ngay trong trình duyệt.
-- Không có analytics, không có telemetry, không có thư viện tải từ CDN.
-- Ứng dụng **không lưu tài liệu lại**: không dùng localStorage, không dùng cơ sở dữ liệu. Đóng tab là mọi thứ biến mất. Hãy xuất PDF trước khi đóng.
-
-## Vì sao không có OCR
-
-Đây là **quyết định thiết kế của V1**, không phải tính năng lỗi hay chưa làm xong. ScanVuông V1 tập trung làm thật tốt một việc: ảnh → tài liệu thẳng, sạch → PDF, hoàn toàn offline và không phụ thuộc thư viện ngoài. OCR chạy trên máy sẽ kéo theo một bộ dữ liệu ngôn ngữ lớn và làm hỏng mục tiêu "nhẹ, không phụ thuộc" đó.
-
-## Giới hạn đã biết
-
-- **Tự nhận mép giấy** hoạt động tốt nhất với tờ giấy sáng trên nền tương phản. Nếu nền quá sáng (giấy trắng trên bàn trắng), mép giấy bị che, hoặc trang chiếm quá ít khung hình, ứng dụng sẽ **đánh dấu trang đó là "cần kiểm tra"** để bạn kéo 4 góc bằng tay — nó cố tình không cắt bừa.
-- **"Cố gắng dưới 2 MB" là cố gắng, không phải cam kết.** App sẽ nén lại nhiều lần để tiến gần mốc 2 MB; nếu tài liệu quá nhiều trang hoặc quá nhiều chi tiết, file cuối vẫn có thể vượt 2 MB và app sẽ nói rõ điều đó thay vì làm chữ mờ đến mức không đọc được.
-- Xuất PDF nhiều trang ở chế độ nén mạnh có thể mất vài chục giây — mọi việc đều chạy bằng CPU/GPU của chính máy bạn.
-- Máy không hỗ trợ WebGL vẫn dùng được: ứng dụng tự chuyển sang sửa phối cảnh bằng CPU, chỉ chậm hơn.
+## Cấu trúc thư mục
 
 | File / Thư mục | Vai trò |
 |---|---|
-| `index.html` | Giao diện, khai báo toàn bộ phần tử DOM |
-| `styles.css` | Giao diện responsive cho máy tính và điện thoại |
-| `app.js` | Logic UI, editor 4 góc, warp phối cảnh, bộ lọc, quản lý trang, bộ ghi PDF |
-| `document-detector.js` | Module tự động nhận diện 4 góc: ML runtime, geometry guard, classical fallback |
-| `assets/ml/` | Tài nguyên ML cục bộ: mô hình DocCornerNet Lean (`.ort`) và ONNX Runtime Web WASM |
-| `sw.js` | Service Worker — cache offline toàn bộ app shell và tài nguyên ML |
-| `manifest.webmanifest` | Khai báo PWA (tên, icon, chế độ hiển thị) |
-| `icons/` | Icon 192px và 512px cho PWA |
-| `server.py` | Máy chủ tĩnh cục bộ (chỉ dùng thư viện chuẩn của Python) |
-| `start-windows.bat` | Chạy nhanh trên Windows |
-| `vercel.json` | Header khi deploy lên host tĩnh (không bắt buộc để chạy) |
-| `THIRD_PARTY_NOTICES.md` | Giấy phép phần mềm bên thứ ba (MIT) |
-| `AGENTS.md`, `CLAUDE.md` | Hướng dẫn cho công cụ AI khi sửa dự án |
+| `index.html` | Giao diện ứng dụng Vigil Lens, khai báo UI |
+| `styles.css` | Hệ thống Design Tokens, typography Be Vietnam Pro & bố cục responsive |
+| `app.js` | Quản lý vòng đời UI, tương tác 4 góc, bộ lọc, xử lý trang và xuất PDF |
+| `document-detector.js` | Module nhận diện 4 góc tài liệu (ML inference + geometry validator + classical CV) |
+| `assets/fonts/` | Bộ font tiếng Việt Be Vietnam Pro tự host cục bộ (WOFF2) |
+| `assets/ml/` | Mô hình DocCornerNet Lean (`.ort`) và ONNX Runtime Web WASM |
+| `sw.js` | Service Worker quản lý precache và chế độ hoạt động offline |
+| `manifest.webmanifest` | Khai báo PWA (Vigil Lens, standalone display, icons) |
+| `icons/` | Icon ứng dụng PWA (192px, 512px) |
+| `server.py` | Máy chủ cục bộ lightweight bằng Python chuẩn |
+| `THIRD_PARTY_NOTICES.md` | Giấy phép phần mềm bên thứ ba (MIT, SIL OFL 1.1) |
 
-## Dành cho người phát triển
+---
 
-Dự án không dùng bundler phức tạp để bảo đảm tính đơn giản và dễ kiểm tra. Các lệnh kiểm thử:
+## Kiểm thử & Phát triển
 
 ```bash
+# Kiểm tra cú pháp
 node --check app.js
 node --check document-detector.js
 node --check sw.js
-node scripts/regression_ml_detector.js
+
+# Kiểm tra tĩnh & bảo mật
+python scripts/validate_static.py
+
+# Kiểm tra tương tác touch targets
+node scripts/test_touch_targets.cjs
+
+# Kiểm tra regression logic
 node scripts/regression_export_busy.js
 node scripts/regression_scan_id.js
-python scripts/validate_static.py
+node scripts/regression_ml_detector.js
+node scripts/regression_sw_update.cjs
+
+# Kiểm tra tập ảnh thực tế
+node scripts/rehearsal_dataset.cjs
+
+# Kiểm tra PWA Offline
+node scripts/acceptance_offline_pwa.cjs
 ```
 
-Xem [`AGENTS.md`](AGENTS.md) để biết kiến trúc, ranh giới riêng tư và danh sách kiểm tra đầy đủ.
+---
+
+## Bản quyền & Tác giả
+
+- **Tác giả:** VPH
+- **Thương hiệu:** VPH Vigil Lens
+- **Giấy phép mã nguồn:** MIT License (xem chi tiết trong `THIRD_PARTY_NOTICES.md`).
