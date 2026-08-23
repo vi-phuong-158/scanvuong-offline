@@ -26,7 +26,7 @@
     deferredInstallPrompt: null,
     renderToken: 0,
     dragId: null,
-    preview: { image: null, mapping: null, pageId: null, dragCorner: -1 }
+    preview: { image: null, mapping: null, pageId: null, dragCorner: -1, enhancedCanvas: null, enhancedKey: '' }
   };
 
   const DEFAULT_CORNERS = [
@@ -35,10 +35,14 @@
   ];
 
   const FILTER_CSS = {
+    auto: 'none',
     document: 'brightness(1.07) contrast(1.22) saturate(.9)',
-    bw: 'grayscale(1) brightness(1.10) contrast(1.7)',
+    bw: 'none',
     original: 'none'
   };
+  // 'auto' and 'bw' run the real pixel pipeline below instead of a CSS filter,
+  // so preview and PDF export always show identical, non-CSS-only processing.
+  const PIXEL_FILTERS = new Set(['auto', 'bw']);
 
   const QUALITY = {
     high: { maxEdge: 2600, jpeg: 0.9 },
@@ -149,7 +153,7 @@
     const newPages = files.map((file, i) => ({
       id: i === 0 ? firstNewId : uid(), file, name: file.name || `Ảnh ${state.pages.length + i + 1}`,
       url: URL.createObjectURL(file), corners: cloneCorners(DEFAULT_CORNERS), confidence: 0,
-      rotation: 0, filter: 'document', width: 0, height: 0
+      rotation: 0, filter: 'auto', width: 0, height: 0
     }));
     state.pages.push(...newPages);
     state.selectedId = firstNewId;
@@ -409,6 +413,7 @@
     if (!page) {
       state.preview.image?.close?.();
       state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
+      state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';
       return;
     }
     const token = ++state.renderToken;
@@ -432,6 +437,19 @@
       : 'Mép giấy đã nhận diện tốt. Có thể kéo 4 điểm để tinh chỉnh.';
   }
 
+  // Recomputes the enhanced preview canvas only when page/filter/rotation/size
+  // actually changed — NOT on every pointermove while dragging a corner — so
+  // corner dragging stays responsive even though the pixel pipeline runs.
+  function ensureEnhancedPreview(page, source, dw, dh) {
+    const outW = Math.max(1, Math.round(dw)), outH = Math.max(1, Math.round(dh));
+    const key = `${page.id}|${page.filter}|${page.rotation}|${outW}x${outH}`;
+    if (state.preview.enhancedKey === key) return;
+    const oriented = drawRotatedToCanvas(source, page.rotation, Math.max(outW, outH));
+    enhanceCanvas(oriented, page.filter);
+    state.preview.enhancedCanvas = oriented;
+    state.preview.enhancedKey = key;
+  }
+
   function drawEditor() {
     const page = selectedPage(), source = state.preview.image;
     if (!page || !source || state.preview.pageId !== page.id) return;
@@ -449,12 +467,18 @@
     const scale = Math.min((cssW - 26) / rd.w, (cssH - 26) / rd.h);
     const dw = rd.w * scale, dh = rd.h * scale, ox=(cssW-dw)/2, oy=(cssH-dh)/2;
     ctx.save(); ctx.translate(ox,oy);
-    ctx.filter = FILTER_CSS[page.filter] || 'none';
-    const r=((page.rotation%360)+360)%360;
-    if(r===90){ctx.translate(dw,0);ctx.rotate(Math.PI/2);}
-    else if(r===180){ctx.translate(dw,dh);ctx.rotate(Math.PI);}
-    else if(r===270){ctx.translate(0,dh);ctx.rotate(-Math.PI/2);}
-    ctx.scale(scale,scale); ctx.drawImage(source,0,0); ctx.restore();
+    if (PIXEL_FILTERS.has(page.filter)) {
+      ensureEnhancedPreview(page, source, dw, dh);
+      ctx.drawImage(state.preview.enhancedCanvas, 0, 0, dw, dh);
+    } else {
+      ctx.filter = FILTER_CSS[page.filter] || 'none';
+      const r=((page.rotation%360)+360)%360;
+      if(r===90){ctx.translate(dw,0);ctx.rotate(Math.PI/2);}
+      else if(r===180){ctx.translate(dw,dh);ctx.rotate(Math.PI);}
+      else if(r===270){ctx.translate(0,dh);ctx.rotate(-Math.PI/2);}
+      ctx.scale(scale,scale); ctx.drawImage(source,0,0);
+    }
+    ctx.restore();
 
     const pts = page.corners.map(p => ({x: ox+p.x*dw, y: oy+p.y*dh}));
     ctx.save();
@@ -500,6 +524,199 @@
     renderConfidenceHint();
     els.pageCount.textContent=`${state.pages.length} trang`; els.reviewCount.textContent=review?`${review} cần kiểm tra`:'Tất cả đã ổn';
     els.exportSummary.innerHTML=`<div><span>Số trang</span><strong>${state.pages.length}</strong></div><div><span>Trang cần kiểm tra</span><strong>${review}</strong></div>`;
+  }
+
+  // ---------- Auto Enhance pixel pipeline ----------
+  // Real per-pixel processing (not CSS brightness/contrast) shared by the
+  // editor preview and the PDF export path, so what the user sees is what
+  // gets written to the PDF. See docs/brain/01-architecture.md for the design.
+
+  function computeLuma(data, w, h) {
+    const n = w * h;
+    const luma = new Float32Array(n);
+    for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+      luma[p] = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    }
+    return luma;
+  }
+
+  function channelHistogram(data, w, h, offset) {
+    const hist = new Uint32Array(256);
+    for (let i = offset; i < data.length; i += 4) hist[data[i]]++;
+    return hist;
+  }
+
+  function histPercentile(hist, total, pct) {
+    const target = total * pct;
+    let acc = 0;
+    for (let i = 0; i < 256; i++) { acc += hist[i]; if (acc >= target) return i; }
+    return 255;
+  }
+
+  // Separable box blur (sliding-window sum, O(n) regardless of radius) used
+  // both as the "local average" for local-contrast/normalization and as the
+  // narrow blur behind the unsharp-mask sharpen step.
+  function boxBlur(src, w, h, r) {
+    if (r < 1) return src.slice();
+    const clampi = (v, hi) => v < 0 ? 0 : (v > hi ? hi : v);
+    const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+    const norm = 1 / (2 * r + 1);
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      let sum = 0;
+      for (let x = -r; x <= r; x++) sum += src[row + clampi(x, w - 1)];
+      for (let x = 0; x < w; x++) {
+        tmp[row + x] = sum * norm;
+        sum += src[row + clampi(x + r + 1, w - 1)] - src[row + clampi(x - r, w - 1)];
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      let sum = 0;
+      for (let y = -r; y <= r; y++) sum += tmp[clampi(y, h - 1) * w + x];
+      for (let y = 0; y < h; y++) {
+        out[y * w + x] = sum * norm;
+        sum += tmp[clampi(y + r + 1, h - 1) * w + x] - tmp[clampi(y - r, h - 1) * w + x];
+      }
+    }
+    return out;
+  }
+
+  // Auto Enhance (color): percentile-based auto levels + light background
+  // whitening, wide-radius local contrast, then a narrow unsharp sharpen.
+  // The level correction is blended with a shared luma target (LEVEL_BLEND)
+  // instead of applying each channel's own gain fully independently, which
+  // is what keeps red stamps/colored ink from drifting toward gray.
+  function enhanceAuto(imageData) {
+    const { data, width: w, height: h } = imageData;
+    const n = w * h;
+    if (n < 4) return;
+
+    // Background normalization first: a whole-page lighting gradient/shadow
+    // is a much LOWER spatial frequency than per-character contrast, so it
+    // needs a blur radius comparable to the page itself, not a small one.
+    // The box blur is O(n) regardless of radius, so a large radius costs
+    // nothing extra — dividing it out here (instead of after the levels
+    // stretch) keeps the next step's global percentiles from being skewed
+    // by one corner of the page being brighter than the other.
+    const shadeR = clamp(Math.round(Math.min(w, h) * 0.35), 30, 260);
+    const shading = boxBlur(computeLuma(data, w, h), w, h, shadeR);
+    // Target the brightest plausible background patch (a high percentile,
+    // not the mean — the mean gets pulled down by ink/photos and would
+    // darken already-bright paper instead of lifting the dim corners up to
+    // match it) and only ever brighten (gain floored at 1) so this step
+    // can't wash out or darken a region that was already well lit.
+    const shadeHist = new Uint32Array(256);
+    for (let p = 0; p < n; p++) shadeHist[clamp(Math.round(shading[p]), 0, 255)]++;
+    const targetShade = clamp(histPercentile(shadeHist, n, 0.9), 120, 245);
+    const MAX_SHADE_GAIN = 2.2;
+    for (let p = 0, i = 0; p < n; p++, i += 4) {
+      const g = clamp(targetShade / Math.max(shading[p], 25), 1, MAX_SHADE_GAIN);
+      data[i] = clamp(data[i] * g, 0, 255);
+      data[i + 1] = clamp(data[i + 1] * g, 0, 255);
+      data[i + 2] = clamp(data[i + 2] * g, 0, 255);
+    }
+
+    // Auto levels: percentile-based per-channel stretch (auto white balance),
+    // blended with a shared luma target so red stamps/colored ink don't drift
+    // toward gray (LEVEL_BLEND controls how much per-channel correction applies).
+    const histR = channelHistogram(data, w, h, 0), histG = channelHistogram(data, w, h, 1), histB = channelHistogram(data, w, h, 2);
+    const LOW_PCT = 0.006, HIGH_PCT = 0.992, OUT_LO = 6, OUT_HI = 250, LEVEL_BLEND = 0.55;
+    const loR = histPercentile(histR, n, LOW_PCT), hiR = Math.max(loR + 8, histPercentile(histR, n, HIGH_PCT));
+    const loG = histPercentile(histG, n, LOW_PCT), hiG = Math.max(loG + 8, histPercentile(histG, n, HIGH_PCT));
+    const loB = histPercentile(histB, n, LOW_PCT), hiB = Math.max(loB + 8, histPercentile(histB, n, HIGH_PCT));
+    const loY = (loR + loG + loB) / 3, hiY = (hiR + hiG + hiB) / 3;
+    let loRf = loR * LEVEL_BLEND + loY * (1 - LEVEL_BLEND), hiRf = hiR * LEVEL_BLEND + hiY * (1 - LEVEL_BLEND);
+    let loGf = loG * LEVEL_BLEND + loY * (1 - LEVEL_BLEND), hiGf = hiG * LEVEL_BLEND + hiY * (1 - LEVEL_BLEND);
+    let loBf = loB * LEVEL_BLEND + loY * (1 - LEVEL_BLEND), hiBf = hiB * LEVEL_BLEND + hiY * (1 - LEVEL_BLEND);
+    // Floor the stretch span: a page with no genuinely dark content anywhere
+    // (near-blank, or a gradient with no ink to anchor the low percentile)
+    // would otherwise have its whole percentile range sit inside a narrow
+    // band, and stretching that sliver to the full OUT_LO..OUT_HI range
+    // amplifies tiny residual shading/noise into a fake black-to-white swing.
+    const MIN_SPAN = 70;
+    const widenSpan = (lo, hi) => {
+      if (hi - lo >= MIN_SPAN) return [lo, hi];
+      const mid = (lo + hi) / 2;
+      return [mid - MIN_SPAN / 2, mid + MIN_SPAN / 2];
+    };
+    [loRf, hiRf] = widenSpan(loRf, hiRf);
+    [loGf, hiGf] = widenSpan(loGf, hiGf);
+    [loBf, hiBf] = widenSpan(loBf, hiBf);
+    const gainR = (OUT_HI - OUT_LO) / (hiRf - loRf), gainG = (OUT_HI - OUT_LO) / (hiGf - loGf), gainB = (OUT_HI - OUT_LO) / (hiBf - loBf);
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = clamp((data[i] - loRf) * gainR + OUT_LO, 0, 255);
+      data[i + 1] = clamp((data[i + 1] - loGf) * gainG + OUT_LO, 0, 255);
+      data[i + 2] = clamp((data[i + 2] - loBf) * gainB + OUT_LO, 0, 255);
+    }
+
+    // Local contrast: a narrower unsharp pass at roughly paragraph/character
+    // scale, on top of the already-flattened background.
+    const wideR = clamp(Math.round(Math.min(w, h) * 0.05), 6, 40);
+    const wideBlur = boxBlur(computeLuma(data, w, h), w, h, wideR);
+    const luma1 = computeLuma(data, w, h);
+    const LOCAL_AMOUNT = 0.3;
+    for (let p = 0, i = 0; p < n; p++, i += 4) {
+      const add = (luma1[p] - wideBlur[p]) * LOCAL_AMOUNT;
+      data[i] = clamp(data[i] + add, 0, 255);
+      data[i + 1] = clamp(data[i + 1] + add, 0, 255);
+      data[i + 2] = clamp(data[i + 2] + add, 0, 255);
+    }
+
+    // Sharpen: narrow-radius unsharp mask so text edges read crisper without
+    // the halo a large radius or a high amount would introduce.
+    const luma2 = computeLuma(data, w, h);
+    const narrowBlur = boxBlur(luma2, w, h, 1);
+    const SHARPEN_AMOUNT = 0.55;
+    for (let p = 0, i = 0; p < n; p++, i += 4) {
+      const add = (luma2[p] - narrowBlur[p]) * SHARPEN_AMOUNT;
+      data[i] = clamp(data[i] + add, 0, 255);
+      data[i + 1] = clamp(data[i + 1] + add, 0, 255);
+      data[i + 2] = clamp(data[i + 2] + add, 0, 255);
+    }
+  }
+
+  // Đen trắng (upgraded): grayscale + percentile levels, then divide out a
+  // wide local background estimate (a lightweight stand-in for adaptive
+  // threshold/CLAHE) so uneven lighting doesn't leave a patchy page, and a
+  // small sharpen. Kept continuous-tone (not hard binarized) so thin strokes
+  // and half-tone photos on the page don't get destroyed.
+  function enhanceBW(imageData) {
+    const { data, width: w, height: h } = imageData;
+    const n = w * h;
+    if (n < 4) return;
+    const luma = computeLuma(data, w, h);
+    const hist = new Uint32Array(256);
+    for (let p = 0; p < n; p++) hist[Math.round(clamp(luma[p], 0, 255))]++;
+    const lo = histPercentile(hist, n, 0.01), hi = Math.max(lo + 70, histPercentile(hist, n, 0.97));
+    const gain = (250 - 4) / (hi - lo);
+    const stretched = new Float32Array(n);
+    for (let p = 0; p < n; p++) stretched[p] = clamp((luma[p] - lo) * gain + 4, 0, 255);
+
+    // Wide radius so a whole-page lighting gradient is what gets divided out,
+    // not just per-character contrast (a narrow radius barely differs from
+    // the pixel itself across a slow gradient, so it wouldn't flatten it).
+    const radius = clamp(Math.round(Math.min(w, h) * 0.35), 30, 260);
+    const localAvg = boxBlur(stretched, w, h, radius);
+    const normalized = new Float32Array(n);
+    for (let p = 0; p < n; p++) {
+      const bg = Math.max(localAvg[p], 40);
+      normalized[p] = clamp((stretched[p] / bg) * 235, 0, 255);
+    }
+
+    const narrowBlur = boxBlur(normalized, w, h, 1);
+    for (let p = 0, i = 0; p < n; p++, i += 4) {
+      const v = clamp(normalized[p] + (normalized[p] - narrowBlur[p]) * 0.5, 0, 255);
+      data[i] = data[i + 1] = data[i + 2] = v;
+    }
+  }
+
+  function enhanceCanvas(canvas, mode) {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    if (mode === 'auto') enhanceAuto(imageData);
+    else if (mode === 'bw') enhanceBW(imageData);
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
   }
 
   // ---------- Perspective rendering (WebGL) ----------
@@ -604,9 +821,15 @@
       }
       if(!warped) warped=warpCpu(oriented,p,outW,outH);
       const final=document.createElement('canvas');final.width=outW;final.height=outH;const ctx=final.getContext('2d',{alpha:false});ctx.fillStyle='white';ctx.fillRect(0,0,outW,outH);
-      ctx.filter = FILTER_CSS[page.filter] || 'none';
       // Both warp paths already produce the desired visual orientation.
-      ctx.drawImage(warped,0,0,outW,outH);ctx.filter='none';return final;
+      if(PIXEL_FILTERS.has(page.filter)){
+        ctx.drawImage(warped,0,0,outW,outH);
+        enhanceCanvas(final,page.filter);
+      }else{
+        ctx.filter = FILTER_CSS[page.filter] || 'none';
+        ctx.drawImage(warped,0,0,outW,outH);ctx.filter='none';
+      }
+      return final;
     }finally{source.close?.();}
   }
 
