@@ -41,6 +41,8 @@ ScanVuông biến ảnh chụp tài liệu giấy thành file PDF sạch, thẳn
 
 Khác với các app scan phổ biến, ScanVuông không có backend, không phụ thuộc thư viện ngoài (không framework, không CDN, không package manager) và xử lý ảnh 100% bằng Canvas/WebGL ngay trong trình duyệt. Đây là lựa chọn thiết kế có chủ đích để tối đa hoá quyền riêng tư và khả năng chạy offline, đổi lại việc không có OCR hay tính năng AI.
 
-## Trạng thái dự án (2026-08-22)
+## Trạng thái dự án (2026-08-23)
 
-Đã hoàn thiện và audit kỹ V1: source được khảo sát toàn bộ, sửa các lỗi phát hiện trong quá trình kiểm thử (xem [03-decisions.md](03-decisions.md) và [06-ai-working-log.md](06-ai-working-log.md)), có bộ rehearsal chức năng chạy bằng ảnh tổng hợp (import, auto-crop, chỉnh tay, phối cảnh, filter, xoay, sắp xếp, xuất PDF, xác minh bằng pypdf/pymupdf) đều PASS. Gate còn lại chưa đóng được: **PWA install / service worker registration / offline reload trên trình duyệt Chrome/Edge thật** — môi trường hiện tại không có Chrome/Edge thật để kiểm thử (xem [04-current-tasks.md](04-current-tasks.md)). Repo Git: nhánh mặc định `main`, remote công khai tại https://github.com/vi-phuong-158/scanvuong-offline, CI static validation chạy trên GitHub Actions (xem [05-testing-and-deploy.md](05-testing-and-deploy.md)). Lịch sử commit không được ghi số lượng cụ thể ở đây vì thay đổi liên tục — dùng `git log` để xem trạng thái thật.
+- **V1 Document mode & Scan ID mode**: Hoàn thành và merge vào `main`.
+- **Tự động nhận diện 4 góc bằng Machine Learning**: Tích hợp mô hình neural network DocCornerNet Lean (`document-detector.js` + `assets/ml/`) chạy offline qua ONNX Runtime Web WASM, bảo vệ bằng Geometry Guard và fallback sang classical CV. Nghiệm thu thực tế trên 25 ảnh dataset thực tế đạt 100% usable (88% Auto-OK, 0% thất bại nặng). Kiểm thử offline trên Chromium headless và Service Worker cache hoàn tất thành công.
+- **Bảo mật & Offline**: 100% tài nguyên đóng gói cục bộ, zero network calls, zero external CDN, zero persistent storage, tuân thủ giấy phép bên thứ ba tại `THIRD_PARTY_NOTICES.md`.

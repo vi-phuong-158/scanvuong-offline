@@ -16,6 +16,43 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-08-23] Productionize Scanic ML Document Corner Detection & Final Release Gates
+
+- **Agent:** Codex
+- **Thay đổi:**
+  1. Tích hợp trọn vẹn mô hình neural network DocCornerNet Lean (`assets/ml/doccornernet_lean.ort`, 1.93 MB) chạy offline qua ONNX Runtime Web WASM (`assets/ml/ort-wasm-simd-threaded.wasm`, 1.52 MB).
+  2. Tạo module `document-detector.js` quản lý singleton session, tiền xử lý ảnh ImageNet 224×224, giải mã toạ độ TL/TR/BR/BL, bộ lọc hình học Geometry Guard (kiểm tra 4 điểm hữu hạn, độ lồi nghiêm ngặt, không tự cắt, diện tích $\ge 5\%$, biên an toàn).
+  3. Bổ sung cơ chế test-only isolation `DocumentDetector.__test` (`resetState()`, `getSessionCreateCount()`, `getSessionRunCount()`, `setInferenceSession()`, `setRuntimeFactory()`) phục vụ kiểm thử cô lập và tiêm lỗi (fault-injection).
+  4. Triển khai xử lý lỗi toàn diện:
+     - `MODEL_LOAD_FAILURE_FALLBACK: PASS` (tự động fallback sang classical detector khi model/runtime lỗi, fallback sang `DEFAULT_CORNERS` khi cả hai lỗi).
+     - `INFERENCE_THROW_FALLBACK: PASS` (tiêm lỗi `session.run()` throw -> fallback an toàn).
+     - `MALFORMED_OUTPUT_FALLBACK: PASS` & `INVALID_GEOMETRY_FALLBACK: PASS` (chặn toạ độ thiếu, sai kích thước, NaN, Infinity, tứ giác tự cắt, tứ giác co cụm <5% diện tích).
+     - `SESSION_SINGLETON_REUSE: PASS` (xác thực `sessionCreateCount === 1`, `sessionRunCount === 3` qua 3 trang liên tiếp).
+     - `INIT_RECOVERY: PASS` (phục hồi thành công ở lần gọi tiếp theo sau lỗi tạm thời).
+  5. Kiểm thử an toàn nâng cấp Service Worker `scripts/regression_sw_update.cjs` (9/9 checks PASS):
+     - `SW_UPGRADE_SAFETY: PASS` (chuyển đổi `scanvuong-v1.0.0` -> `scanvuong-v2.0.0`, precache 12 assets thành công trước khi xoá cache cũ trong `activate`).
+     - `SW_INSTALL_FAILURE_SAFETY: PASS` (lỗi tải asset trong `install` sẽ huỷ SW mới, giữ nguyên SW và cache cũ đang hoạt động).
+  6. Kiểm thử độ tương đồng toạ độ (Parity Gate) và Rehearsal trên 25 ảnh private dataset `G:\My Drive\CamScaner` (`scripts/rehearsal_dataset.cjs`):
+     - 25/25 valid geometry (100%), 25/25 ML primary accepted (100%), 0 catastrophic failures.
+     - Sai số toạ độ so với benchmark: median = 0.000040, p95 = 0.000060, worst-case = 0.000068 (đạt chuẩn $\le 0.003$).
+  7. Kiểm thử Chromium Offline PWA Acceptance 2 pha (`scripts/acceptance_offline_pwa.cjs`):
+     - Pha A: Cài đặt trực tuyến, xác nhận 12 assets trong `scanvuong-v2.0.0`, kiểm tra 1 lượt ML inference.
+     - Pha B: Ngắt toàn bộ socket mạng, reload từ Service Worker cache, thực thi trọn vẹn luồng Document (auto-detect, crop, filter, xuất PDF) và luồng Scan ID (front/back, A4, xuất PDF) hoàn toàn offline với 0 request ra ngoài.
+  8. Cập nhật `THIRD_PARTY_NOTICES.md`, CI `.github/workflows/static-validation.yml`, và `scripts/validate_static.py`.
+- **File đã sửa / tạo:**
+  - Tạo mới: `document-detector.js`, `assets/ml/*` (4 files), `THIRD_PARTY_NOTICES.md`, `scripts/regression_ml_detector.js`, `scripts/regression_sw_update.cjs`, `scripts/rehearsal_dataset.cjs`, `scripts/acceptance_offline_pwa.cjs`.
+  - Cập nhật: `app.js`, `index.html`, `sw.js`, `server.py`, `README.md`, `.github/workflows/static-validation.yml`, `scripts/validate_static.py`, `docs/brain/00-project-overview.md`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Hoàn tất toàn bộ các Release Gates nghiêm ngặt để nghiệm thu sản xuất đưa Scanic ML vào ScanVuông.
+- **Kiểm tra:**
+  - `node --check app.js`, `node --check document-detector.js`, `node --check sw.js` PASS.
+  - `node scripts/regression_ml_detector.js` PASS (37/37).
+  - `node scripts/regression_export_busy.js` PASS (29/29).
+  - `node scripts/regression_scan_id.js` PASS (52/52).
+  - `node scripts/regression_sw_update.cjs` PASS (9/9).
+  - `node scripts/rehearsal_dataset.cjs` PASS (25/25 images, max delta 0.000068).
+  - `node scripts/acceptance_offline_pwa.cjs` PASS (100% real offline Chromium).
+  - `python scripts/validate_static.py` PASS (all 8 static/privacy boundary checks).
+
 ---
 
 ## [2026-08-23] Deploy production lên Vercel

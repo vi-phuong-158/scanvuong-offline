@@ -252,10 +252,24 @@
     const source = await loadImage(page.file);
     try {
       const rotated = drawRotatedToCanvas(source, page.rotation, 560);
-      const detection = detectDocument(rotated);
+      let detection;
+      if (typeof DocumentDetector !== 'undefined') {
+        const detRes = await DocumentDetector.detect(rotated, {
+          rotation: 0,
+          fallbackDetector: (c) => detectDocument(c)
+        });
+        detection = {
+          corners: detRes.corners,
+          confidence: detRes.documentScore !== null && detRes.documentScore !== undefined ? detRes.documentScore : 0.55,
+          source: detRes.source
+        };
+      } else {
+        detection = detectDocument(rotated);
+      }
       if (state.mode === 'id') applyIdAspectHint(detection, rotated.width, rotated.height);
       page.corners = detection.corners;
       page.confidence = detection.confidence;
+      page.detectorSource = detection.source;
       page.width = rotated.width;
       page.height = rotated.height;
     } finally {

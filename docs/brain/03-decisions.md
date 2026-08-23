@@ -5,6 +5,19 @@
 
 ---
 
+## [2026-08-23] Tích hợp Scanic ML (DocCornerNet Lean) làm Detector góc chính kèm Classical Fallback
+
+- **Quyết định:** Thay thế detector góc tài liệu chính bằng `DocumentDetector` (`document-detector.js`) sử dụng mô hình neural network siêu nhẹ DocCornerNet Lean (~1.93 MB) chạy offline qua ONNX Runtime Web WASM, bảo vệ bởi bộ lọc hình học nghiêm ngặt (Geometry Guard: lồi, không tự cắt, diện tích $\ge 5\%$, biên an toàn). Nếu ML không tải được, gặp lỗi runtime hoặc hình học không hợp lệ, hệ thống tự động kích hoạt detector cổ điển (`detectDocument`: Otsu/Connected Components/Sobel) làm chốt chặn an toàn (fallback).
+- **Lý do:** Benchmark thực nghiệm và đánh giá trực tiếp bởi người dùng trên 25 ảnh dataset thực tế (`G:\My Drive\CamScaner`) cho thấy:
+  - Tỷ lệ `AUTO_OK`: Tăng từ 16% (`CURRENT`) lên 88% (`SCANIC_ML`).
+  - Tỷ lệ `Usable` (sử dụng được ngay hoặc chỉ kéo mép nhẹ $<1\%$): Đạt 100% (25/25 ảnh).
+  - Tỷ lệ `Major Failure` (cắt chữ, nuốt bàn): Giảm từ 40% (`CURRENT`) xuống 0% (`SCANIC_ML`).
+  - Độ trễ xử lý: Nhanh hơn 2.2 lần (trung vị 122.1 ms so với 269.4 ms).
+  - Hoàn toàn offline: 100% tài nguyên được đóng gói tại `assets/ml/`, không gọi API hay telemetry, precached qua Service Worker `sw.js`.
+  - Giấy phép: Toàn bộ mã nguồn và trọng số mô hình đều phát hành dưới giấy phép MIT License.
+- **Đánh đổi:** Dung lượng cache offline tăng thêm ~3.5 MB (`doccornernet_lean.ort` 1.93 MB + WASM runtime 1.52 MB). Đánh đổi hoàn toàn xứng đáng với bước nhảy vọt về chất lượng nhận diện góc.
+- **Người quyết định:** Quyết định nghiệm thu thực tế của người dùng (`SCANIC_ML_PRODUCTION_APPROVED_WITH_AUTO_OK_THRESHOLD_WAIVER`).
+
 ## [gốc dự án, trước audit 2026-08-22] Dependency-free tuyệt đối
 
 - **Quyết định:** Không dùng framework, bundler, package manager, hay bất kỳ thư viện runtime nào. Toàn bộ logic nằm trong một file `app.js` (IIFE), PDF được viết bằng một bộ ghi PDF 1.4 tự viết tay thay vì dùng thư viện PDF có sẵn.
