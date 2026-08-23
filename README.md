@@ -12,7 +12,7 @@
 - Kéo trực tiếp 4 điểm góc để sửa vùng cắt.
 - Sửa phối cảnh (ảnh chụp xiên thành ảnh thẳng) khi xuất PDF.
 - Xoay 90°, xóa trang, đổi thứ tự trang (nút ↑ ↓ trên mọi thiết bị, kéo-thả trên máy tính).
-- 3 chế độ ảnh: **Tài liệu màu** / **Đen trắng** / **Gốc**.
+- 4 chế độ ảnh: **Tự động đẹp** (mặc định, tự làm sáng nền/tối chữ/nét hơn) / **Tài liệu màu** / **Đen trắng** / **Gốc**.
 - Khổ **A4 tự xoay** (dọc/ngang theo từng trang) hoặc **theo tỷ lệ tài liệu**.
 - Chất lượng **Cao / Tiêu chuẩn / Nhẹ / Cố gắng dưới 2 MB**.
 - Tùy chọn chừa lề trắng nhỏ.
