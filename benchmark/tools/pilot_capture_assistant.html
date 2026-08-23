@@ -35,7 +35,7 @@
     align-items: center;
     justify-content: space-between;
   }
-  h1 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  h1 { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
   .badge { background: #0284c7; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 999px; }
   .top-controls { display: flex; gap: 8px; align-items: center; }
   button, .file-label {
@@ -54,6 +54,8 @@
   button:hover, .file-label:hover { background: #475569; }
   button.primary { background: #0284c7; border-color: #38bdf8; }
   button.primary:hover { background: #0369a1; }
+  button.success { background: #065f46; border-color: #34d399; color: #fff; }
+  button.success:hover { background: #047857; }
   input[type="file"] { display: none; }
   
   main {
@@ -64,7 +66,7 @@
 
   /* Left Panel: Checklist */
   #left-panel {
-    width: 280px;
+    width: 290px;
     background: var(--panel);
     border-right: 1px solid var(--panel-border);
     padding: 14px;
@@ -95,13 +97,13 @@
 
   /* Right Panel: Controls */
   #right-panel {
-    width: 330px;
+    width: 340px;
     background: var(--panel);
     border-left: 1px solid var(--panel-border);
     padding: 14px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     overflow-y: auto;
   }
 
@@ -180,7 +182,33 @@
     font-weight: 600;
   }
   .status-valid { background: #064e3b; color: #34d399; border: 1px solid #059669; }
+  .status-unconfirmed { background: #78350f; color: #fbbf24; border: 1px solid #d97706; }
   .status-invalid { background: #7f1d1d; color: #f87171; border: 1px solid #dc2626; }
+
+  /* Modal Dialog */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.75);
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .modal-box {
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    padding: 20px;
+    width: 90%;
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .modal-title { font-size: 15px; font-weight: 700; color: #f87171; }
+  .modal-list { background: #0f172a; border: 1px solid #334155; padding: 10px; border-radius: 6px; font-size: 12px; max-height: 200px; overflow-y: auto; list-style-type: disc; margin-left: 20px; }
+  .modal-list li { margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -188,12 +216,13 @@
 <header>
   <h1>
     <span>ScanVuông Pilot Capture Assistant</span>
-    <span class="badge">100% Offline / Local</span>
+    <span class="badge">100% Offline • 0 Network Upload • Local Filesystem Only</span>
   </h1>
   <div class="top-controls">
-    <label class="file-label" for="file-input">📷 Thêm ảnh (1 hoặc nhiều ảnh)</label>
+    <label class="file-label" for="file-input">📷 Thêm ảnh (Batch)</label>
     <input type="file" id="file-input" accept="image/*" multiple>
-    <button id="btn-export-bundle" class="primary">💾 Xuất Gói Pilot (pilot_manifest.json)</button>
+    <button id="btn-export-bundle" class="primary">💾 Xuất Gói Pilot (Official)</button>
+    <button id="btn-export-partial" style="font-size: 11px; opacity: 0.8;">⚠️ Xuất Nháp</button>
   </div>
 </header>
 
@@ -202,7 +231,7 @@
   <aside id="left-panel">
     <div class="overall-progress">
       <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600;">
-        <span>Tiến độ Pilot</span>
+        <span>Tiến độ Xác Nhận</span>
         <span id="overall-counter">0 / 20 ảnh</span>
       </div>
       <div class="progress-bar-bg">
@@ -210,7 +239,7 @@
       </div>
     </div>
 
-    <div class="section-title">Danh mục cần chụp (20 ảnh)</div>
+    <div class="section-title">Danh mục yêu cầu (20 ảnh)</div>
     
     <div class="cat-item" data-cat="RW01_WHITE_ON_WHITE">
       <div class="cat-header">
@@ -274,12 +303,12 @@
       <button id="btn-next" style="padding: 3px 8px;">Sau ▶</button>
     </div>
 
-    <div style="display: flex; flex-direction: column; gap: 6px;">
-      <label for="input-filename" style="font-size: 11px; color: var(--text-muted);">Tên file:</label>
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <label for="input-filename" style="font-size: 11px; color: var(--text-muted);">Tên file & SHA-256:</label>
       <input type="text" id="input-filename" readonly>
     </div>
 
-    <div style="display: flex; flex-direction: column; gap: 6px;">
+    <div style="display: flex; flex-direction: column; gap: 4px;">
       <label for="select-cat-edit" style="font-size: 11px; color: var(--text-muted);">Gán danh mục (Category):</label>
       <select id="select-cat-edit">
         <option value="RW01_WHITE_ON_WHITE">RW01 — White on White (Giấy trắng trên nền sáng)</option>
@@ -291,12 +320,11 @@
       </select>
     </div>
 
-    <div style="display: flex; align-items: center; gap: 6px;">
-      <input type="checkbox" id="check-has-doc" checked>
-      <label for="check-has-doc" style="font-size: 12px; cursor: pointer;">Chứa tài liệu (Positive Document)</label>
-    </div>
+    <div id="status-box" class="status-box status-unconfirmed">⚠ Chưa xác nhận 4 góc</div>
 
-    <div id="status-box" class="status-box status-valid">✓ Ground Truth Hợp Lệ</div>
+    <button id="btn-confirm-annotation" class="success" style="width: 100%; justify-content: center; padding: 8px;">
+      ✓ Xác nhận 4 góc ảnh này
+    </button>
 
     <div class="section-title">4 Góc Ground Truth (TL → TR → BR → BL)</div>
     <div style="display: flex; flex-direction: column; gap: 4px;">
@@ -325,13 +353,25 @@
 
     <div class="instructions">
       <strong>Phím tắt:</strong><br>
-      • <kbd>1</kbd>, <kbd>2</kbd>, <kbd>3</kbd>, <kbd>4</kbd>: Đổi góc active.<br>
+      • <kbd>1</kbd>, <kbd>2</kbd>, <kbd>3</kbd>, <kbd>4</kbd>: Chọn góc active.<br>
       • <kbd>Mũi tên</kbd>: Vi chỉnh góc 1px (Shift: 5px).<br>
-      • <kbd>[</kbd> / <kbd>]</kbd>: Ảnh trước / sau.<br>
-      • <kbd>R</kbd>: Reset 4 góc mặc định.
+      • <kbd>Enter</kbd>: Xác nhận 4 góc & sang ảnh sau.<br>
+      • <kbd>[</kbd> / <kbd>]</kbd>: Ảnh trước / sau.
     </div>
   </aside>
 </main>
+
+<!-- Preflight Error Modal -->
+<div id="modal-overlay" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title">⛔ Không Thể Xuất Pilot Manifest</div>
+    <p style="font-size: 13px; color: var(--text-muted);">Gói dữ liệu chưa đạt điều kiện nghiệm thu độc lập. Vui lòng khắc phục các điểm sau:</p>
+    <ul id="modal-error-list" class="modal-list"></ul>
+    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
+      <button id="btn-close-modal" class="primary">Đã hiểu</button>
+    </div>
+  </div>
+</div>
 
 <script>
   const TARGETS = {
@@ -361,21 +401,51 @@
     ];
   }
 
-  function polygonArea(pts) {
-    if (!pts || pts.length < 3) return 0;
-    let a = 0;
-    for (let i = 0; i < pts.length; i++) {
-      const j = (i + 1) % pts.length;
-      a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  // Strict Geometry Validator
+  function validateStrictGeometry(pts) {
+    if (!pts || !Array.isArray(pts) || pts.length !== 4) {
+      return { valid: false, reason: 'Phải có đúng 4 góc' };
     }
-    return Math.abs(a) / 2;
-  }
+    for (let i = 0; i < 4; i++) {
+      const p = pts[i];
+      if (!p || typeof p.x !== 'number' || typeof p.y !== 'number' || isNaN(p.x) || isNaN(p.y) || !isFinite(p.x) || !isFinite(p.y)) {
+        return { valid: false, reason: `Góc ${i} toạ độ không hợp lệ` };
+      }
+      if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) {
+        return { valid: false, reason: `Góc ${i} (${p.x.toFixed(4)}, ${p.y.toFixed(4)}) ngoài phạm vi [0.0, 1.0]` };
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      for (let j = i + 1; j < 4; j++) {
+        const dist = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y);
+        if (dist < 0.01) return { valid: false, reason: `Góc ${i} và ${j} quá gần (< 0.01)` };
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      const next = (i + 1) % 4;
+      const edgeLen = Math.hypot(pts[next].x - pts[i].x, pts[next].y - pts[i].y);
+      if (edgeLen < 0.01) return { valid: false, reason: `Cạnh ${i}->${next} suy biến (< 0.01)` };
+    }
+    let area = 0;
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+    }
+    area = Math.abs(area) / 2;
+    if (area < 0.01) return { valid: false, reason: `Diện tích quá nhỏ (${(area*100).toFixed(1)}% < 1%)` };
+    if (area > 0.99) return { valid: false, reason: `Diện tích quá lớn (${(area*100).toFixed(1)}% > 99%)` };
 
-  function validateCorners(pts) {
-    if (!pts || pts.length !== 4) return { valid: false, reason: 'Phải có đúng 4 góc' };
-    const area = polygonArea(pts);
-    if (area < 0.01) return { valid: false, reason: 'Diện tích quá nhỏ (<1%)' };
-    if (area > 0.99) return { valid: false, reason: 'Diện tích quá lớn (>99%)' };
+    let sign = 0;
+    for (let i = 0; i < 4; i++) {
+      const p0 = pts[i];
+      const p1 = pts[(i + 1) % 4];
+      const p2 = pts[(i + 2) % 4];
+      const cp = (p1.x - p0.x) * (p2.y - p1.y) - (p1.y - p0.y) * (p2.x - p1.x);
+      if (Math.abs(cp) < 1e-7) return { valid: false, reason: `3 điểm thẳng hàng tại cạnh ${i}` };
+      const curSign = cp > 0 ? 1 : -1;
+      if (sign === 0) sign = curSign;
+      else if (sign !== curSign) return { valid: false, reason: 'Đa giác lõm hoặc tự cắt chéo' };
+    }
     return { valid: true };
   }
 
@@ -383,14 +453,19 @@
     const counts = {};
     for (const k of Object.keys(TARGETS)) counts[k] = 0;
 
+    let confirmedCount = 0;
     for (const it of items) {
-      if (counts[it.category] !== undefined) counts[it.category]++;
+      if (it.contains_document && it.annotation_confirmed) {
+        if (counts[it.category] !== undefined) counts[it.category]++;
+        confirmedCount++;
+      } else if (!it.contains_document) {
+        if (counts[it.category] !== undefined) counts[it.category]++;
+        confirmedCount++;
+      }
     }
 
-    let total = 0;
     for (const [cat, target] of Object.entries(TARGETS)) {
       const c = counts[cat] || 0;
-      total += Math.min(c, target);
       const el = document.getElementById(`count-${cat}`);
       if (el) {
         el.textContent = `${c}/${target}`;
@@ -398,8 +473,8 @@
       }
     }
 
-    document.getElementById('overall-counter').textContent = `${items.length} / 20 ảnh`;
-    const pct = Math.min(100, Math.round((items.length / 20) * 100));
+    document.getElementById('overall-counter').textContent = `${confirmedCount} / 20 xác nhận`;
+    const pct = Math.min(100, Math.round((confirmedCount / 20) * 100));
     document.getElementById('progress-bar').style.width = `${pct}%`;
   }
 
@@ -416,17 +491,31 @@
     }
 
     const valBox = document.getElementById('status-box');
+    const confirmBtn = document.getElementById('btn-confirm-annotation');
+
     if (!cur.contains_document) {
       valBox.className = 'status-box status-valid';
       valBox.textContent = '✓ Nhãn Negative (Không chứa tài liệu)';
+      confirmBtn.style.display = 'none';
     } else {
-      const val = validateCorners(corners);
-      if (val.valid) {
-        valBox.className = 'status-box status-valid';
-        valBox.textContent = '✓ Ground Truth Hợp Lệ';
-      } else {
+      confirmBtn.style.display = 'inline-flex';
+      const geomVal = validateStrictGeometry(corners);
+      if (!geomVal.valid) {
         valBox.className = 'status-box status-invalid';
-        valBox.textContent = `✗ ${val.reason}`;
+        valBox.textContent = `✗ ${geomVal.reason}`;
+        confirmBtn.disabled = true;
+      } else if (!cur.annotation_confirmed) {
+        valBox.className = 'status-box status-unconfirmed';
+        valBox.textContent = '⚠ Chưa xác nhận 4 góc (Vui lòng bấm nút dưới)';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '✓ Xác nhận 4 góc ảnh này';
+        confirmBtn.className = 'primary';
+      } else {
+        valBox.className = 'status-box status-valid';
+        valBox.textContent = '✓ Đã xác nhận 4 góc (Human-Confirmed)';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '✓ Đã xác nhận 4 góc (Bấm để xác nhận lại)';
+        confirmBtn.className = 'success';
       }
     }
   }
@@ -452,10 +541,9 @@
     if (!item.contains_document) return;
 
     const corners = item.corners;
-    // Draw Quad
     ctx.lineWidth = Math.max(2, Math.round(canvas.width / 400));
-    ctx.strokeStyle = '#38bdf8';
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+    ctx.strokeStyle = item.annotation_confirmed ? '#4ade80' : '#38bdf8';
+    ctx.fillStyle = item.annotation_confirmed ? 'rgba(74, 222, 128, 0.15)' : 'rgba(56, 189, 248, 0.15)';
     ctx.beginPath();
     ctx.moveTo(corners[0].x * canvas.width, corners[0].y * canvas.height);
     for (let i = 1; i < 4; i++) {
@@ -465,7 +553,7 @@
     ctx.fill();
     ctx.stroke();
 
-    // Draw Handles
+    // Handles
     const colors = ['#38bdf8', '#4ade80', '#facc15', '#f87171'];
     const radius = Math.max(8, Math.round(canvas.width / 120));
 
@@ -495,9 +583,8 @@
     if (idx < 0 || idx >= items.length) return;
     currentIndex = idx;
     const it = items[currentIndex];
-    document.getElementById('input-filename').value = it.filename;
+    document.getElementById('input-filename').value = `${it.filename} (${it.sha256.slice(0, 10)}...)`;
     document.getElementById('select-cat-edit').value = it.category;
-    document.getElementById('check-has-doc').checked = it.contains_document;
     document.getElementById('nav-text').textContent = `Ảnh ${currentIndex + 1} / ${items.length}`;
     updateCards();
     render();
@@ -515,13 +602,12 @@
       const arrayBuf = await file.arrayBuffer();
       const sha256 = await computeSha256(arrayBuf);
 
-      // Check duplicate
+      // Check duplicate within batch
       if (items.some(x => x.sha256 === sha256)) {
         console.warn('Duplicate photo detected, skipping:', file.name);
         continue;
       }
 
-      // Detect initial category by filename or fallback
       let category = 'RW01_WHITE_ON_WHITE';
       for (const cat of Object.keys(TARGETS)) {
         if (file.name.includes(cat)) { category = cat; break; }
@@ -543,6 +629,7 @@
         sha256,
         category,
         contains_document: isDoc,
+        annotation_confirmed: !isDoc, // Negatives are confirmed by default
         corners: isDoc ? getDefaultCorners() : null,
         dimensions: { width: img.width, height: img.height },
         img,
@@ -559,7 +646,6 @@
     if (e.target.files.length > 0) ingestFiles(Array.from(e.target.files));
   });
 
-  // Drag & drop support
   window.addEventListener('dragover', e => e.preventDefault());
   window.addEventListener('drop', e => {
     e.preventDefault();
@@ -572,11 +658,11 @@
       if (currentIndex !== -1 && items[currentIndex]) {
         items[currentIndex].category = cat;
         items[currentIndex].contains_document = (cat !== 'NEG_DOCUMENT_LIKE');
+        items[currentIndex].annotation_confirmed = (cat === 'NEG_DOCUMENT_LIKE');
         if (items[currentIndex].contains_document && !items[currentIndex].corners) {
           items[currentIndex].corners = getDefaultCorners();
         }
         document.getElementById('select-cat-edit').value = cat;
-        document.getElementById('check-has-doc').checked = items[currentIndex].contains_document;
         updateChecklist();
         updateCards();
         render();
@@ -589,7 +675,7 @@
       const cat = e.target.value;
       items[currentIndex].category = cat;
       items[currentIndex].contains_document = (cat !== 'NEG_DOCUMENT_LIKE');
-      document.getElementById('check-has-doc').checked = items[currentIndex].contains_document;
+      items[currentIndex].annotation_confirmed = (cat === 'NEG_DOCUMENT_LIKE');
       if (items[currentIndex].contains_document && !items[currentIndex].corners) {
         items[currentIndex].corners = getDefaultCorners();
       }
@@ -599,14 +685,24 @@
     }
   });
 
-  document.getElementById('check-has-doc').addEventListener('change', (e) => {
+  document.getElementById('btn-confirm-annotation').addEventListener('click', () => {
     if (currentIndex !== -1 && items[currentIndex]) {
-      items[currentIndex].contains_document = e.target.checked;
-      if (items[currentIndex].contains_document && !items[currentIndex].corners) {
-        items[currentIndex].corners = getDefaultCorners();
+      const cur = items[currentIndex];
+      if (cur.contains_document) {
+        const val = validateStrictGeometry(cur.corners);
+        if (!val.valid) {
+          alert(`Không thể xác nhận: ${val.reason}`);
+          return;
+        }
+        cur.annotation_confirmed = true;
       }
+      updateChecklist();
       updateCards();
       render();
+      // Auto-advance to next photo
+      if (currentIndex < items.length - 1) {
+        loadIndex(currentIndex + 1);
+      }
     }
   });
 
@@ -616,6 +712,8 @@
   document.getElementById('btn-reset-corners').addEventListener('click', () => {
     if (currentIndex !== -1 && items[currentIndex] && items[currentIndex].contains_document) {
       items[currentIndex].corners = getDefaultCorners();
+      items[currentIndex].annotation_confirmed = false;
+      updateChecklist();
       updateCards();
       render();
     }
@@ -666,6 +764,7 @@
         dragIndex = i;
         activeCorner = i;
         isDragging = true;
+        items[currentIndex].annotation_confirmed = false;
         updateCards();
         render();
         return;
@@ -676,6 +775,7 @@
       x: Math.max(0, Math.min(1, Number((pos.x / canvas.width).toFixed(4)))),
       y: Math.max(0, Math.min(1, Number((pos.y / canvas.height).toFixed(4))))
     };
+    items[currentIndex].annotation_confirmed = false;
     isDragging = true;
     dragIndex = activeCorner;
     activeCorner = (activeCorner + 1) % 4;
@@ -699,16 +799,57 @@
     dragIndex = -1;
   });
 
-  document.getElementById('btn-export-bundle').addEventListener('click', () => {
+  async function exportManifest(isOfficial = true) {
     if (items.length === 0) {
       alert('Chưa có ảnh nào để xuất!');
+      return;
+    }
+
+    const errors = [];
+    if (isOfficial) {
+      // 1. Quota Check
+      const counts = {};
+      for (const k of Object.keys(TARGETS)) counts[k] = 0;
+      for (const it of items) {
+        if (counts[it.category] !== undefined) counts[it.category]++;
+      }
+      for (const [cat, target] of Object.entries(TARGETS)) {
+        const c = counts[cat] || 0;
+        if (c < target) errors.push(`Danh mục ${cat}: thiếu ${target - c} ảnh (đạt ${c}/${target})`);
+      }
+
+      // 2. Unconfirmed & Geometry Check
+      for (const it of items) {
+        if (it.contains_document) {
+          if (!it.annotation_confirmed) {
+            errors.push(`Ảnh '${it.filename}': chưa xác nhận 4 góc (human-confirmation)`);
+          }
+          const geomVal = validateStrictGeometry(it.corners);
+          if (!geomVal.valid) {
+            errors.push(`Ảnh '${it.filename}': hình học không hợp lệ (${geomVal.reason})`);
+          }
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      const modal = document.getElementById('modal-overlay');
+      const list = document.getElementById('modal-error-list');
+      list.innerHTML = '';
+      for (const err of errors) {
+        const li = document.createElement('li');
+        li.textContent = err;
+        list.appendChild(li);
+      }
+      modal.style.display = 'flex';
       return;
     }
 
     const manifest = {
       timestamp: new Date().toISOString(),
       provenance: 'CAMERA_REAL',
-      dataset: 'REAL_WORLD_PILOT_V1',
+      dataset: isOfficial ? 'REAL_WORLD_PILOT_V1' : 'REAL_WORLD_PILOT_PARTIAL',
+      is_official_evidence: isOfficial,
       total_images: items.length,
       cases: items.map(it => ({
         id: it.id,
@@ -716,18 +857,50 @@
         sha256: it.sha256,
         category: it.category,
         contains_document: it.contains_document,
+        annotation_confirmed: it.annotation_confirmed === true,
+        annotation_method: it.annotation_confirmed ? 'HUMAN_CONFIRMED' : 'UNCONFIRMED',
         dimensions: it.dimensions,
         corners: it.contains_document ? it.corners.map(p => ({ x: Number(p.x.toFixed(4)), y: Number(p.y.toFixed(4)) })) : null
       }))
     };
 
-    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
+    const jsonStr = JSON.stringify(manifest, null, 2);
+
+    // Try File System Access API if available
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: isOfficial ? 'pilot_manifest.json' : 'pilot_manifest_partial.json',
+          types: [{
+            description: 'JSON Manifest',
+            accept: { 'application/json': ['.json'] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(jsonStr);
+        await writable.close();
+        alert('✓ Đã lưu pilot_manifest.json thành công vào thư mục bạn chọn!');
+        return;
+      } catch (err) {
+        if (err.name !== 'AbortError') console.warn('SaveFilePicker fallback:', err);
+      }
+    }
+
+    // Fallback normal download
+    const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'pilot_manifest.json';
+    a.download = isOfficial ? 'pilot_manifest.json' : 'pilot_manifest_partial.json';
     a.click();
     URL.revokeObjectURL(url);
+    alert('ℹ Manifest đã tải xuống. Nếu file nằm trong Downloads, bạn có thể chạy runner với cờ --manifest "duong/dan/pilot_manifest.json" hoặc chuyển file vào thư mục ảnh.');
+  }
+
+  document.getElementById('btn-export-bundle').addEventListener('click', () => exportManifest(true));
+  document.getElementById('btn-export-partial').addEventListener('click', () => exportManifest(false));
+  document.getElementById('btn-close-modal').addEventListener('click', () => {
+    document.getElementById('modal-overlay').style.display = 'none';
   });
 
   window.addEventListener('keydown', (e) => {
@@ -735,6 +908,8 @@
       activeCorner = parseInt(e.key, 10) - 1;
       updateCards();
       render();
+    } else if (e.key === 'Enter') {
+      document.getElementById('btn-confirm-annotation').click();
     } else if (e.key === '[') {
       loadIndex(currentIndex - 1);
     } else if (e.key === ']') {
@@ -751,6 +926,7 @@
       if (e.key === 'ArrowRight') c.x = Math.min(1, c.x + step);
       c.x = Number(c.x.toFixed(4));
       c.y = Number(c.y.toFixed(4));
+      items[currentIndex].annotation_confirmed = false;
       updateCards();
       render();
     }

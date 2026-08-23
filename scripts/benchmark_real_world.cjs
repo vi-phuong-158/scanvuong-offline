@@ -1,10 +1,12 @@
 'use strict';
 
 /**
- * ScanVuông Real-World Pilot Evidence Pipeline
+ * ScanVuông Real-World Pilot Evidence Pipeline (Hardened)
  * Evaluates production baseline vs experimental improvements on real camera photos.
  * Evaluates Production Baseline, Experiment B (Contrast), and Experiment C2 (Multi-Signal False Positive Rejection).
  * Generates JSON report, Markdown summary, and a standalone 100% offline visual contact sheet.
+ *
+ * FAILS CLOSED: Rejects unconfirmed, fabricated, or invalid ground truth from being used as validation evidence.
  */
 
 const fs = require('fs');
@@ -18,8 +20,8 @@ const args = process.argv.slice(2);
 
 function showHelp() {
   console.log(`
-ScanVuông Real-World Pilot Evidence Pipeline
-===========================================
+ScanVuông Real-World Pilot Evidence Pipeline (Hardened)
+======================================================
 
 Usage:
   node scripts/benchmark_real_world.cjs [options]
@@ -91,8 +93,63 @@ try {
 const DocumentDetector = require(path.join(ROOT, 'document-detector.js'));
 
 // -------------------------------------------------------------
-// Geometry & Metric Helpers
+// Strict Geometry Validator (Shared)
 // -------------------------------------------------------------
+function validateStrictGeometry(pts) {
+  if (!pts || !Array.isArray(pts) || pts.length !== 4) {
+    return { valid: false, reason: 'Must have exactly 4 corners' };
+  }
+  for (let i = 0; i < 4; i++) {
+    const p = pts[i];
+    if (!p || typeof p.x !== 'number' || typeof p.y !== 'number' || isNaN(p.x) || isNaN(p.y) || !isFinite(p.x) || !isFinite(p.y)) {
+      return { valid: false, reason: `Corner ${i} contains non-numeric coordinates` };
+    }
+    if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) {
+      return { valid: false, reason: `Corner ${i} (${p.x.toFixed(4)}, ${p.y.toFixed(4)}) out of strict bounds [0.0, 1.0]` };
+    }
+  }
+
+  for (let i = 0; i < 4; i++) {
+    for (let j = i + 1; j < 4; j++) {
+      const dist = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y);
+      if (dist < 0.01) {
+        return { valid: false, reason: `Corners ${i} and ${j} are too close (< 0.01)` };
+      }
+    }
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const next = (i + 1) % 4;
+    const edgeLen = Math.hypot(pts[next].x - pts[i].x, pts[next].y - pts[i].y);
+    if (edgeLen < 0.01) {
+      return { valid: false, reason: `Edge ${i}->${next} is degenerate (< 0.01)` };
+    }
+  }
+
+  let area = 0;
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  area = Math.abs(area) / 2;
+  if (area < 0.01) return { valid: false, reason: `Polygon area too small (${area.toFixed(4)} < 0.01)` };
+  if (area > 0.99) return { valid: false, reason: `Polygon area too large (${area.toFixed(4)} > 0.99)` };
+
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const p0 = pts[i];
+    const p1 = pts[(i + 1) % 4];
+    const p2 = pts[(i + 2) % 4];
+    const cp = (p1.x - p0.x) * (p2.y - p1.y) - (p1.y - p0.y) * (p2.x - p1.x);
+    if (Math.abs(cp) < 1e-7) return { valid: false, reason: `Collinear vertices at edge ${i}` };
+    const curSign = cp > 0 ? 1 : -1;
+    if (sign === 0) sign = curSign;
+    else if (sign !== curSign) return { valid: false, reason: 'Polygon is concave or self-intersecting' };
+  }
+
+  return { valid: true };
+}
+
 function polygonArea(pts) {
   if (!pts || pts.length < 3) return 0;
   let a = 0;
@@ -205,23 +262,6 @@ function classifyQuality(iou, cornerErr) {
   return 'CATASTROPHIC';
 }
 
-function validateAnnotationCorners(corners) {
-  if (!corners || !Array.isArray(corners) || corners.length !== 4) return { valid: false, reason: 'Must have exactly 4 corners' };
-  for (let i = 0; i < 4; i++) {
-    const p = corners[i];
-    if (typeof p.x !== 'number' || typeof p.y !== 'number' || isNaN(p.x) || isNaN(p.y)) {
-      return { valid: false, reason: `Corner ${i} contains non-numeric coordinates` };
-    }
-    if (p.x < -0.05 || p.x > 1.05 || p.y < -0.05 || p.y > 1.05) {
-      return { valid: false, reason: `Corner ${i} out of bounds (${p.x}, ${p.y})` };
-    }
-  }
-  const area = polygonArea(corners);
-  if (area < 0.01) return { valid: false, reason: `Polygon area too small: ${area.toFixed(4)}` };
-  if (area > 0.99) return { valid: false, reason: `Polygon area too large: ${area.toFixed(4)}` };
-  return { valid: true };
-}
-
 // -------------------------------------------------------------
 // Experiment B Preprocessing (Local Contrast Percentile Stretch)
 // -------------------------------------------------------------
@@ -261,7 +301,7 @@ function applyLocalContrastStretch(canvas) {
 }
 
 // -------------------------------------------------------------
-// Experiment C2 Candidate Logic (Multi-Signal Ranking & Evidence)
+// Experiment C2 Candidate Logic (Multi-Signal Candidate Ranking)
 // -------------------------------------------------------------
 function evaluateExperimentC2(canvas, detResult) {
   if (!detResult.geometryValid || !detResult.corners) {
@@ -294,9 +334,6 @@ function evaluateExperimentC2(canvas, detResult) {
   }
   const meanLuma = count > 0 ? sum / count : 0;
 
-  // Candidate scoring:
-  // High confidence (>0.70) is always accepted.
-  // Moderate confidence (0.40 - 0.70) requires document-like luminance evidence (meanLuma >= 100).
   const isAccepted = detResult.documentScore >= 0.70 || (detResult.documentScore >= 0.40 && meanLuma >= 100);
   return { accepted: isAccepted, meanLuma, score: detResult.documentScore };
 }
@@ -306,10 +343,10 @@ function evaluateExperimentC2(canvas, detResult) {
 // -------------------------------------------------------------
 async function runPilotPipeline() {
   console.log('================================================================');
-  console.log('=== ScanVuông Real-World Pilot Evidence Pipeline (V1)        ===');
+  console.log('=== ScanVuông Real-World Pilot Evidence Pipeline (Hardened)  ===');
   console.log('================================================================\n');
 
-  // 1. Audit Historical Regression Set (REGRESSION_V1) Hashes
+  // 1. Audit Historical Regression Hashes
   const regressionHashes = new Set();
   if (fs.existsSync(regressionDir)) {
     const regFiles = fs.readdirSync(regressionDir).filter(f => /\.(jpe?g|png|webp)$/i.test(f));
@@ -321,9 +358,11 @@ async function runPilotPipeline() {
     console.log(`✓ Audited ${regressionHashes.size} historical REGRESSION_V1 images in ${regressionDir}`);
   }
 
-  // 2. Discover Real-World Pilot Images in benchmark-private/
+  // 2. Discover and Validate Pilot Images in benchmark-private/
   const pilotCases = [];
   const duplicateWarnings = [];
+  const seenPilotHashes = new Map();
+  const integrityErrors = [];
 
   const targetCategories = {
     'RW01_WHITE_ON_WHITE': 5,
@@ -370,8 +409,16 @@ async function runPilotPipeline() {
 
       if (regressionHashes.has(sha256)) {
         duplicateWarnings.push({ filename, sha256, reason: 'DUPLICATE_WITH_REGRESSION_V1' });
+        integrityErrors.push(`Collision with REGRESSION_V1: ${filename}`);
         continue;
       }
+
+      if (seenPilotHashes.has(sha256)) {
+        duplicateWarnings.push({ filename, sha256, reason: 'PILOT_INTERNAL_DUPLICATE' });
+        integrityErrors.push(`Duplicate within pilot: ${filename} and ${seenPilotHashes.get(sha256)}`);
+        continue;
+      }
+      seenPilotHashes.set(sha256, filename);
 
       let category = 'RW01_WHITE_ON_WHITE';
       for (const cat of Object.keys(targetCategories)) {
@@ -383,26 +430,34 @@ async function runPilotPipeline() {
 
       let gtCorners = null;
       let annotationStatus = 'UNANNOTATED';
-      const sidecarJson = imgPath.replace(/\.[^.]+$/, '.json');
+      let isConfirmed = false;
       const gtJson = imgPath.replace(/\.[^.]+$/, '_ground_truth.json');
 
-      if (globalAnnotations[filename] && globalAnnotations[filename].corners) {
-        gtCorners = globalAnnotations[filename].corners;
-        category = globalAnnotations[filename].category || category;
+      if (globalAnnotations[filename]) {
+        const d = globalAnnotations[filename];
+        gtCorners = d.corners;
+        category = d.category || category;
+        isConfirmed = (d.annotation_confirmed === true);
       } else if (fs.existsSync(gtJson)) {
         const d = JSON.parse(fs.readFileSync(gtJson, 'utf8'));
         gtCorners = d.corners;
         category = d.category || category;
-      } else if (fs.existsSync(sidecarJson)) {
-        const d = JSON.parse(fs.readFileSync(sidecarJson, 'utf8'));
-        gtCorners = d.corners;
-        category = d.category || category;
+        isConfirmed = (d.annotation_confirmed === true);
       }
 
       if (gtCorners) {
-        const val = validateAnnotationCorners(gtCorners);
-        if (val.valid) annotationStatus = 'ANNOTATED_VALID';
-        else annotationStatus = `INVALID_ANNOTATION: ${val.reason}`;
+        const val = validateStrictGeometry(gtCorners);
+        if (val.valid && isConfirmed) {
+          annotationStatus = 'ANNOTATED_HUMAN_CONFIRMED';
+        } else if (val.valid && !isConfirmed) {
+          annotationStatus = 'UNCONFIRMED_GROUND_TRUTH';
+          integrityErrors.push(`Unconfirmed ground truth: ${filename}`);
+        } else {
+          annotationStatus = `INVALID_ANNOTATION: ${val.reason}`;
+          integrityErrors.push(`Invalid geometry: ${filename} (${val.reason})`);
+        }
+      } else {
+        integrityErrors.push(`Missing ground truth: ${filename}`);
       }
 
       pilotCases.push({
@@ -415,7 +470,8 @@ async function runPilotPipeline() {
         provenance: 'CAMERA_REAL',
         contains_document: true,
         category,
-        ground_truth: (annotationStatus === 'ANNOTATED_VALID') ? gtCorners : null,
+        is_confirmed: isConfirmed,
+        ground_truth: (annotationStatus === 'ANNOTATED_HUMAN_CONFIRMED') ? gtCorners : null,
         annotationStatus
       });
     }
@@ -431,11 +487,16 @@ async function runPilotPipeline() {
 
       if (regressionHashes.has(sha256)) {
         duplicateWarnings.push({ filename: f, sha256, reason: 'DUPLICATE_WITH_REGRESSION_V1' });
+        integrityErrors.push(`Collision with REGRESSION_V1: ${f}`);
         continue;
       }
 
-      const isDocLike = /doclike|laptop|tablet|box|frame|screen/i.test(f) || f.startsWith('NEG_DOCUMENT_LIKE');
-      const category = isDocLike ? 'NEG_DOCUMENT_LIKE' : 'NEG_ORDINARY';
+      if (seenPilotHashes.has(sha256)) {
+        duplicateWarnings.push({ filename: f, sha256, reason: 'PILOT_INTERNAL_DUPLICATE' });
+        integrityErrors.push(`Duplicate within pilot: ${f} and ${seenPilotHashes.get(sha256)}`);
+        continue;
+      }
+      seenPilotHashes.set(sha256, f);
 
       pilotCases.push({
         id: `PILOT_NEG_${f.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 24)}`,
@@ -446,8 +507,9 @@ async function runPilotPipeline() {
         dataset: 'REAL_WORLD_PILOT_V1',
         provenance: 'CAMERA_REAL',
         contains_document: false,
-        is_document_like: isDocLike,
-        category,
+        is_document_like: true,
+        category: 'NEG_DOCUMENT_LIKE',
+        is_confirmed: true,
         ground_truth: null,
         annotationStatus: 'NOT_APPLICABLE'
       });
@@ -471,12 +533,14 @@ async function runPilotPipeline() {
   }
 
   if (duplicateWarnings.length > 0) {
-    console.log(`\n⚠ DUPLICATE WARNING: ${duplicateWarnings.length} images matched historical REGRESSION_V1 hashes and were excluded.`);
+    console.log(`\n⚠ DUPLICATE WARNING: ${duplicateWarnings.length} duplicates detected and quarantined.`);
   }
 
   let pilotStatus = 'REAL_WORLD_PILOT_INCOMPLETE';
   if (totalPilotImages === 0) {
     pilotStatus = 'REAL_WORLD_PILOT_INFRASTRUCTURE_READY';
+  } else if (integrityErrors.length > 0) {
+    pilotStatus = `REAL_WORLD_PILOT_INVALID_EVIDENCE (${integrityErrors.length} integrity errors)`;
   } else if (totalPilotImages >= 20) {
     let allMet = true;
     for (const [cat, target] of Object.entries(targetCategories)) {
@@ -582,6 +646,8 @@ async function runPilotPipeline() {
       is_document_like: !!tc.is_document_like,
       sha256: tc.sha256,
       ground_truth: tc.ground_truth,
+      is_confirmed: tc.is_confirmed,
+      annotationStatus: tc.annotationStatus,
       baseline: {
         source: resBase.source,
         scoreSource: getScoreSource(resBase),
@@ -618,9 +684,7 @@ async function runPilotPipeline() {
   }
 
   // 6. Compute AUTO_ACCEPT_RATE and Aggregates
-  const posResults = evaluatedResults.filter(r => r.contains_document);
-  const negResults = evaluatedResults.filter(r => !r.contains_document);
-
+  const posResults = evaluatedResults.filter(r => r.contains_document && r.ground_truth);
   const baseExCount = posResults.filter(r => r.baseline.classification === 'EXCELLENT').length;
   const baseGdCount = posResults.filter(r => r.baseline.classification === 'GOOD').length;
   const baseAutoAcceptRate = posResults.length > 0 ? (((baseExCount + baseGdCount) / posResults.length) * 100).toFixed(1) : 'N/A';
@@ -639,6 +703,7 @@ async function runPilotPipeline() {
     target_dataset: targetCategories,
     discovered_counts: categoryCounts,
     total_images: totalPilotImages,
+    integrity_errors: integrityErrors,
     auto_accept_rates: {
       baseline_pct: baseAutoAcceptRate,
       experiment_b_pct: expBAutoAcceptRate
@@ -658,6 +723,10 @@ async function runPilotPipeline() {
   let md = `# ScanVuông Real-World Pilot Evidence Summary\n\n`;
   md += `**Timestamp:** ${new Date().toISOString()}\n`;
   md += `**Pilot Status:** \`${pilotStatus}\`\n\n`;
+  if (integrityErrors.length > 0) {
+    md += `> [!WARNING]\n`;
+    md += `> **NOT VALIDATION EVIDENCE:** Dataset chứa ${integrityErrors.length} lỗi tính toàn vẹn ground truth. Báo cáo này chỉ dùng để chẩn đoán.\n\n`;
+  }
   md += `## 1. Dataset Coverage Audit\n\n`;
   md += `| Category | Discovered | Target | Status |\n`;
   md += `| :--- | :---: | :---: | :--- |\n`;
@@ -673,15 +742,15 @@ async function runPilotPipeline() {
 
   if (totalPilotImages > 0) {
     md += `## 3. Per-Image Comparison Table\n\n`;
-    md += `| Case ID | Category | Baseline IoU | Exp B IoU | Δ IoU | Baseline Class | Exp B Class | Exp C2 Decision | Latency Δ |\n`;
-    md += `| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n`;
+    md += `| Case ID | Category | Status | Baseline IoU | Exp B IoU | Δ IoU | Baseline Class | Exp B Class | Exp C2 Decision | Latency Δ |\n`;
+    md += `| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n`;
     for (const r of evaluatedResults) {
       if (r.contains_document) {
         const bIou = r.baseline.iou !== null ? (r.baseline.iou * 100).toFixed(1) + '%' : 'N/A';
         const eIou = r.experiment_b.iou !== null ? (r.experiment_b.iou * 100).toFixed(1) + '%' : 'N/A';
         const dIou = r.delta.iou !== null ? (r.delta.iou >= 0 ? '+' : '') + (r.delta.iou * 100).toFixed(1) + '%' : 'N/A';
         const c2Dec = r.experiment_c2.accepted ? 'ACCEPTED' : 'REJECTED';
-        md += `| \`${r.id}\` | ${r.category} | ${bIou} | ${eIou} | ${dIou} | \`${r.baseline.classification}\` | \`${r.experiment_b.classification}\` | \`${c2Dec}\` | +${r.delta.latencyMs.toFixed(1)}ms |\n`;
+        md += `| \`${r.id}\` | ${r.category} | \`${r.annotationStatus}\` | ${bIou} | ${eIou} | ${dIou} | \`${r.baseline.classification}\` | \`${r.experiment_b.classification}\` | \`${c2Dec}\` | +${r.delta.latencyMs.toFixed(1)}ms |\n`;
       }
     }
   }
@@ -741,7 +810,7 @@ async function runPilotPipeline() {
     <span class="status-badge">${pilotStatus}</span>
   </h1>
   <div class="legend">
-    <div class="legend-item"><div class="legend-color" style="background: #4ade80;"></div> Ground Truth</div>
+    <div class="legend-item"><div class="legend-color" style="background: #4ade80;"></div> Ground Truth (Human Confirmed)</div>
     <div class="legend-item"><div class="legend-color" style="background: #38bdf8;"></div> Production Baseline</div>
     <div class="legend-item"><div class="legend-color" style="background: #facc15;"></div> Experiment B (Contrast)</div>
   </div>
@@ -753,7 +822,7 @@ async function runPilotPipeline() {
     html += `
   <div class="empty-banner">
     <h2>Chưa có ảnh trong dataset pilot (0/20)</h2>
-    <p style="margin-top: 8px;">Vui lòng mở <code>benchmark/tools/pilot_capture_assistant.html</code> để thêm ảnh hoặc chạy <code>node scripts/prepare_real_world_pilot.cjs --input &lt;folder&gt;</code>.</p>
+    <p style="margin-top: 8px;">Vui lòng mở <code>benchmark/tools/pilot_capture_assistant.html</code> để thêm ảnh hoặc chạy <code>node scripts/run_real_world_pilot.cjs --input &lt;folder&gt;</code>.</p>
   </div>
 `;
   } else {
@@ -789,6 +858,7 @@ async function runPilotPipeline() {
       </div>
       <div class="card-body">
         <div class="metric-row"><span style="color: var(--muted)">Category:</span> <strong>${r.category}</strong></div>
+        <div class="metric-row"><span style="color: var(--muted)">Status:</span> <strong>${r.annotationStatus}</strong></div>
         <div class="metric-row"><span style="color: var(--muted)">Baseline IoU:</span> <strong>${r.baseline.iou !== null ? (r.baseline.iou*100).toFixed(1)+'%' : 'N/A'}</strong></div>
         <div class="metric-row"><span style="color: var(--muted)">Exp B IoU:</span> <strong>${r.experiment_b.iou !== null ? (r.experiment_b.iou*100).toFixed(1)+'%' : 'N/A'}</strong> (${r.delta.iou !== null ? (r.delta.iou >= 0 ? '+' : '')+(r.delta.iou*100).toFixed(1)+'%' : 'N/A'})</div>
         <div class="metric-row"><span style="color: var(--muted)">ML Confidence:</span> <strong>${r.baseline.score.toFixed(4)}</strong></div>

@@ -1,15 +1,16 @@
 'use strict';
 
 /**
- * Unit Test Suite for Real-World Pilot Evidence Pipeline
- * Validates provenance rules, hash duplicate detection, annotation geometry bounds,
- * metric calculations, score semantics, auto-accept rates, and offline tool integrity.
+ * Comprehensive Failure-Path & Evidence-Integrity Test Suite
+ * Validates strict geometry, missing-manifest rejection, human-confirmation enforcement,
+ * SHA mismatch detection, duplicate collisions, and safe path invocation.
  */
 
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { spawnSync } = require('child_process');
 
 let checks = 0;
 let failures = 0;
@@ -25,215 +26,400 @@ function test(name, fn) {
   }
 }
 
-console.log('======================================================');
-console.log('=== Real-World Pilot Evidence Pipeline Test Suite ===');
-console.log('======================================================\n');
+console.log('===============================================================');
+console.log('=== ScanVuông Pilot Pipeline Evidence-Integrity Test Suite  ===');
+console.log('===============================================================\n');
+
+const ROOT = path.join(__dirname, '..');
+const prepScript = path.join(ROOT, 'scripts', 'prepare_real_world_pilot.cjs');
+const runScript = path.join(ROOT, 'scripts', 'run_real_world_pilot.cjs');
 
 // -------------------------------------------------------------
-// 1. Provenance Validation Tests
+// 1. Geometry Validation Tests (Cases 10, 11, 12, 13, 14)
 // -------------------------------------------------------------
-const ALLOWED_PROVENANCE = new Set(['CAMERA_REAL', 'LEGACY_REGRESSION', 'SYNTHETIC_GENERATED', 'TEST_FIXTURE']);
-
-function validateProvenance(provenance) {
-  if (!provenance || typeof provenance !== 'string') return { valid: false, reason: 'Missing provenance' };
-  if (!ALLOWED_PROVENANCE.has(provenance)) return { valid: false, reason: `Invalid provenance value: ${provenance}` };
-  return { valid: true };
-}
-
-test('Provenance: accepts valid CAMERA_REAL', () => {
-  assert.strictEqual(validateProvenance('CAMERA_REAL').valid, true);
-});
-
-test('Provenance: accepts valid LEGACY_REGRESSION and SYNTHETIC_GENERATED', () => {
-  assert.strictEqual(validateProvenance('LEGACY_REGRESSION').valid, true);
-  assert.strictEqual(validateProvenance('SYNTHETIC_GENERATED').valid, true);
-  assert.strictEqual(validateProvenance('TEST_FIXTURE').valid, true);
-});
-
-test('Provenance: rejects fabricated / unknown provenance strings', () => {
-  assert.strictEqual(validateProvenance('INTERNET_SCRAPED').valid, false);
-  assert.strictEqual(validateProvenance('').valid, false);
-  assert.strictEqual(validateProvenance(null).valid, false);
-});
-
-// -------------------------------------------------------------
-// 2. SHA-256 Duplicate & Double-Counting Detection Tests
-// -------------------------------------------------------------
-test('Duplicate Detection: identifies hash collision with historical regression set', () => {
-  const regressionHashes = new Set([
-    '649fc60d5cc486c4fcf4966336e6e22f286ee656b23b18544d678512fa6b306b',
-    'e425cb5d549d01f11a84f3333333333333333333333333333333333333333333'
-  ]);
-
-  const candidate1 = '649fc60d5cc486c4fcf4966336e6e22f286ee656b23b18544d678512fa6b306b'; // Duplicate
-  const candidate2 = 'a1b2c3d4e5f60000000000000000000000000000000000000000000000000000'; // Unique
-
-  assert.strictEqual(regressionHashes.has(candidate1), true);
-  assert.strictEqual(regressionHashes.has(candidate2), false);
-});
-
-// -------------------------------------------------------------
-// 3. Annotation Geometry Validation Tests
-// -------------------------------------------------------------
-function polygonArea(pts) {
-  if (!pts || pts.length < 3) return 0;
-  let a = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const j = (i + 1) % pts.length;
-    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+function validateStrictGeometry(pts) {
+  if (!pts || !Array.isArray(pts) || pts.length !== 4) {
+    return { valid: false, reason: 'Must have exactly 4 corners' };
   }
-  return Math.abs(a) / 2;
-}
-
-function validateAnnotation(corners) {
-  if (!corners || !Array.isArray(corners) || corners.length !== 4) return { valid: false, reason: 'Must have 4 corners' };
   for (let i = 0; i < 4; i++) {
-    const p = corners[i];
-    if (typeof p.x !== 'number' || typeof p.y !== 'number' || isNaN(p.x) || isNaN(p.y)) {
-      return { valid: false, reason: 'Coordinates must be valid numbers' };
+    const p = pts[i];
+    if (!p || typeof p.x !== 'number' || typeof p.y !== 'number' || isNaN(p.x) || isNaN(p.y) || !isFinite(p.x) || !isFinite(p.y)) {
+      return { valid: false, reason: `Corner ${i} contains non-numeric coordinates` };
     }
-    if (p.x < -0.05 || p.x > 1.05 || p.y < -0.05 || p.y > 1.05) {
-      return { valid: false, reason: 'Coordinates out of range [-0.05, 1.05]' };
+    if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) {
+      return { valid: false, reason: `Corner ${i} (${p.x.toFixed(4)}, ${p.y.toFixed(4)}) out of strict bounds [0.0, 1.0]` };
     }
   }
-  const a = polygonArea(corners);
-  if (a < 0.01) return { valid: false, reason: 'Area too small (<1%)' };
-  if (a > 0.99) return { valid: false, reason: 'Area too large (>99%)' };
+
+  for (let i = 0; i < 4; i++) {
+    for (let j = i + 1; j < 4; j++) {
+      const dist = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y);
+      if (dist < 0.01) {
+        return { valid: false, reason: `Corners ${i} and ${j} are too close (< 0.01)` };
+      }
+    }
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const next = (i + 1) % 4;
+    const edgeLen = Math.hypot(pts[next].x - pts[i].x, pts[next].y - pts[i].y);
+    if (edgeLen < 0.01) {
+      return { valid: false, reason: `Edge ${i}->${next} is degenerate (< 0.01)` };
+    }
+  }
+
+  let area = 0;
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  area = Math.abs(area) / 2;
+  if (area < 0.01) return { valid: false, reason: `Polygon area too small (${area.toFixed(4)} < 0.01)` };
+  if (area > 0.99) return { valid: false, reason: `Polygon area too large (${area.toFixed(4)} > 0.99)` };
+
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const p0 = pts[i];
+    const p1 = pts[(i + 1) % 4];
+    const p2 = pts[(i + 2) % 4];
+    const cp = (p1.x - p0.x) * (p2.y - p1.y) - (p1.y - p0.y) * (p2.x - p1.x);
+    if (Math.abs(cp) < 1e-7) return { valid: false, reason: `Collinear vertices at edge ${i}` };
+    const curSign = cp > 0 ? 1 : -1;
+    if (sign === 0) sign = curSign;
+    else if (sign !== curSign) return { valid: false, reason: 'Polygon is concave or self-intersecting' };
+  }
+
   return { valid: true };
 }
 
-test('Annotation Validation: accepts valid convex quadrilateral', () => {
-  const validQuad = [{x: 0.1, y: 0.1}, {x: 0.9, y: 0.1}, {x: 0.9, y: 0.9}, {x: 0.1, y: 0.9}];
-  assert.strictEqual(validateAnnotation(validQuad).valid, true);
+test('Test 10: rejects self-intersecting hourglass quad', () => {
+  const selfIntersectQuad = [{x: 0.1, y: 0.1}, {x: 0.9, y: 0.9}, {x: 0.9, y: 0.1}, {x: 0.1, y: 0.9}];
+  const res = validateStrictGeometry(selfIntersectQuad);
+  assert.strictEqual(res.valid, false);
 });
 
-test('Annotation Validation: rejects 3 corners or non-array', () => {
-  assert.strictEqual(validateAnnotation([{x: 0.1, y: 0.1}, {x: 0.9, y: 0.1}, {x: 0.9, y: 0.9}]).valid, false);
-  assert.strictEqual(validateAnnotation(null).valid, false);
+test('Test 11: rejects concave chevron/dart quad', () => {
+  const concaveQuad = [{x: 0.1, y: 0.1}, {x: 0.9, y: 0.1}, {x: 0.5, y: 0.4}, {x: 0.1, y: 0.9}];
+  const res = validateStrictGeometry(concaveQuad);
+  assert.strictEqual(res.valid, false);
+  assert.strictEqual(res.reason.includes('concave or self-intersecting'), true);
 });
 
-test('Annotation Validation: rejects NaN or out-of-bounds coordinates', () => {
-  const nanQuad = [{x: NaN, y: 0.1}, {x: 0.9, y: 0.1}, {x: 0.9, y: 0.9}, {x: 0.1, y: 0.9}];
-  assert.strictEqual(validateAnnotation(nanQuad).valid, false);
-
-  const outQuad = [{x: -0.5, y: 0.1}, {x: 0.9, y: 0.1}, {x: 0.9, y: 0.9}, {x: 0.1, y: 0.9}];
-  assert.strictEqual(validateAnnotation(outQuad).valid, false);
+test('Test 12: rejects coordinate below 0.0 (e.g. -0.02)', () => {
+  const belowZero = [{x: -0.02, y: 0.1}, {x: 0.9, y: 0.1}, {x: 0.9, y: 0.9}, {x: 0.1, y: 0.9}];
+  const res = validateStrictGeometry(belowZero);
+  assert.strictEqual(res.valid, false);
+  assert.strictEqual(res.reason.includes('out of strict bounds'), true);
 });
 
-test('Annotation Validation: rejects degenerate near-zero area', () => {
-  const degenQuad = [{x: 0.1, y: 0.1}, {x: 0.1001, y: 0.1}, {x: 0.1001, y: 0.1001}, {x: 0.1, y: 0.1001}];
-  assert.strictEqual(validateAnnotation(degenQuad).valid, false);
+test('Test 13: rejects coordinate above 1.0 (e.g. 1.02)', () => {
+  const aboveOne = [{x: 0.1, y: 0.1}, {x: 1.02, y: 0.1}, {x: 0.9, y: 0.9}, {x: 0.1, y: 0.9}];
+  const res = validateStrictGeometry(aboveOne);
+  assert.strictEqual(res.valid, false);
+  assert.strictEqual(res.reason.includes('out of strict bounds'), true);
+});
+
+test('Test 14: rejects duplicate/near-identical corners (distance < 0.01)', () => {
+  const duplicateCorners = [{x: 0.1, y: 0.1}, {x: 0.1001, y: 0.1002}, {x: 0.9, y: 0.9}, {x: 0.1, y: 0.9}];
+  const res = validateStrictGeometry(duplicateCorners);
+  assert.strictEqual(res.valid, false);
+  assert.strictEqual(res.reason.includes('too close'), true);
 });
 
 // -------------------------------------------------------------
-// 4. Quality & AUTO_ACCEPT_RATE Classification Tests
+// Setup Temporary Fixtures Directory for Preparation Tests
 // -------------------------------------------------------------
-function classifyQuality(iou, cornerErr) {
-  if (iou === null || cornerErr === null) return 'UNKNOWN';
-  if (iou >= 0.95 && cornerErr.worst <= 0.025) return 'EXCELLENT';
-  if (iou >= 0.90 && cornerErr.worst <= 0.060) return 'GOOD';
-  if (iou >= 0.70 && cornerErr.worst <= 0.150) return 'MANUAL_ADJUST';
-  return 'CATASTROPHIC';
+const tmpDir = path.join(ROOT, 'benchmark-output', 'tmp_test_fixtures');
+if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
+fs.mkdirSync(tmpDir, { recursive: true });
+
+// Create valid PNG image buffer helper
+let createCanvas;
+try {
+  createCanvas = require(path.join(ROOT, 'benchmark', 'node_modules', 'canvas')).createCanvas;
+} catch (e) {
+  // fallback if needed
 }
 
-function computeAutoAcceptRate(classifications) {
-  if (!classifications || classifications.length === 0) return 0;
-  const accepted = classifications.filter(c => c === 'EXCELLENT' || c === 'GOOD').length;
-  return Number(((accepted / classifications.length) * 100).toFixed(1));
-}
-
-test('Classification: EXCELLENT, GOOD, MANUAL_ADJUST, CATASTROPHIC boundaries', () => {
-  assert.strictEqual(classifyQuality(0.98, { worst: 0.01 }), 'EXCELLENT');
-  assert.strictEqual(classifyQuality(0.92, { worst: 0.04 }), 'GOOD');
-  assert.strictEqual(classifyQuality(0.78, { worst: 0.10 }), 'MANUAL_ADJUST');
-  assert.strictEqual(classifyQuality(0.50, { worst: 0.20 }), 'CATASTROPHIC');
-  assert.strictEqual(classifyQuality(0.96, { worst: 0.08 }), 'MANUAL_ADJUST');
-});
-
-test('AUTO_ACCEPT_RATE: calculates percentage of EXCELLENT + GOOD correctly', () => {
-  const classes = ['EXCELLENT', 'EXCELLENT', 'GOOD', 'MANUAL_ADJUST', 'CATASTROPHIC'];
-  // 3 out of 5 = 60.0%
-  assert.strictEqual(computeAutoAcceptRate(classes), 60.0);
-});
-
-// -------------------------------------------------------------
-// 5. Score Semantics Invariant Tests
-// -------------------------------------------------------------
-test('Score Semantics: filters ML_SIGMOID_CONFIDENCE strictly from placeholders', () => {
-  const detections = [
-    { source: 'SCANIC_ML', scoreSource: 'ML_SIGMOID_CONFIDENCE', score: 0.98 },
-    { source: 'CURRENT_FALLBACK', scoreSource: 'CLASSICAL_CONFIDENCE', score: 0.55 },
-    { source: 'DEFAULT_FALLBACK', scoreSource: 'DEFAULT_PLACEHOLDER', score: 0.50 }
-  ];
-
-  const mlOnly = detections.filter(d => d.scoreSource === 'ML_SIGMOID_CONFIDENCE');
-  assert.strictEqual(mlOnly.length, 1);
-  assert.strictEqual(mlOnly[0].score, 0.98);
-
-  const placeholders = detections.filter(d => d.scoreSource !== 'ML_SIGMOID_CONFIDENCE');
-  assert.strictEqual(placeholders.length, 2);
-});
-
-// -------------------------------------------------------------
-// 6. Dataset Completeness & Pilot Status Tests
-// -------------------------------------------------------------
-function evaluatePilotStatus(counts, targetCategories) {
-  let total = 0;
-  for (const c of Object.values(counts)) total += c;
-  if (total === 0) return 'REAL_WORLD_PILOT_INFRASTRUCTURE_READY';
-  if (total < 20) return `REAL_WORLD_PILOT_INCOMPLETE: ${total}/20`;
-  for (const [cat, target] of Object.entries(targetCategories)) {
-    if ((counts[cat] || 0) < target) return `REAL_WORLD_PILOT_INCOMPLETE: ${total}/20 (distribution mismatch)`;
+function createSamplePng(name, color = '#38bdf8') {
+  const p = path.join(tmpDir, name);
+  if (createCanvas) {
+    const c = createCanvas(20, 20);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 20, 20);
+    fs.writeFileSync(p, c.toBuffer('image/png'));
+  } else {
+    fs.writeFileSync(p, Buffer.from(`IMAGE_DATA_${name}_${Math.random()}`));
   }
-  return 'REAL_WORLD_PILOT_COMPLETE';
+  return p;
 }
 
-test('Pilot Status: 0 images gives REAL_WORLD_PILOT_INFRASTRUCTURE_READY', () => {
-  const targets = { 'RW01_WHITE_ON_WHITE': 5, 'RW02_PARTIAL_OCCLUSION': 3 };
-  assert.strictEqual(evaluatePilotStatus({}, targets), 'REAL_WORLD_PILOT_INFRASTRUCTURE_READY');
+const img1 = createSamplePng('img1.png', '#ff0000');
+const img2 = createSamplePng('img2.png', '#00ff00');
+const hash1 = crypto.createHash('sha256').update(fs.readFileSync(img1)).digest('hex');
+const hash2 = crypto.createHash('sha256').update(fs.readFileSync(img2)).digest('hex');
+
+// -------------------------------------------------------------
+// 2. Preparation Negative Path Tests (Cases 1 - 9)
+// -------------------------------------------------------------
+test('Test 1: Missing manifest fails closed (PILOT_MANIFEST_REQUIRED)', () => {
+  const emptyFolder = path.join(tmpDir, 'empty_folder');
+  fs.mkdirSync(emptyFolder, { recursive: true });
+  const res = spawnSync(process.execPath, [prepScript, '--input', emptyFolder], { encoding: 'utf8' });
+  assert.notStrictEqual(res.status, 0);
+  assert.strictEqual(res.stderr.includes('PILOT_MANIFEST_REQUIRED'), true);
 });
 
-test('Pilot Status: partial images gives REAL_WORLD_PILOT_INCOMPLETE: X/20', () => {
-  const targets = { 'RW01_WHITE_ON_WHITE': 5, 'RW02_PARTIAL_OCCLUSION': 3 };
-  assert.strictEqual(evaluatePilotStatus({ 'RW01_WHITE_ON_WHITE': 3, 'RW02_PARTIAL_OCCLUSION': 2 }, targets), 'REAL_WORLD_PILOT_INCOMPLETE: 5/20');
+test('Test 2: Default / unconfirmed corners fails closed', () => {
+  const manifest = {
+    cases: [{
+      id: 'CASE_1',
+      filename: 'img1.png',
+      category: 'RW01_WHITE_ON_WHITE',
+      contains_document: true,
+      annotation_confirmed: false, // Unconfirmed
+      sha256: hash1,
+      corners: [{x:0.15,y:0.15},{x:0.85,y:0.15},{x:0.85,y:0.85},{x:0.15,y:0.85}]
+    }]
+  };
+  const mPath = path.join(tmpDir, 'manifest_unconfirmed.json');
+  fs.writeFileSync(mPath, JSON.stringify(manifest));
+
+  const res = spawnSync(process.execPath, [prepScript, '--input', tmpDir, '--manifest', mPath], { encoding: 'utf8' });
+  assert.notStrictEqual(res.status, 0);
+  assert.strictEqual(res.stderr.includes('UNCONFIRMED_GROUND_TRUTH'), true);
+});
+
+test('Test 3: Manifest SHA mismatch against disk file fails closed', () => {
+  const manifest = {
+    cases: [{
+      id: 'CASE_1',
+      filename: 'img1.png',
+      category: 'RW01_WHITE_ON_WHITE',
+      contains_document: true,
+      annotation_confirmed: true,
+      sha256: '0000000000000000000000000000000000000000000000000000000000000000', // Wrong hash
+      corners: [{x:0.15,y:0.15},{x:0.85,y:0.15},{x:0.85,y:0.85},{x:0.15,y:0.85}]
+    }]
+  };
+  const mPath = path.join(tmpDir, 'manifest_sha_mismatch.json');
+  fs.writeFileSync(mPath, JSON.stringify(manifest));
+
+  const res = spawnSync(process.execPath, [prepScript, '--input', tmpDir, '--manifest', mPath], { encoding: 'utf8' });
+  assert.notStrictEqual(res.status, 0);
+  assert.strictEqual(res.stderr.includes('MANIFEST_FILE_HASH_MISMATCH'), true);
+});
+
+test('Test 4 & 5: Same image under two names or two categories fails closed (PILOT_INTERNAL_DUPLICATE)', () => {
+  const imgCopy = path.join(tmpDir, 'img1_copy.png');
+  fs.copyFileSync(img1, imgCopy);
+
+  const manifest = {
+    cases: [
+      {
+        id: 'CASE_1',
+        filename: 'img1.png',
+        category: 'RW01_WHITE_ON_WHITE',
+        contains_document: true,
+        annotation_confirmed: true,
+        sha256: hash1,
+        corners: [{x:0.15,y:0.15},{x:0.85,y:0.15},{x:0.85,y:0.85},{x:0.15,y:0.85}]
+      },
+      {
+        id: 'CASE_2',
+        filename: 'img1_copy.png',
+        category: 'RW02_PARTIAL_OCCLUSION',
+        contains_document: true,
+        annotation_confirmed: true,
+        sha256: hash1, // Identical hash
+        corners: [{x:0.15,y:0.15},{x:0.85,y:0.15},{x:0.85,y:0.85},{x:0.15,y:0.85}]
+      }
+    ]
+  };
+  const mPath = path.join(tmpDir, 'manifest_duplicate.json');
+  fs.writeFileSync(mPath, JSON.stringify(manifest));
+
+  const res = spawnSync(process.execPath, [prepScript, '--input', tmpDir, '--manifest', mPath], { encoding: 'utf8' });
+  assert.notStrictEqual(res.status, 0);
+  assert.strictEqual(res.stderr.includes('PILOT_INTERNAL_DUPLICATE'), true);
+});
+
+test('Test 6: Regression duplicate collision fails closed', () => {
+  const fakeRegDir = path.join(tmpDir, 'fake_regression');
+  fs.mkdirSync(fakeRegDir, { recursive: true });
+  fs.copyFileSync(img1, path.join(fakeRegDir, 'reg_01.png'));
+
+  const manifest = {
+    cases: [{
+      id: 'CASE_1',
+      filename: 'img1.png',
+      category: 'RW01_WHITE_ON_WHITE',
+      contains_document: true,
+      annotation_confirmed: true,
+      sha256: hash1,
+      corners: [{x:0.15,y:0.15},{x:0.85,y:0.15},{x:0.85,y:0.85},{x:0.15,y:0.85}]
+    }]
+  };
+  const mPath = path.join(tmpDir, 'manifest_reg_coll.json');
+  fs.writeFileSync(mPath, JSON.stringify(manifest));
+
+  const res = spawnSync(process.execPath, [prepScript, '--input', tmpDir, '--manifest', mPath, '--regression-dir', fakeRegDir], { encoding: 'utf8' });
+  assert.notStrictEqual(res.status, 0);
+  assert.strictEqual(res.stderr.includes('REGRESSION_DUPLICATE_COLLISION'), true);
+});
+
+test('Test 7: Unknown category fails closed', () => {
+  const manifest = {
+    cases: [{
+      id: 'CASE_1',
+      filename: 'img1.png',
+      category: 'CUSTOM_CATEGORY_UNACCEPTED',
+      contains_document: true,
+      annotation_confirmed: true,
+      sha256: hash1,
+      corners: [{x:0.15,y:0.15},{x:0.85,y:0.15},{x:0.85,y:0.85},{x:0.15,y:0.85}]
+    }]
+  };
+  const mPath = path.join(tmpDir, 'manifest_unknown_cat.json');
+  fs.writeFileSync(mPath, JSON.stringify(manifest));
+
+  const res = spawnSync(process.execPath, [prepScript, '--input', tmpDir, '--manifest', mPath], { encoding: 'utf8' });
+  assert.notStrictEqual(res.status, 0);
+  assert.strictEqual(res.stderr.includes('UNKNOWN_CATEGORY'), true);
+});
+
+test('Test 8: Negative marked contains_document=true fails closed', () => {
+  const manifest = {
+    cases: [{
+      id: 'CASE_1',
+      filename: 'img1.png',
+      category: 'NEG_DOCUMENT_LIKE',
+      contains_document: true, // Inconsistent
+      annotation_confirmed: true,
+      sha256: hash1,
+      corners: [{x:0.15,y:0.15},{x:0.85,y:0.15},{x:0.85,y:0.85},{x:0.15,y:0.85}]
+    }]
+  };
+  const mPath = path.join(tmpDir, 'manifest_neg_mismatch.json');
+  fs.writeFileSync(mPath, JSON.stringify(manifest));
+
+  const res = spawnSync(process.execPath, [prepScript, '--input', tmpDir, '--manifest', mPath], { encoding: 'utf8' });
+  assert.notStrictEqual(res.status, 0);
+  assert.strictEqual(res.stderr.includes('CATEGORY_SEMANTICS_MISMATCH'), true);
+});
+
+test('Test 9: Positive marked contains_document=false fails closed', () => {
+  const manifest = {
+    cases: [{
+      id: 'CASE_1',
+      filename: 'img1.png',
+      category: 'RW01_WHITE_ON_WHITE',
+      contains_document: false, // Inconsistent
+      annotation_confirmed: true,
+      sha256: hash1,
+      corners: null
+    }]
+  };
+  const mPath = path.join(tmpDir, 'manifest_pos_mismatch.json');
+  fs.writeFileSync(mPath, JSON.stringify(manifest));
+
+  const res = spawnSync(process.execPath, [prepScript, '--input', tmpDir, '--manifest', mPath], { encoding: 'utf8' });
+  assert.notStrictEqual(res.status, 0);
+  assert.strictEqual(res.stderr.includes('CATEGORY_SEMANTICS_MISMATCH'), true);
 });
 
 // -------------------------------------------------------------
-// 7. Offline / 0-CDN Invariant Tests on Tools
+// 3. Path Handling & Safe Invocation Tests (Cases 16, 17, 18)
 // -------------------------------------------------------------
-test('Assistant Tool HTML: zero CDN / external network links in pilot_capture_assistant.html', () => {
-  const assistantPath = path.join(__dirname, '..', 'benchmark', 'tools', 'pilot_capture_assistant.html');
-  assert.strictEqual(fs.existsSync(assistantPath), true, 'Assistant tool must exist');
+test('Test 16: Manifest located outside image folder via --manifest passes', () => {
+  const extManifestDir = path.join(tmpDir, 'external_manifest_folder');
+  fs.mkdirSync(extManifestDir, { recursive: true });
+  const extManifestPath = path.join(extManifestDir, 'pilot_manifest.json');
+
+  const manifest = {
+    cases: [{
+      id: 'CASE_VALID',
+      filename: 'img2.png',
+      category: 'RW01_WHITE_ON_WHITE',
+      contains_document: true,
+      annotation_confirmed: true,
+      provenance: 'TEST_FIXTURE',
+      sha256: hash2,
+      corners: [{x:0.15,y:0.15},{x:0.85,y:0.15},{x:0.85,y:0.85},{x:0.15,y:0.85}]
+    }]
+  };
+  fs.writeFileSync(extManifestPath, JSON.stringify(manifest));
+
+  const outDest = path.join(tmpDir, 'test16_dest');
+  const res = spawnSync(process.execPath, [prepScript, '--input', tmpDir, '--manifest', extManifestPath, '--dest', outDest], { encoding: 'utf8' });
+  assert.strictEqual(res.status, 0);
+  assert.strictEqual(fs.existsSync(path.join(outDest, 'positives', 'RW01_WHITE_ON_WHITE', 'img2.png')), true);
+});
+
+test('Test 17 & 18: Windows paths with spaces and Vietnamese Unicode characters handled safely', () => {
+  const unicodeDir = path.join(tmpDir, 'Thư Mục Ảnh Pilot (Chụp Thử 2026)');
+  fs.mkdirSync(unicodeDir, { recursive: true });
+  const uImg = path.join(unicodeDir, 'ảnh gốc 01.png');
+  if (createCanvas) {
+    const c = createCanvas(20, 20);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#0000ff';
+    ctx.fillRect(0, 0, 20, 20);
+    fs.writeFileSync(uImg, c.toBuffer('image/png'));
+  } else {
+    fs.writeFileSync(uImg, Buffer.from('UNICODE_IMAGE_SAMPLE_DATA'));
+  }
+  const uHash = crypto.createHash('sha256').update(fs.readFileSync(uImg)).digest('hex');
+
+  const uManifestPath = path.join(unicodeDir, 'pilot_manifest.json');
+  const manifest = {
+    cases: [{
+      id: 'CASE_UNICODE',
+      filename: 'ảnh gốc 01.png',
+      category: 'RW01_WHITE_ON_WHITE',
+      contains_document: true,
+      annotation_confirmed: true,
+      provenance: 'TEST_FIXTURE',
+      sha256: uHash,
+      corners: [{x:0.15,y:0.15},{x:0.85,y:0.15},{x:0.85,y:0.85},{x:0.15,y:0.85}]
+    }]
+  };
+  fs.writeFileSync(uManifestPath, JSON.stringify(manifest));
+
+  const outDest = path.join(tmpDir, 'unicode_dest');
+  const res = spawnSync(process.execPath, [runScript, '--input', unicodeDir, '--dest', outDest, '--dir', outDest], { encoding: 'utf8' });
+  assert.strictEqual(res.status, 0);
+  assert.strictEqual(fs.existsSync(path.join(outDest, 'positives', 'RW01_WHITE_ON_WHITE', 'ảnh gốc 01.png')), true);
+});
+
+// -------------------------------------------------------------
+// 4. Offline & 0-CDN Invariant Tests
+// -------------------------------------------------------------
+test('Offline Invariant: zero CDN / external network links in pilot_capture_assistant.html', () => {
+  const assistantPath = path.join(ROOT, 'benchmark', 'tools', 'pilot_capture_assistant.html');
   const html = fs.readFileSync(assistantPath, 'utf8');
-  assert.strictEqual(html.includes('http://'), false, 'Assistant must not contain http://');
-  assert.strictEqual(html.includes('https://'), false, 'Assistant must not contain https://');
-  assert.strictEqual(html.includes('<script src='), false, 'Assistant must not load external scripts');
+  assert.strictEqual(html.includes('http://'), false);
+  assert.strictEqual(html.includes('https://'), false);
+  assert.strictEqual(html.includes('<script src='), false);
 });
 
-test('Annotator Tool HTML: zero CDN / external network links in ground_truth_annotator.html', () => {
-  const annotatorPath = path.join(__dirname, '..', 'benchmark', 'tools', 'ground_truth_annotator.html');
-  assert.strictEqual(fs.existsSync(annotatorPath), true, 'Annotator tool must exist');
+test('Offline Invariant: zero CDN / external network links in ground_truth_annotator.html', () => {
+  const annotatorPath = path.join(ROOT, 'benchmark', 'tools', 'ground_truth_annotator.html');
   const html = fs.readFileSync(annotatorPath, 'utf8');
-  assert.strictEqual(html.includes('http://'), false, 'Annotator must not contain http://');
-  assert.strictEqual(html.includes('https://'), false, 'Annotator must not contain https://');
-  assert.strictEqual(html.includes('<script src='), false, 'Annotator must not load external scripts');
+  assert.strictEqual(html.includes('http://'), false);
+  assert.strictEqual(html.includes('https://'), false);
+  assert.strictEqual(html.includes('<script src='), false);
 });
 
-test('Contact Sheet HTML: zero CDN / external network links in contact_sheet.html', () => {
-  const contactSheetPath = path.join(__dirname, '..', 'benchmark-output', 'contact_sheet.html');
-  if (fs.existsSync(contactSheetPath)) {
-    const html = fs.readFileSync(contactSheetPath, 'utf8');
-    assert.strictEqual(html.includes('http://'), false, 'HTML must not contain http://');
-    assert.strictEqual(html.includes('https://'), false, 'HTML must not contain https://');
-    assert.strictEqual(html.includes('<script src='), false, 'HTML must not load external scripts');
-  }
-});
+// Cleanup fixture folder
+fs.rmSync(tmpDir, { recursive: true, force: true });
 
-console.log(`\n======================================================`);
+console.log(`\n===============================================================`);
 console.log(`RESULTS: ${checks - failures}/${checks} checks passed.`);
 if (failures > 0) {
   console.error(`✗ ${failures} CHECKS FAILED!`);
   process.exit(1);
 } else {
-  console.log('✓ All Real-World Pilot Pipeline unit tests PASSED.');
+  console.log('✓ All Pilot Pipeline Evidence-Integrity tests PASSED.');
 }
