@@ -255,7 +255,7 @@ function buildSandbox() {
 
 function loadApp() {
   const src = fs.readFileSync(APP_JS_PATH, 'utf8');
-  const hookLine = "\n  globalThis.__TEST_HOOK__ && globalThis.__TEST_HOOK__({ state, exportIdPdf, exportPdf, setBusy });\n";
+  const hookLine = "\n  globalThis.__TEST_HOOK__ && globalThis.__TEST_HOOK__({ state, exportIdPdf, exportPdf, setBusy, calculateIdA4Layout, composeIdA4 });\n";
   const marker = /\n\}\)\(\);\s*$/;
   if (!marker.test(src)) throw new Error('Could not find IIFE close `})();` at end of app.js to attach test hook');
   const patched = src.replace(marker, `${hookLine}})();\n`);
@@ -291,7 +291,7 @@ function parsePdfPageSizes(buf) {
 
 async function main() {
   const { testApi, elementsById, getLastAnchor, setConfirmAnswer } = loadApp();
-  const { state } = testApi;
+  const { state, calculateIdA4Layout } = testApi;
 
   console.log('Setup: entering Scan ID mode');
   await elementsById.modeIdBtn.dispatch('click');
@@ -300,7 +300,7 @@ async function main() {
   assert(elementsById.idConfirmBtn.disabled === true, 'Case 2: confirm disabled before any file is captured');
 
   console.log('\nCase 1/2: capturing front then back, front/back land in state.idScan (not state.pages)');
-  elementsById.idFileInput.files = [new FakeFile('front.jpg', 400, 252)];
+  elementsById.idFileInput.files = [new FakeFile('front.jpg', 800, 500)];
   await elementsById.idFileInput.dispatch('change');
   assert(!!state.idScan.front, 'Case 1: front captured into state.idScan.front');
   assert(state.idScan.front.name === 'front.jpg', 'Case 1: front side has the right file');
@@ -326,17 +326,16 @@ async function main() {
   assert(getLastAnchor() === anchorBeforeRejectedExport, 'Case 3: no PDF/download produced when back is still missing');
   assert(state.busy === false, 'Case 3: busy is not left stuck true after the missing-side rejection');
 
-  elementsById.idCameraInput.files = [new FakeFile('back.jpg', 900, 567)];
+  elementsById.idCameraInput.files = [new FakeFile('back.jpg', 4000, 2500)];
   await elementsById.idCameraInput.dispatch('change');
   assert(!!state.idScan.back, 'Case 1: back captured into state.idScan.back (camera input path)');
-  assert(state.idScan.back.width !== state.idScan.front.width || true, 'Case: front/back may have very different source resolutions (D)');
+  assert(state.idScan.back.name === 'back.jpg', 'Case 1: back side has the right file');
 
   await elementsById.idConfirmBtn.dispatch('click');
   assert(state.idScan.step === 'preview', 'Case 2: confirming back advances the wizard to the A4 preview step');
   // Reaching 'preview' fires renderIdPreview() fire-and-forget (its own
   // setBusy(true/false) brackets the async render, same as everywhere else
-  // in the app) — drain it before simulating an unrelated busy state below,
-  // or its later setBusy(false) would race with and clobber ours.
+  // in the app) — drain it before simulating an unrelated busy state below.
   await new Promise(resolve => setTimeout(resolve, 30));
 
   console.log('\nCase 4: every Scan ID handler is a no-op while busy');
@@ -344,7 +343,7 @@ async function main() {
   const stepBeforeBusy = state.idScan.step;
   await elementsById.idEditFrontBtn.dispatch('click');
   assert(state.idScan.step === stepBeforeBusy, 'Case 4: "Sửa mặt trước" blocked while busy');
-  await elementsById.idChooseBtn.dispatch('click'); // just opens idFileInput; guarded separately below
+  await elementsById.idChooseBtn.dispatch('click');
   await elementsById.idFileInput.dispatch('change');
   assert(state.idScan.front.name === 'front.jpg', 'Case 4: capturing a new front file blocked while busy');
   await elementsById.modeDocBtn.dispatch('click');
@@ -367,17 +366,14 @@ async function main() {
   assert(getLastAnchor().download === 'ScanVuong-ID.pdf', `Case 5: default filename is ScanVuong-ID.pdf (got "${getLastAnchor() && getLastAnchor().download}")`);
   const pdfBytes = Buffer.from(await pdfBlob.arrayBuffer());
   const pages = parsePdfPageSizes(pdfBytes);
-  assert(pages.length === 1, `Case: exported PDF has exactly 1 page (got ${pages.length})`);
+  assert(pages.length === 1, `Case 11: exported PDF has exactly 1 page (got ${pages.length})`);
   assert(
     pages.length === 1 && Math.abs(pages[0].mediaW - 595.28) < 0.01 && Math.abs(pages[0].mediaH - 841.89) < 0.01,
-    `Case: the single page is A4 portrait (got ${pages[0] && pages[0].mediaW}x${pages[0] && pages[0].mediaH})`
+    `Case 11: the single page is A4 portrait (got ${pages[0] && pages[0].mediaW}x${pages[0] && pages[0].mediaH})`
   );
 
   console.log('\nCase 6: Object URL revocation on replace / mode switch');
   assert(state.idScan.front === null && state.idScan.back === null, 'setup: idScan is clear after the prior export nulled it');
-  // Case 5's export left the wizard on the 'preview' step (export doesn't
-  // touch state.idScan.step); "Sửa mặt trước" is the real UI path back to an
-  // editable step, exactly like a user would use from the A4 preview.
   await elementsById.idEditFrontBtn.dispatch('click');
   assert(state.idScan.step === 'front', 'setup: "Sửa mặt trước" returns to the front step for Case 6 setup');
   elementsById.idFileInput.files = [new FakeFile('side-a.jpg', 400, 252)];
@@ -395,6 +391,50 @@ async function main() {
   assert(state.mode === null, 'Case 6: switching mode away from Scan ID returns to the mode-select screen');
   assert(!blobRegistry.has(secondFrontUrl), 'Case 6: leaving Scan ID revokes the in-progress side\'s Object URL');
   assert(state.idScan.front === null && state.idScan.back === null, 'Case 6: idScan is reset after leaving the mode');
+
+  console.log('\nCase 7-10: Layout geometry & invariant verification');
+  // Pure geometry testing: input resolutions 800×500 and 4000×2500 (5x resolution difference)
+  const layout = calculateIdA4Layout(800, 500, 4000, 2500);
+  const expectedTargetW = Math.round(layout.pageW * 0.65);
+
+  assert(layout.front.width === layout.back.width, `Case 7: front and back have identical rendered width on A4 (got ${layout.front.width} vs ${layout.back.width})`);
+  assert(layout.front.width === expectedTargetW, `Case 7: target width is ~65% of A4 width (got ${layout.front.width}/${layout.pageW} = ${(layout.front.width / layout.pageW * 100).toFixed(1)}%)`);
+
+  const frontAspectError = Math.abs((layout.front.width / layout.front.height) - (800 / 500));
+  const backAspectError = Math.abs((layout.back.width / layout.back.height) - (4000 / 2500));
+  assert(frontAspectError < 0.01, `Case 8: front aspect ratio preserved without stretch (error: ${frontAspectError.toFixed(4)})`);
+  assert(backAspectError < 0.01, `Case 8: back aspect ratio preserved without stretch (error: ${backAspectError.toFixed(4)})`);
+
+  assert(layout.front.y + layout.front.height < layout.back.y, `Case 9: front is positioned strictly above back (front bottom ${layout.front.y + layout.front.height} < back top ${layout.back.y})`);
+  const interCardGap = layout.back.y - (layout.front.y + layout.front.height);
+  assert(interCardGap > 0, `Case 9: positive separation gap between cards on A4 (got ${interCardGap}px)`);
+
+  const insidePage = (
+    layout.front.x >= 0 && layout.back.x >= 0 &&
+    layout.front.y >= 0 && layout.back.y >= 0 &&
+    layout.front.x + layout.front.width <= layout.pageW &&
+    layout.back.x + layout.back.width <= layout.pageW &&
+    layout.front.y + layout.front.height <= layout.pageH &&
+    layout.back.y + layout.back.height <= layout.pageH
+  );
+  assert(insidePage, 'Case 10: both cards stay strictly within A4 page boundaries');
+
+  const frontCentered = Math.abs(layout.front.x - Math.round((layout.pageW - layout.front.width) / 2)) <= 1;
+  const backCentered = Math.abs(layout.back.x - Math.round((layout.pageW - layout.back.width) / 2)) <= 1;
+  assert(frontCentered && backCentered, `Case 10: both front and back are centered horizontally on A4 (x: ${layout.front.x}, ${layout.back.x})`);
+
+  console.log('\nCase Fallback: odd-aspect / portrait orientation containment');
+  // Card rotated or cropped portrait: 500w × 800h vs normal landscape 4000×2500
+  const portraitLayout = calculateIdA4Layout(500, 800, 4000, 2500);
+  assert(portraitLayout.front.height <= portraitLayout.zoneH, `Fallback: portrait-ish side is scaled to fit zone height (got height ${portraitLayout.front.height} <= zoneH ${portraitLayout.zoneH})`);
+  const portraitAspectError = Math.abs((portraitLayout.front.width / portraitLayout.front.height) - (500 / 800));
+  assert(portraitAspectError < 0.01, `Fallback: portrait-ish aspect ratio preserved without distortion (error: ${portraitAspectError.toFixed(4)})`);
+  assert(portraitLayout.back.width === expectedTargetW, `Fallback: normal side still receives standard ~65% target width (got ${portraitLayout.back.width})`);
+  assert(portraitLayout.front.y + portraitLayout.front.height < portraitLayout.back.y, 'Fallback: front remains above back even with odd aspect ratio');
+
+  // Degenerate inputs (0x0 or invalid) handled safely
+  const degenLayout = calculateIdA4Layout(0, 0, 0, 0);
+  assert(Number.isFinite(degenLayout.front.width) && Number.isFinite(degenLayout.back.height), 'Fallback: degenerate input dimensions handled safely without NaN');
 
   console.log(`\n${checks - failures}/${checks} checks passed.`);
   if (failures > 0) {

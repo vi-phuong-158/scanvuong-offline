@@ -66,7 +66,8 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 | **ID mode** | `activePage()` | mọi chỗ trong Editor/Corners/Filter cluster (`drawEditor`, `renderSelected`, pointer handlers, `detectBtn`/`resetCropBtn`/`rotateBtn`, filter-chip handler) — thay `selectedPage()` | `selectedPage()` (document) hoặc `state.idScan.front/back` theo `state.idScan.step` (id) |
 | | `addIdFile()` | `#idFileInput`/`#idCameraInput` change | `isSupportedImage()`, `detectPage()` (dùng chung với document), `renderModeShell()` |
 | | `applyIdAspectHint()` | `detectPage()`, chỉ khi `state.mode==='id'` | chỉ đọc/hạ `detection.confidence`, không đổi `orderCorners()`/`detectDocument()` |
-| | `composeIdA4()` | `exportIdPdf()`, `renderIdPreview()` | thuần canvas 2D, không gọi lại detect/homography |
+| | `calculateIdA4Layout()` | `composeIdA4()` | pure layout geometry helper (tính toạ độ/kích thước front/back trên A4, target width ~65%) |
+| | `composeIdA4()` | `exportIdPdf()`, `renderIdPreview()` | gọi `calculateIdA4Layout()`, thuần canvas 2D, không gọi lại detect/homography |
 | | `exportIdPdf()` | `#idExportBtn` click | `renderPageCanvas()` ×2 (front, back — **dùng chung** với document export), `composeIdA4()`, `canvasToJpeg()`, `buildPdf()` (dùng chung) |
 | | `renderIdPreview()` | `updateIdShell()` khi `step==='preview'` | `renderPageCanvas()` ×2 (maxEdge thấp hơn), `composeIdA4()` |
 
@@ -208,7 +209,7 @@ Nguyên tắc thiết kế then chốt (đã kiểm chứng bằng regression + 
   giải mã JPEG nhúng trong PDF xuất ra để đo lại vị trí pixel): mặt trước/sau không bị lật/mirror
   (kể cả sau khi xoay 90° một mặt — marker vẫn đúng vị trí TL/TR/BR/BL theo phép xoay theo chiều kim
   đồng hồ), mặt trước luôn ở nửa trên trang và mặt sau ở nửa dưới, và hai mặt có độ phân giải nguồn
-  chênh lệch 5 lần vẫn ra cùng chiều rộng (~1092px, khớp `cardW`) trên trang A4 1240×1754.
+  chênh lệch 5 lần vẫn ra cùng chiều rộng (~806px, ~65% chiều rộng trang A4 1240×1754).
 
 ## Mô hình dữ liệu / API
 

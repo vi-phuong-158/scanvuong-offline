@@ -887,34 +887,54 @@
   // ---------- Scan ID: front/back → single A4 page ----------
   // Composes two already-cropped/warped/filtered card canvases (the exact
   // output of renderPageCanvas(), reused unchanged) onto one A4-portrait
-  // raster: front on top, back on bottom, same target width so a big/small
-  // source resolution difference between the two sides never shows up as a
-  // size difference on the page. "Bản in đẹp" is the only preset (V1) — a
-  // physical-size (85.60×53.98mm true-scale) preset is backlog, see
-  // docs/brain/04-current-tasks.md.
+  // raster: front on top, back on bottom, same target width (~65% of A4 width)
+  // so a big/small source resolution difference between the two sides never
+  // shows up as a size difference on the page. "Bản in đẹp" is the only
+  // preset (V1) — a physical-size (85.60×53.98mm true-scale) preset is
+  // backlog, see docs/brain/04-current-tasks.md.
   const A4_PORTRAIT_RATIO = 841.89 / 595.28;
-  function composeIdA4(frontCanvas, backCanvas) {
-    const pageW = 1240, pageH = Math.round(pageW * A4_PORTRAIT_RATIO);
-    const canvas = document.createElement('canvas');
-    canvas.width = pageW; canvas.height = pageH;
-    const ctx = canvas.getContext('2d', { alpha: false });
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, pageW, pageH);
 
-    const margin = Math.round(pageW * 0.06);
-    const cardW = pageW - margin * 2;
-    const gap = Math.round(pageH * 0.045);
+  function calculateIdA4Layout(frontW, frontH, backW, backH, options = {}) {
+    const pageW = options.pageW || 1240;
+    const pageH = options.pageH || Math.round(pageW * A4_PORTRAIT_RATIO);
+    const targetWidthRatio = options.targetWidthRatio || 0.65;
+    const targetCardW = Math.round(pageW * targetWidthRatio);
+    const gap = options.gap !== undefined ? options.gap : Math.round(pageH * 0.05);
     const zoneH = (pageH - gap) / 2;
+    const maxCardH = zoneH - Math.round(pageH * 0.04);
 
-    const drawCard = (source, zoneY) => {
-      const ratio = source.height / source.width;
-      let dw = cardW, dh = dw * ratio;
-      const maxH = zoneH - margin * 0.6;
-      if (dh > maxH) { dh = maxH; dw = dh / ratio; }
-      const dx = (pageW - dw) / 2, dy = zoneY + (zoneH - dh) / 2;
-      ctx.drawImage(source, 0, 0, source.width, source.height, dx, dy, dw, dh);
+    const layoutCard = (w, h, zoneY) => {
+      const srcW = Math.max(1, w || 1), srcH = Math.max(1, h || 1);
+      const ratio = srcH / srcW;
+      let dw = targetCardW, dh = Math.round(dw * ratio);
+      if (dh > maxCardH) {
+        dh = Math.round(maxCardH);
+        dw = Math.round(dh / ratio);
+      }
+      const dx = Math.round((pageW - dw) / 2);
+      const dy = Math.round(zoneY + (zoneH - dh) / 2);
+      return { x: dx, y: dy, width: dw, height: dh };
     };
-    drawCard(frontCanvas, 0);
-    drawCard(backCanvas, zoneH + gap);
+
+    return {
+      pageW,
+      pageH,
+      gap,
+      zoneH,
+      front: layoutCard(frontW, frontH, 0),
+      back: layoutCard(backW, backH, zoneH + gap),
+    };
+  }
+
+  function composeIdA4(frontCanvas, backCanvas) {
+    const layout = calculateIdA4Layout(frontCanvas.width, frontCanvas.height, backCanvas.width, backCanvas.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = layout.pageW; canvas.height = layout.pageH;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, layout.pageW, layout.pageH);
+
+    ctx.drawImage(frontCanvas, 0, 0, frontCanvas.width, frontCanvas.height, layout.front.x, layout.front.y, layout.front.width, layout.front.height);
+    ctx.drawImage(backCanvas, 0, 0, backCanvas.width, backCanvas.height, layout.back.x, layout.back.y, layout.back.width, layout.back.height);
     return canvas;
   }
 
