@@ -3,16 +3,15 @@
 /**
  * ScanVuông Hard-Case Benchmark Engine & Failure Cluster Analyzer.
  * CLI runner for evaluating document corner detection across separate datasets:
- *  1. REGRESSION_V1
- *  2. SYNTHETIC_HARD_CASE_V1
- *  3. REAL_WORLD_HARD_CASE_V1
- *  4. REAL_WORLD_NEGATIVE_V1
+ *  1. REGRESSION_V1            (Legacy private camera photos from CamScanner)
+ *  2. SYNTHETIC_HARD_CASE_V1   (Deterministic mathematical edge cases)
+ *  3. REAL_WORLD_HARD_CASE_V1  (Independent real camera photos)
+ *  4. REAL_WORLD_NEGATIVE_V1   (Real non-document and document-like photos)
  */
 
 const fs = require('fs');
 const path = require('path');
-const { createCanvas, Image } = require(path.join(__dirname, '..', 'benchmark', 'node_modules', 'canvas'));
-const DocumentDetector = require(path.join(__dirname, '..', 'document-detector.js'));
+const { execSync } = require('child_process');
 
 // -------------------------------------------------------------
 // CLI Argument Parsing
@@ -36,19 +35,19 @@ Options:
   --json-out <path>         Đường dẫn xuất file JSON kết quả (mặc định: benchmark-output/hard_case_benchmark_results.json)
 
 Datasets Evaluated:
-  1. REGRESSION_V1:          25 ảnh private dùng để bảo vệ không bị regression
-  2. SYNTHETIC_HARD_CASE_V1: 24 ca thử thách toán học có ground-truth chính xác (HC01 - HC12)
-  3. REAL_WORLD_HARD_CASE_V1: Ảnh chụp camera thực tế từ các tình huống khó
-  4. REAL_WORLD_NEGATIVE_V1:  Ảnh không chứa tài liệu và vật thể hình chữ nhật
+  1. REGRESSION_V1:          25 ảnh private legacy dùng để bảo vệ không bị regression (LEGACY_REGRESSION)
+  2. SYNTHETIC_HARD_CASE_V1: 24 ca thử thách toán học có ground-truth chính xác (SYNTHETIC_GENERATED)
+  3. REAL_WORLD_HARD_CASE_V1: Ảnh chụp camera thực tế độc lập ngoài tập regression (CAMERA_REAL)
+  4. REAL_WORLD_NEGATIVE_V1:  Ảnh thực tế không chứa tài liệu và vật thể hình chữ nhật (CAMERA_REAL)
 
 Metrics:
   - Polygon IoU (Sutherland-Hodgman clipping area overlap)
   - Corner Error (Normalized Euclidean distance: mean & worst)
   - Quality Categories: EXCELLENT (IoU>=0.95, err<=0.025), GOOD (IoU>=0.90, err<=0.060),
                         MANUAL_ADJUST (IoU>=0.70, err<=0.150), CATASTROPHIC
-  - False Positive Rate (FPR) on Negatives
+  - False Positive Rate (FPR) on Negatives (Separated for Ordinary vs Document-Like)
   - Latency: Cold First Inference vs Warm Inferences
-  - Score Attribution: ML_LOGIT vs CLASSICAL_CONFIDENCE vs DEFAULT_PLACEHOLDER
+  - Score Attribution: ML_SIGMOID_CONFIDENCE vs CLASSICAL_CONFIDENCE vs DEFAULT_PLACEHOLDER
 `);
   process.exit(0);
 }
@@ -74,6 +73,27 @@ if (thIdx !== -1 && args[thIdx + 1]) customThreshold = parseFloat(args[thIdx + 1
 let jsonOutPath = path.join(__dirname, '..', 'benchmark-output', 'hard_case_benchmark_results.json');
 const outIdx = args.indexOf('--json-out');
 if (outIdx !== -1 && args[outIdx + 1]) jsonOutPath = args[outIdx + 1];
+
+// -------------------------------------------------------------
+// Load Canvas & DocumentDetector
+// -------------------------------------------------------------
+const ROOT = path.join(__dirname, '..');
+let createCanvas, Image;
+
+try {
+  const canvasMod = require(path.join(ROOT, 'benchmark', 'node_modules', 'canvas'));
+  createCanvas = canvasMod.createCanvas;
+  Image = canvasMod.Image;
+} catch (err) {
+  console.error('================================================================');
+  console.error('ERROR: Canvas dev dependency not found in benchmark/node_modules.');
+  console.error('Please run the following clean-clone setup command:');
+  console.error('    npm ci --prefix benchmark');
+  console.error('================================================================\n');
+  process.exit(1);
+}
+
+const DocumentDetector = require(path.join(ROOT, 'document-detector.js'));
 
 // -------------------------------------------------------------
 // Geometry Engine (Sutherland-Hodgman Polygon Clipping & IoU)
@@ -192,9 +212,22 @@ async function runBenchmark() {
   console.log('=== ScanVuông Reproducible Hard-Case Benchmark Harness (V1)  ===');
   console.log('================================================================\n');
 
-  const ROOT = path.join(__dirname, '..');
   const manifestPath = path.join(ROOT, 'benchmark', 'hard_cases', 'manifest.json');
   const dataDir = path.join(ROOT, 'benchmark', 'hard_cases', 'data');
+  const generatorScript = path.join(ROOT, 'benchmark', 'hard_cases', 'generate_hard_cases.cjs');
+
+  // Self-healing: generate synthetic fixtures if data directory is missing
+  if (!fs.existsSync(dataDir) || fs.readdirSync(dataDir).length === 0) {
+    if (fs.existsSync(generatorScript)) {
+      console.log('ℹ Synthetic fixtures missing. Generating synthetic challenge cases on-the-fly...');
+      try {
+        execSync(`node "${generatorScript}"`, { cwd: ROOT, stdio: 'ignore' });
+        console.log('✓ Synthetic challenge cases generated successfully.\n');
+      } catch (genErr) {
+        console.error('Warning: could not auto-generate synthetic fixtures:', genErr.message);
+      }
+    }
+  }
 
   let testCases = [];
 
@@ -202,9 +235,12 @@ async function runBenchmark() {
   if (fs.existsSync(manifestPath)) {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     for (const c of manifest.cases) {
-      c.dataset_group = 'SYNTHETIC_HARD_CASE_V1';
-      c.imagePath = path.join(dataDir, c.filename);
-      testCases.push(c);
+      testCases.push({
+        ...c,
+        dataset_group: 'SYNTHETIC_HARD_CASE_V1',
+        provenance: 'SYNTHETIC_GENERATED',
+        imagePath: path.join(dataDir, c.filename)
+      });
     }
   }
 
@@ -225,6 +261,7 @@ async function runBenchmark() {
         testCases.push({
           id: `REG_${f.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20)}`,
           dataset_group: 'REGRESSION_V1',
+          provenance: 'LEGACY_REGRESSION',
           category: 'HC12_REAL_OFFICE_SCANS',
           filename: f,
           imagePath: path.join(privateDir, f),
@@ -244,10 +281,52 @@ async function runBenchmark() {
     }
   }
 
+  // 3. Load Independent Real-World Datasets if present in benchmark-private/
+  const realWorldPositiveDir = path.join(ROOT, 'benchmark-private', 'positives');
+  const realWorldNegativeDir = path.join(ROOT, 'benchmark-private', 'negatives');
+
+  if (fs.existsSync(realWorldPositiveDir)) {
+    const rFiles = fs.readdirSync(realWorldPositiveDir).filter(f => /\.(jpe?g|png|webp)$/i.test(f)).sort();
+    for (const f of rFiles) {
+      testCases.push({
+        id: `RW_${f.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20)}`,
+        dataset_group: 'REAL_WORLD_HARD_CASE_V1',
+        provenance: 'CAMERA_REAL',
+        category: 'RW01_WHITE_ON_WHITE',
+        filename: f,
+        imagePath: path.join(realWorldPositiveDir, f),
+        contains_document: true,
+        is_private_dataset: true,
+        difficulty: 'real',
+        ground_truth: null
+      });
+    }
+  }
+
+  if (fs.existsSync(realWorldNegativeDir)) {
+    const nFiles = fs.readdirSync(realWorldNegativeDir).filter(f => /\.(jpe?g|png|webp)$/i.test(f)).sort();
+    for (const f of nFiles) {
+      const isDocLike = /doclike|laptop|tablet|box|frame/i.test(f);
+      testCases.push({
+        id: `RW_NEG_${f.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20)}`,
+        dataset_group: 'REAL_WORLD_NEGATIVE_V1',
+        provenance: 'CAMERA_REAL',
+        category: isDocLike ? 'NEG_DOCUMENT_LIKE' : 'NEG_ORDINARY',
+        filename: f,
+        imagePath: path.join(realWorldNegativeDir, f),
+        contains_document: false,
+        is_document_like: isDocLike,
+        difficulty: 'real',
+        ground_truth: null
+      });
+    }
+  }
+
   if (datasetFilter !== 'all') {
     testCases = testCases.filter(c => {
       if (datasetFilter === 'synthetic') return c.dataset_group === 'SYNTHETIC_HARD_CASE_V1';
       if (datasetFilter === 'regression') return c.dataset_group === 'REGRESSION_V1';
+      if (datasetFilter === 'real') return c.dataset_group === 'REAL_WORLD_HARD_CASE_V1';
       if (datasetFilter === 'negatives') return !c.contains_document;
       return true;
     });
@@ -263,7 +342,7 @@ async function runBenchmark() {
   }
   console.log('');
 
-  // 3. Initialize Model and Run Inference
+  // 4. Initialize Model and Run Inference
   const modelPath = path.join(ROOT, 'assets', 'ml', 'doccornernet_lean.ort');
   if (!fs.existsSync(modelPath)) {
     console.error(`ERROR: Model asset not found at ${modelPath}`);
@@ -301,9 +380,9 @@ async function runBenchmark() {
     if (i === 0) coldLatencyMs = elapsedMs;
     else latencies.push(elapsedMs);
 
-    // Score attribution audit
+    // Score attribution audit: rename to mathematical ML_SIGMOID_CONFIDENCE
     let scoreSource = 'DEFAULT_PLACEHOLDER';
-    if (detRes.source === 'SCANIC_ML') scoreSource = 'ML_LOGIT';
+    if (detRes.source === 'SCANIC_ML') scoreSource = 'ML_SIGMOID_CONFIDENCE';
     else if (detRes.source === 'CURRENT_FALLBACK') scoreSource = 'CLASSICAL_CONFIDENCE';
 
     let cornerErr = null;
@@ -335,6 +414,7 @@ async function runBenchmark() {
     results.push({
       id: tc.id,
       dataset_group: tc.dataset_group,
+      provenance: tc.provenance,
       category: tc.category,
       filename: tc.filename,
       contains_document: tc.contains_document,
@@ -388,9 +468,18 @@ async function runBenchmark() {
     }
 
     if (neg.length > 0) {
-      const fp = neg.filter(r => r.verdict === 'FALSE_POSITIVE').length;
-      const tn = neg.filter(r => r.verdict === 'TRUE_NEGATIVE').length;
-      console.log(`Negatives: ${neg.length} | True Negatives: ${tn} | False Positives: ${fp} | FPR: ${((fp/neg.length)*100).toFixed(1)}%`);
+      const ordNegs = neg.filter(r => !r.is_document_like);
+      const docLikeNegs = neg.filter(r => r.is_document_like);
+
+      const fpOrd = ordNegs.filter(r => r.verdict === 'FALSE_POSITIVE').length;
+      const tnOrd = ordNegs.filter(r => r.verdict === 'TRUE_NEGATIVE').length;
+      const fprOrd = ordNegs.length > 0 ? ((fpOrd / ordNegs.length) * 100).toFixed(1) : '0.0';
+
+      const fpDoc = docLikeNegs.filter(r => r.verdict === 'FALSE_POSITIVE').length;
+      const tnDoc = docLikeNegs.filter(r => r.verdict === 'TRUE_NEGATIVE').length;
+      const fprDoc = docLikeNegs.length > 0 ? ((fpDoc / docLikeNegs.length) * 100).toFixed(1) : '0.0';
+
+      console.log(`Negatives: Total=${neg.length} | Ordinary FPR=${fprOrd}% (${fpOrd}/${ordNegs.length}) | Document-Like FPR=${fprDoc}% (${fpDoc}/${docLikeNegs.length})`);
     }
     console.log('');
   }
@@ -410,11 +499,11 @@ async function runBenchmark() {
   console.log(`Warm Inferences:              Median=${medLat} ms | p95=${p95Lat} ms | Worst=${worstLat} ms\n`);
 
   console.log('--- Score Source Distribution ---');
-  const mlLogits = results.filter(r => r.scoreSource === 'ML_LOGIT').map(r => r.documentScore).sort((a, b) => a - b);
+  const mlLogits = results.filter(r => r.scoreSource === 'ML_SIGMOID_CONFIDENCE').map(r => r.documentScore).sort((a, b) => a - b);
   const classConf = results.filter(r => r.scoreSource === 'CLASSICAL_CONFIDENCE').map(r => r.documentScore).sort((a, b) => a - b);
   const defHold = results.filter(r => r.scoreSource === 'DEFAULT_PLACEHOLDER').map(r => r.documentScore).sort((a, b) => a - b);
 
-  console.log(`ML_LOGIT (${mlLogits.length} cases):              min=${mlLogits[0]?.toFixed(4)}, med=${mlLogits[Math.floor(mlLogits.length*0.5)]?.toFixed(4)}, max=${mlLogits[mlLogits.length-1]?.toFixed(4)}`);
+  console.log(`ML_SIGMOID_CONFIDENCE (${mlLogits.length} cases): min=${mlLogits[0]?.toFixed(4)}, med=${mlLogits[Math.floor(mlLogits.length*0.5)]?.toFixed(4)}, max=${mlLogits[mlLogits.length-1]?.toFixed(4)}`);
   console.log(`CLASSICAL_CONFIDENCE (${classConf.length} cases):  ${classConf.length > 0 ? classConf[0]?.toFixed(4) : 'none'}`);
   console.log(`DEFAULT_PLACEHOLDER (${defHold.length} cases):   ${defHold.length > 0 ? defHold[0]?.toFixed(4) : 'none'}\n`);
 
