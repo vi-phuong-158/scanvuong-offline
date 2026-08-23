@@ -193,14 +193,14 @@ Nguyên tắc thiết kế then chốt (đã kiểm chứng bằng regression + 
   `snapshotExportJob()` của document mode — sửa corners/rotation/filter hoặc rời hẳn Scan ID trong
   lúc export đang chạy không ảnh hưởng PDF đang xuất.
 - **`composeIdA4(frontCanvas, backCanvas)`** nhận output CÓ SẴN của `renderPageCanvas()` (đã
-  crop/warp/filter), không tự vẽ lại từ ảnh gốc. Raster cố định 1240×1754 (tỷ lệ A4 dọc), mỗi mặt
-  được scale theo CHIỀU RỘNG mục tiêu chung (không theo độ phân giải nguồn) rồi căn giữa theo chiều
-  cao vùng của nó — vì vậy mặt trước/sau có độ phân giải nguồn chênh lệch rất lớn (ví dụ 800×500 và
-  4000×2500) vẫn hiển thị **cùng kích thước** trên trang. Nếu một mặt bị xoay thành hình dạng rất cao
-  (gần vuông-đứng thay vì thẻ ngang), hàm co theo chiều cao vùng thay vì chiều rộng để không tràn
-  trang — đây là fallback cố ý, đánh đổi "cùng chiều rộng tuyệt đối" lấy "không bao giờ méo/tràn
-  trang" cho trường hợp hiếm; ID card thật luôn ngang nên trường hợp này gần như không xảy ra trong
-  thực tế. Không in nhãn "Mặt trước/Mặt sau" lên trang (giữ thiết kế sạch theo yêu cầu).
+  crop/warp/filter), không tự vẽ lại từ ảnh gốc. Dùng `calculateIdA4Layout()` để tính toán vị trí trên raster
+  cố định 1240×1754 (tỷ lệ A4 dọc): mỗi mặt được scale theo CHIỀU RỘNG mục tiêu chung (65% chiều rộng A4,
+  ~806px) bất kể độ phân giải nguồn; khoảng cách giữa hai thẻ là ~28 mm (~165px); cả cụm 2 thẻ và gap được
+  căn giữa theo chiều dọc trang A4. Nếu một mặt bị xoay thành hình dạng rất cao (gần vuông-đứng thay vì thẻ ngang),
+  hàm co theo chiều cao khả dụng thay vì chiều rộng để không tràn trang — đây là fallback cố ý, đánh đổi "cùng
+  chiều rộng tuyệt đối" lấy "không bao giờ méo/tràn trang" cho trường hợp hiếm; ID card thật luôn ngang nên
+  trường hợp này gần như không xảy ra trong thực tế. Không in nhãn "Mặt trước/Mặt sau" lên trang (giữ thiết kế
+  sạch theo yêu cầu).
 - **`applyIdAspectHint()` chỉ HẠ, không bao giờ NÂNG, confidence** — so tỷ lệ khung hình quad phát
   hiện được với tỷ lệ ID-1 (85.60×53.98mm ≈ 1.586:1); lệch >35% thì trần confidence ở 0.5 (dưới
   ngưỡng review 0.58) để buộc người dùng kiểm tra tay. Không đổi `detectDocument()`/
@@ -208,7 +208,7 @@ Nguyên tắc thiết kế then chốt (đã kiểm chứng bằng regression + 
 - **Đã kiểm chứng bằng rehearsal trình duyệt thật** (ảnh tổng hợp có marker màu TL/TR/BR/BL ở 4 góc,
   giải mã JPEG nhúng trong PDF xuất ra để đo lại vị trí pixel): mặt trước/sau không bị lật/mirror
   (kể cả sau khi xoay 90° một mặt — marker vẫn đúng vị trí TL/TR/BR/BL theo phép xoay theo chiều kim
-  đồng hồ), mặt trước luôn ở nửa trên trang và mặt sau ở nửa dưới, và hai mặt có độ phân giải nguồn
+  đồng hồ), mặt trước luôn ở trên và mặt sau ở dưới, cả cụm căn giữa dọc trang, và hai mặt có độ phân giải nguồn
   chênh lệch 5 lần vẫn ra cùng chiều rộng (~806px, ~65% chiều rộng trang A4 1240×1754).
 
 ## Mô hình dữ liệu / API

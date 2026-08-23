@@ -192,12 +192,12 @@
   toàn không bị ảnh hưởng (hàm chỉ chạy khi `state.mode==='id'`).
 - **Người quyết định:** Claude, theo yêu cầu trực tiếp của người dùng.
 
-## [2026-08-23] Scan ID: Điều chỉnh kích thước thẻ trên A4 (~65% chiều rộng) và tách helper layout thuần
+## [2026-08-23] Scan ID: Điều chỉnh kích thước thẻ (~65%), khoảng cách 28mm và căn giữa dọc toàn block trên A4
 
-- **Quyết định:** Tách `calculateIdA4Layout(frontW, frontH, backW, backH, options)` thành hàm pure helper kiểm thử được và điều chỉnh target width của thẻ từ ~88% (`cardW = 1092px`) xuống **~65%** chiều rộng trang A4 (`cardW = 806px` trên raster 1240×1754, tương đương ~136.5 mm trên khổ A4 210 mm).
-- **Lý do:** Kích thước cũ (~88%) khiến thẻ phóng quá to khi in, chiếm gần hết chiều ngang trang và tạo khoảng cách giữa 2 thẻ quá hẹp. Mức ~65% tạo bố cục in cân đối, trang nhã: phóng to ~1.59x so với thẻ thật (85.6 mm) đủ dễ đọc thông tin, lề trên/dưới (~2.8 cm) và khoảng cách giữa 2 thẻ (~7.1 cm) thoáng đãng, cho phép gấp đôi trang A4 mà không bị lẹm vào thẻ. Tách helper thuần cho phép kiểm thử hình học độc lập mà không cần stub pixel canvas phức tạp.
-- **Đánh đổi:** Thẻ không chiếm tràn viền — đây là cải thiện UX có chủ đích cho bản in đẹp.
-- **Người quyết định:** Antigravity (theo review hardening PR #4).
+- **Quyết định:** Tách `calculateIdA4Layout(frontW, frontH, backW, backH, options)` thành hàm pure helper kiểm thử được. Giữ target width của thẻ ở **65%** chiều rộng trang A4 (`cardW = 806px` trên raster 1240×1754, tương đương ~136.5 mm trên khổ A4 210 mm); giảm khoảng cách (gap) giữa mặt trước và mặt sau từ ~70 mm xuống **~28 mm** (`165px`); và **căn giữa dọc toàn bộ cụm block (front + gap + back)** trên trang A4 thay vì chia cứng hai nửa riêng biệt.
+- **Lý do:** Kích thước 65% phóng to thẻ ~1.59x so với thẻ thật (85.6 mm) giúp chữ sắc nét dễ đọc. Thu hẹp khoảng cách xuống 28 mm và căn giữa toàn block giúp bố cục bản in A4 thanh thoát, cân xứng, khoảng trắng trên/dưới đồng đều (~4.9 cm), không để lại khoảng trống quá lớn ở giữa hai mặt thẻ.
+- **Đánh đổi:** Không có — đây là tinh chỉnh UX/print layout hoàn thiện cho bản in đẹp.
+- **Người quyết định:** Antigravity (theo final hardening PR #4).
 
 ## Template cho entry mới
 

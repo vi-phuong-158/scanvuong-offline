@@ -18,18 +18,18 @@
 
 ---
 
-## [2026-08-23] Harden Scan ID PR #4 (Layout A4 ~65%, pure layout helper, remove false-positive in regression, wire CI)
+## [2026-08-23] Final Hardening Scan ID PR #4 (Layout A4: width 65%, gap 28mm, vertically centered block, regression 52/52)
 
 - **Agent:** Codex
 - **Thay đổi:**
-  1. Tách `calculateIdA4Layout(frontW, frontH, backW, backH, options)` thành pure helper tính toán toạ độ và kích thước thẻ trên A4.
-  2. Điều chỉnh kích thước thẻ mặc định từ ~88% xuống ~65% chiều rộng trang A4 (`cardW = 806px` trên raster 1240×1754), giúp bản in cân đối, lề trên/dưới (~2.8 cm) và khoảng cách giữa 2 thẻ (~7.1 cm) thoáng đãng, dễ gấp đôi trang A4.
-  3. Xoá bỏ hoàn toàn assertion `|| true` trong `scripts/regression_scan_id.js`, thay thế bằng các kiểm tra bất biến hình học thực tế (cùng target width độc lập với resolution nguồn, bảo toàn aspect ratio không stretch, front luôn ở trên back với gap > 0, không tràn trang A4, căn giữa ngang, portrait fallback).
-  4. Thêm meta-test scratch chứng minh các assertion trong regression harness FAIL đúng khi cố tình vi phạm bất biến (sai equal width, đảo front/back, méo aspect ratio, tràn viền).
-  5. Cập nhật `.github/workflows/static-validation.yml` thêm bước chạy `node scripts/regression_scan_id.js`.
-- **File đã sửa:** `app.js`, `scripts/regression_scan_id.js`, `.github/workflows/static-validation.yml`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/05-testing-and-deploy.md`, `docs/brain/06-ai-working-log.md`.
-- **Lý do:** Yêu cầu hardening cho PR #4 (Scan ID) trước khi merge: loại bỏ false-positive test, cải thiện UX bố cục in A4, và tích hợp CI.
-- **Kiểm tra:** `node --check app.js` PASS, `node --check sw.js` PASS, `node scripts/regression_export_busy.js` PASS (29/29), `node scripts/regression_scan_id.js` PASS (50/50), `python scripts/validate_static.py` PASS (7/7). Synthetic PDF verification: xuất PDF 1 trang A4 portrait, giải mã JPEG nhúng kiểm tra pixel marker (TL/TR/BR/BL), xác nhận không mirror, không flip, front ở trên, back ở dưới, kích thước 806px.
+  1. Tách và hoàn thiện `calculateIdA4Layout(frontW, frontH, backW, backH, options)`: giữ card target width 65% A4 (`806px`), giảm khoảng cách giữa 2 mặt thẻ xuống **28 mm** (`165px`), căn giữa dọc toàn bộ cụm thẻ (`front + gap + back`) trên trang A4 (`topWhitespace ≈ bottomWhitespace = 291px`), và hỗ trợ contain/fit-inside cho odd/portrait aspect ratios mà không bị méo/stretch.
+  2. Xoá bỏ hoàn toàn assertion false-positive `|| true` trong `scripts/regression_scan_id.js`, nâng cấp bộ kiểm thử lên 52 checks bao quát trọn vẹn: bất biến hình học (equal width 65%, aspect ratio, khoảng cách 28mm, căn giữa dọc/ngang, viền A4), portrait fallback, state machine, busy lock, snapshot isolation, Object URL cleanup, PDF 1 page A4 portrait.
+  3. Thực hiện meta-test scratch chứng minh 4 đột biến cố tình (sai gap 70mm, lệch vertical centering, phá equal width, méo aspect ratio) đều bị harness phát hiện và FAIL đúng assertion.
+  4. Xác nhận synthetic PDF rendering pixel-level qua Python PIL (không mirror, không flip, đúng màu 4 góc marker, đúng toạ độ).
+  5. Cập nhật mô tả PR #4 trên GitHub phản ánh chính xác thông số implementation mới nhất.
+- **File đã sửa:** `app.js`, `scripts/regression_scan_id.js`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/05-testing-and-deploy.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Yêu cầu Final Hardening cho PR #4 (Scan ID) trước khi merge.
+- **Kiểm tra:** `node --check app.js` PASS, `node --check sw.js` PASS, `node scripts/regression_export_busy.js` PASS (29/29), `node scripts/regression_scan_id.js` PASS (52/52), `python scripts/validate_static.py` PASS (7/7). Synthetic PDF verification: xuất PDF 1 trang A4 portrait, giải mã JPEG nhúng kiểm tra pixel marker (TL/TR/BR/BL), xác nhận không mirror, không flip, front ở trên, back ở dưới, gap 165px (~28mm), vertical delta <= 1px.
 
 ---
 

@@ -899,11 +899,12 @@
     const pageH = options.pageH || Math.round(pageW * A4_PORTRAIT_RATIO);
     const targetWidthRatio = options.targetWidthRatio || 0.65;
     const targetCardW = Math.round(pageW * targetWidthRatio);
-    const gap = options.gap !== undefined ? options.gap : Math.round(pageH * 0.05);
-    const zoneH = (pageH - gap) / 2;
-    const maxCardH = zoneH - Math.round(pageH * 0.04);
+    const gapMm = options.gapMm !== undefined ? options.gapMm : 28;
+    const pxPerMm = pageW / 210;
+    const gap = options.gap !== undefined ? options.gap : Math.round(gapMm * pxPerMm);
+    const maxCardH = (pageH - gap - Math.round(pageH * 0.08)) / 2;
 
-    const layoutCard = (w, h, zoneY) => {
+    const measureCard = (w, h) => {
       const srcW = Math.max(1, w || 1), srcH = Math.max(1, h || 1);
       const ratio = srcH / srcW;
       let dw = targetCardW, dh = Math.round(dw * ratio);
@@ -911,18 +912,36 @@
         dh = Math.round(maxCardH);
         dw = Math.round(dh / ratio);
       }
-      const dx = Math.round((pageW - dw) / 2);
-      const dy = Math.round(zoneY + (zoneH - dh) / 2);
-      return { x: dx, y: dy, width: dw, height: dh };
+      return { width: dw, height: dh };
+    };
+
+    const frontSize = measureCard(frontW, frontH);
+    const backSize = measureCard(backW, backH);
+    const contentHeight = frontSize.height + gap + backSize.height;
+    const startY = Math.round((pageH - contentHeight) / 2);
+
+    const front = {
+      x: Math.round((pageW - frontSize.width) / 2),
+      y: startY,
+      width: frontSize.width,
+      height: frontSize.height,
+    };
+
+    const back = {
+      x: Math.round((pageW - backSize.width) / 2),
+      y: startY + frontSize.height + gap,
+      width: backSize.width,
+      height: backSize.height,
     };
 
     return {
       pageW,
       pageH,
       gap,
-      zoneH,
-      front: layoutCard(frontW, frontH, 0),
-      back: layoutCard(backW, backH, zoneH + gap),
+      contentHeight,
+      startY,
+      front,
+      back,
     };
   }
 

@@ -396,6 +396,7 @@ async function main() {
   // Pure geometry testing: input resolutions 800×500 and 4000×2500 (5x resolution difference)
   const layout = calculateIdA4Layout(800, 500, 4000, 2500);
   const expectedTargetW = Math.round(layout.pageW * 0.65);
+  const expectedGapPx = Math.round(layout.pageW / 210 * 28); // 28 mm physical gap
 
   assert(layout.front.width === layout.back.width, `Case 7: front and back have identical rendered width on A4 (got ${layout.front.width} vs ${layout.back.width})`);
   assert(layout.front.width === expectedTargetW, `Case 7: target width is ~65% of A4 width (got ${layout.front.width}/${layout.pageW} = ${(layout.front.width / layout.pageW * 100).toFixed(1)}%)`);
@@ -407,7 +408,12 @@ async function main() {
 
   assert(layout.front.y + layout.front.height < layout.back.y, `Case 9: front is positioned strictly above back (front bottom ${layout.front.y + layout.front.height} < back top ${layout.back.y})`);
   const interCardGap = layout.back.y - (layout.front.y + layout.front.height);
-  assert(interCardGap > 0, `Case 9: positive separation gap between cards on A4 (got ${interCardGap}px)`);
+  assert(Math.abs(interCardGap - expectedGapPx) <= 2, `Case 9: separation gap between cards is ~28 mm (expected ~${expectedGapPx}px, got ${interCardGap}px)`);
+
+  const topWhitespace = layout.front.y;
+  const bottomWhitespace = layout.pageH - (layout.back.y + layout.back.height);
+  const verticalDelta = Math.abs(topWhitespace - bottomWhitespace);
+  assert(verticalDelta <= 2, `Case 9: two-card block is centered vertically on A4 (top: ${topWhitespace}px, bottom: ${bottomWhitespace}px, delta: ${verticalDelta}px)`);
 
   const insidePage = (
     layout.front.x >= 0 && layout.back.x >= 0 &&
@@ -426,11 +432,17 @@ async function main() {
   console.log('\nCase Fallback: odd-aspect / portrait orientation containment');
   // Card rotated or cropped portrait: 500w × 800h vs normal landscape 4000×2500
   const portraitLayout = calculateIdA4Layout(500, 800, 4000, 2500);
-  assert(portraitLayout.front.height <= portraitLayout.zoneH, `Fallback: portrait-ish side is scaled to fit zone height (got height ${portraitLayout.front.height} <= zoneH ${portraitLayout.zoneH})`);
+  const maxAllowableH = portraitLayout.pageH - portraitLayout.gap - 100;
+  assert(portraitLayout.front.height <= maxAllowableH, `Fallback: portrait-ish side fits within available height (got height ${portraitLayout.front.height} <= ${maxAllowableH})`);
   const portraitAspectError = Math.abs((portraitLayout.front.width / portraitLayout.front.height) - (500 / 800));
   assert(portraitAspectError < 0.01, `Fallback: portrait-ish aspect ratio preserved without distortion (error: ${portraitAspectError.toFixed(4)})`);
   assert(portraitLayout.back.width === expectedTargetW, `Fallback: normal side still receives standard ~65% target width (got ${portraitLayout.back.width})`);
   assert(portraitLayout.front.y + portraitLayout.front.height < portraitLayout.back.y, 'Fallback: front remains above back even with odd aspect ratio');
+
+  const pTop = portraitLayout.front.y;
+  const pBottom = portraitLayout.pageH - (portraitLayout.back.y + portraitLayout.back.height);
+  const pDelta = Math.abs(pTop - pBottom);
+  assert(pDelta <= 2, `Fallback: whole block remains centered vertically with odd aspect ratio (top: ${pTop}px, bottom: ${pBottom}px, delta: ${pDelta}px)`);
 
   // Degenerate inputs (0x0 or invalid) handled safely
   const degenLayout = calculateIdA4Layout(0, 0, 0, 0);

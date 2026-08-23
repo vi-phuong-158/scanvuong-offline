@@ -71,7 +71,7 @@ Không nằm trong phạm vi công việc thường xuyên — dự án là stat
 ## Regression harnesses
 
 - `node scripts/regression_export_busy.js` — script Node dependency-free cho Document mode: chứng minh export snapshot đóng băng trang và export settings (`pageSize`/`margin`/`fileName`/`quality`), và mọi mutation handler bị khoá khi `state.busy === true`.
-- `node scripts/regression_scan_id.js` — script Node dependency-free cho Scan ID: chứng minh front/back tách biệt khỏi `state.pages`, state machine `front→back→preview` và "Sửa mặt trước/sau", từ chối xuất khi thiếu mặt, khoá busy toàn diện, export snapshot isolation, thu hồi Object URL, bất biến hình học layout A4 (equal width 65% độc lập resolution nguồn, bảo toàn aspect ratio, front trên back có khoảng cách, trong viền trang), và PDF 1 trang A4 portrait. Chạy trong CI.
+- `node scripts/regression_scan_id.js` — script Node dependency-free cho Scan ID: chứng minh front/back tách biệt khỏi `state.pages`, state machine `front→back→preview` và "Sửa mặt trước/sau", từ chối xuất khi thiếu mặt, khoá busy toàn diện, export snapshot isolation, thu hồi Object URL, bất biến hình học layout A4 (equal width 65% độc lập resolution nguồn, khoảng cách 28 mm, căn giữa dọc toàn block, bảo toàn aspect ratio, trong viền trang), và PDF 1 trang A4 portrait.
 
 ## Lưu ý
 
