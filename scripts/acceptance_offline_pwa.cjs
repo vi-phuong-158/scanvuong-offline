@@ -49,12 +49,13 @@ const injectedScript = `
       try {
         if (testMode === 'A') {
           if (!('serviceWorker' in navigator)) throw new Error('SW not supported');
+          try { await navigator.serviceWorker.register('./sw.js'); } catch (e) {}
           const reg = await navigator.serviceWorker.ready;
           results.swReady = !!reg;
 
-          await new Promise(r => setTimeout(r, 1500));
-
-          const cache = await caches.open('scanvuong-v2.0.0');
+          const cacheKeys = await caches.keys();
+          const activeCacheName = cacheKeys.find(k => k.startsWith('scanvuong-')) || 'scanvuong-v2.1.0';
+          const cache = await caches.open(activeCacheName);
           const keys = await cache.keys();
           results.cachedCount = keys.length;
 
@@ -67,6 +68,10 @@ const injectedScript = `
             '/manifest.webmanifest',
             '/icons/icon-192.png',
             '/icons/icon-512.png',
+            '/assets/fonts/BeVietnamPro-Regular.woff2',
+            '/assets/fonts/BeVietnamPro-Medium.woff2',
+            '/assets/fonts/BeVietnamPro-SemiBold.woff2',
+            '/assets/fonts/BeVietnamPro-Bold.woff2',
             '/assets/ml/doccornernet_lean.ort',
             '/assets/ml/ort-wasm-simd-threaded.wasm',
             '/assets/ml/ort-wasm-simd-threaded.mjs',
@@ -216,6 +221,7 @@ function createServer() {
       else if (filePath.endsWith('.ort')) mime = 'application/octet-stream';
       else if (filePath.endsWith('.png')) mime = 'image/png';
       else if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) mime = 'image/jpeg';
+      else if (filePath.endsWith('.woff2')) mime = 'font/woff2';
 
       res.writeHead(200, {
         'Content-Type': mime,

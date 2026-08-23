@@ -22,6 +22,11 @@ scanvuong-offline/
 ├── app.js                  # Toàn bộ logic: editor, warp, filter, quản lý trang, PDF writer, PWA glue
 ├── document-detector.js    # Detector module: lazy ML runtime, geometry guard, classical fallback
 ├── assets/
+│   ├── fonts/              # Typography tiếng Việt cục bộ (100% offline)
+│   │   ├── BeVietnamPro-Regular.woff2    # 400 Regular
+│   │   ├── BeVietnamPro-Medium.woff2     # 500 Medium
+│   │   ├── BeVietnamPro-SemiBold.woff2   # 600 SemiBold
+│   │   └── BeVietnamPro-Bold.woff2       # 700 Bold
 │   └── ml/                 # Tài nguyên ML cục bộ (100% offline)
 │       ├── doccornernet_lean.ort          # Trọng số mô hình DocCornerNet Lean (1.93 MB)
 │       ├── ort-wasm-simd-threaded.wasm    # ONNX Runtime Web WASM binary (1.52 MB)

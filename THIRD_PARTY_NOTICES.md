@@ -1,4 +1,4 @@
-﻿# Third-Party Software Notices and Licenses
+# Third-Party Software Notices and Licenses
 
 This project incorporates third-party software and machine learning assets under the following licenses:
 
@@ -99,4 +99,22 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+---
+
+## 4. Be Vietnam Pro Font Family (`assets/fonts/BeVietnamPro-*.woff2`)
+
+- **Repository:** https://github.com/bettergui/BeVietnamPro
+- **Authors:** Lâm Bảo, Tony Le, ViệtAnh Nguyễn
+- **License:** SIL Open Font License, Version 1.1 (OFL-1.1)
+
+```
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+
+Copyright 2021 The Be Vietnam Pro Project Authors (https://github.com/bettergui/BeVietnamPro)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://openfontlicense.org
 ```

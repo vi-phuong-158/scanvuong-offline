@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
-  <meta name="description" content="ScanVuông - quét tài liệu, chỉnh phối cảnh và xuất PDF hoàn toàn trên thiết bị." />
+  <meta name="description" content="ScanVuông - Quét tài liệu, chỉnh phối cảnh và xuất PDF hoàn toàn trên thiết bị." />
   <title>ScanVuông — Scan PDF Offline</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/icon-192.png" />
@@ -14,84 +14,238 @@
 <body>
   <noscript>Ứng dụng cần JavaScript để xử lý ảnh.</noscript>
 
+  <!-- Header / Topbar -->
   <header class="topbar">
     <div class="brand">
       <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 40 40"><path d="M9 4H4v5M31 4h5v5M9 36H4v-5M31 36h5v-5M11 11h18v18H11z"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M4 16v3a1 1 0 0 0 1 1h3M16 20h3a1 1 0 0 0 1-1v-3" />
+          <rect x="7" y="7" width="10" height="10" rx="1.5" />
+        </svg>
       </div>
-      <div>
+      <div class="brand-text">
         <h1>ScanVuông</h1>
         <p>Scan PDF offline</p>
       </div>
     </div>
     <div class="top-actions">
-      <span id="offlineBadge" class="badge">Xử lý trên thiết bị</span>
-      <button id="switchModeBtn" class="btn ghost hidden" type="button">Đổi chế độ</button>
-      <button id="installBtn" class="btn ghost hidden" type="button">Cài ứng dụng</button>
+      <span class="badge" title="Tất cả xử lý diễn ra trực tiếp trong trình duyệt, không gửi dữ liệu ra ngoài">
+        <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <path d="m9 12 2 2 4-4"/>
+        </svg>
+        <span>100% Offline</span>
+      </span>
+      <button class="btn ghost compact hidden" id="switchModeBtn" type="button" aria-label="Đổi chế độ quét">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m16 3 4 4-4 4"/>
+          <path d="M20 7H4"/>
+          <path d="m8 21-4-4 4-4"/>
+          <path d="M4 17h16"/>
+        </svg>
+        <span>Đổi chế độ</span>
+      </button>
+      <button class="btn ghost compact hidden" id="installBtn" type="button" aria-label="Cài đặt ứng dụng">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        <span>Cài app</span>
+      </button>
     </div>
   </header>
 
+  <!-- App Shell -->
   <main class="app-shell">
-    <section id="modeSelect" class="empty-state card">
-      <div class="mode-select">
-        <h2>Bạn muốn scan gì?</h2>
+
+    <!-- 1. Mode Select Screen -->
+    <section id="modeSelect" class="mode-select-section card">
+      <div class="mode-select-container">
+        <div class="mode-select-header">
+          <div class="mode-brand-badge">ScanVuông Utility</div>
+          <h2>Bạn muốn scan gì?</h2>
+          <p class="muted">Chọn chế độ quét tài liệu — hoàn toàn offline, bảo mật trên thiết bị</p>
+        </div>
         <div class="mode-cards">
           <button id="modeDocBtn" class="mode-card" type="button">
-            <span class="mode-icon" aria-hidden="true">📄</span>
-            <strong>Scan tài liệu</strong>
-            <span class="muted">Một hoặc nhiều trang giấy, xuất PDF nhiều trang</span>
+            <div class="mode-card-visual">
+              <div class="mode-icon-box doc-box">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                  <polyline points="10 9 9 9 8 9" />
+                </svg>
+              </div>
+              <span class="mode-pill">Nhiều trang</span>
+            </div>
+            <div class="mode-card-content">
+              <strong>Scan tài liệu</strong>
+              <p>Quét hợp đồng, văn bản, biên lai · Tự nhận diện góc và xuất PDF</p>
+            </div>
+            <div class="mode-card-arrow" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 4l6 6-6 6" />
+              </svg>
+            </div>
           </button>
+
           <button id="modeIdBtn" class="mode-card" type="button">
-            <span class="mode-icon" aria-hidden="true">🪪</span>
-            <strong>Scan ID</strong>
-            <span class="muted">Mặt trước + mặt sau → 1 trang A4</span>
+            <div class="mode-card-visual">
+              <div class="mode-icon-box id-box">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="4" width="20" height="16" rx="3" />
+                  <circle cx="8" cy="11" r="2.5" />
+                  <path d="M13.5 9.5h5M13.5 13.5h3.5M5.5 17c.5-1.8 2.3-2.5 3.5-2.5s3 .7 3.5 2.5" />
+                </svg>
+              </div>
+              <span class="mode-pill">1 trang A4</span>
+            </div>
+            <div class="mode-card-content">
+              <strong>Scan ID / Căn cước</strong>
+              <p>Quét 2 mặt trước và sau · Ghép chuẩn cân đối lên 1 trang A4</p>
+            </div>
+            <div class="mode-card-arrow" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 4l6 6-6 6" />
+              </svg>
+            </div>
           </button>
+        </div>
+        <div class="mode-footer-privacy">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 2l6 3v5.5c0 4-2.8 7.3-6 8.5-3.2-1.2-6-4.5-6-8.5V5l6-3z" />
+            <path d="M7.5 10l2 2 3.5-3.5" />
+          </svg>
+          <span>Không tải lên mạng · 100% xử lý tại chỗ</span>
         </div>
       </div>
     </section>
 
-    <section id="emptyState" class="empty-state card hidden">
+    <!-- 2. Empty State / Import Screen -->
+    <section id="emptyState" class="empty-state-section card hidden">
       <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-label="Chọn ảnh tài liệu">
         <div class="drop-icon" aria-hidden="true">
-          <svg viewBox="0 0 48 48"><path d="M14 5h20a5 5 0 0 1 5 5v28a5 5 0 0 1-5 5H14a5 5 0 0 1-5-5V10a5 5 0 0 1 5-5Zm0 4a1 1 0 0 0-1 1v28a1 1 0 0 0 1 1h20a1 1 0 0 0 1-1V10a1 1 0 0 0-1-1H14Zm3 22 6-7 4 5 3-3 5 6H17Zm12-15a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+            <path d="M12 12v9" />
+            <path d="m8 16 4-4 4 4" />
+          </svg>
         </div>
-        <h2>Thả ảnh tài liệu vào đây</h2>
-        <p>JPG, PNG, WEBP · có thể chọn nhiều ảnh cùng lúc</p>
+        <h2>Thêm ảnh tài liệu</h2>
+        <p class="drop-subtitle">JPG, PNG, WEBP · Có thể chọn nhiều ảnh cùng lúc</p>
         <div class="empty-buttons">
-          <button id="chooseBtn" class="btn primary" type="button">Chọn ảnh</button>
-          <button id="cameraBtn" class="btn secondary" type="button">Chụp ảnh</button>
+          <button id="cameraBtn" class="btn primary touch-lg" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+              <circle cx="12" cy="13" r="4" />
+            </svg>
+            <span>Chụp ảnh</span>
+          </button>
+          <button id="chooseBtn" class="btn secondary touch-lg" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+            <span>Chọn từ thiết bị</span>
+          </button>
         </div>
-        <p class="privacy-note">Ảnh không được tải lên máy chủ.</p>
+        <div class="privacy-note">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 1.5l5 2.2v4.5c0 3.2-2.1 5.8-5 6.8-2.9-1-5-3.6-5-6.8V3.7L8 1.5z" />
+            <path d="M5.5 8l2 2 3.5-3.5" />
+          </svg>
+          <span>Không tải lên mạng · 100% xử lý tại chỗ</span>
+        </div>
       </div>
     </section>
 
+    <!-- 3. Document Workspace -->
     <section id="workspace" class="workspace hidden">
+      <!-- Sidebar / Thumbnail list -->
       <aside class="sidebar card">
         <div class="sidebar-head">
-          <div>
+          <div class="sidebar-meta">
             <strong id="pageCount">0 trang</strong>
             <span id="reviewCount" class="muted"></span>
           </div>
-          <button id="addBtn" class="icon-btn" type="button" title="Thêm ảnh" aria-label="Thêm ảnh">+</button>
+          <button id="addBtn" class="btn-icon-add" type="button" title="Thêm ảnh trang mới" aria-label="Thêm ảnh">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 4v12M4 10h12" />
+            </svg>
+          </button>
         </div>
+
         <div id="thumbList" class="thumb-list" aria-label="Danh sách trang"></div>
+
         <div class="sidebar-footer">
-          <button id="autoAllBtn" class="btn secondary full" type="button">Tự nhận lại tất cả</button>
-          <button id="clearBtn" class="btn danger-text full" type="button">Xóa toàn bộ</button>
+          <button id="autoAllBtn" class="btn secondary small full" type="button">
+            <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 1v3M9 14v3M1 9h3M14 9h3M3.5 3.5l2.1 2.1M12.4 12.4l2.1 2.1M3.5 14.5l2.1-2.1M12.4 5.6l2.1-2.1" />
+            </svg>
+            <span>Nhận lại tất cả</span>
+          </button>
+          <button id="clearBtn" class="btn danger-text small full" type="button">
+            <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 5 5 5 15 5" />
+              <path d="M6 5V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M14 5v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5" />
+            </svg>
+            <span>Xóa toàn bộ</span>
+          </button>
         </div>
       </aside>
 
+      <!-- Center Editor -->
       <section class="editor card">
         <div class="editor-toolbar">
           <div class="tool-group">
-            <button id="detectBtn" class="btn secondary small" type="button">Tự cắt</button>
-            <button id="resetCropBtn" class="btn secondary small" type="button">Đặt lại góc</button>
-            <button id="rotateBtn" class="btn secondary small" type="button">Xoay 90°</button>
+            <button id="detectBtn" class="btn secondary small" type="button" title="Tự động nhận diện 4 góc mép giấy">
+              <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 6V3a1 1 0 0 1 1-1h3M12 2h3a1 1 0 0 1 1 1v3M2 12v3a1 1 0 0 0 1 1h3M12 16h3a1 1 0 0 0 1-1v-3" />
+                <circle cx="9" cy="9" r="2.5" />
+              </svg>
+              <span>Tự cắt</span>
+            </button>
+            <button id="resetCropBtn" class="btn secondary small" type="button" title="Đặt lại 4 góc toàn khung hình">
+              <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="11 2 16 2 16 7" />
+                <polyline points="7 16 2 16 2 11" />
+                <line x1="16" y1="2" x2="10" y2="8" />
+                <line x1="2" y1="16" x2="8" y2="10" />
+              </svg>
+              <span>Đặt lại góc</span>
+            </button>
+            <button id="rotateBtn" class="btn secondary small" type="button" title="Xoay ảnh 90 độ">
+              <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 3v4h-4" />
+                <path d="M15.5 10a6.5 6.5 0 1 1-1.9-4.6L16 7" />
+              </svg>
+              <span>Xoay 90°</span>
+            </button>
           </div>
           <div class="tool-group">
-            <button id="moveUpBtn" class="btn secondary small" type="button">↑ Trước</button>
-            <button id="moveDownBtn" class="btn secondary small" type="button">↓ Sau</button>
-            <button id="deleteBtn" class="btn danger-text small" type="button">Xóa trang</button>
+            <button id="moveUpBtn" class="btn secondary small" type="button" title="Di chuyển trang lên trước">
+              <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 13V5M5 9l4-4 4 4" />
+              </svg>
+              <span>Lên</span>
+            </button>
+            <button id="moveDownBtn" class="btn secondary small" type="button" title="Di chuyển trang xuống sau">
+              <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 5v8M5 9l4 4 4-4" />
+              </svg>
+              <span>Xuống</span>
+            </button>
+            <button id="deleteBtn" class="btn danger-text small" type="button" title="Xóa trang hiện tại">
+              <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 5 5 5 15 5" />
+                <path d="M6 5V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M14 5v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5" />
+              </svg>
+              <span>Xóa trang</span>
+            </button>
           </div>
         </div>
 
@@ -109,56 +263,68 @@
         </div>
 
         <div class="filters" role="group" aria-label="Bộ lọc ảnh">
-          <button class="filter-chip active" data-filter="auto" type="button">Tự động đẹp</button>
-          <button class="filter-chip" data-filter="document" type="button">Tài liệu màu</button>
-          <button class="filter-chip" data-filter="bw" type="button">Đen trắng</button>
-          <button class="filter-chip" data-filter="original" type="button">Gốc</button>
+          <button class="filter-chip active" data-filter="auto" type="button">✨ Tự động đẹp</button>
+          <button class="filter-chip" data-filter="document" type="button">📄 Tài liệu màu</button>
+          <button class="filter-chip" data-filter="bw" type="button">⚫ Đen trắng</button>
+          <button class="filter-chip" data-filter="original" type="button">🖼️ Gốc</button>
         </div>
       </section>
 
+      <!-- Right Export Panel -->
       <aside class="export-panel card">
-        <div>
+        <div class="export-panel-header">
           <h2>Xuất PDF</h2>
-          <p class="muted">Tất cả xử lý diễn ra trên thiết bị.</p>
+          <p class="muted">Xử lý trực tiếp trên thiết bị</p>
         </div>
 
-        <label class="field">
-          <span>Tên file</span>
-          <div class="filename-wrap">
-            <input id="fileName" type="text" value="ScanVuong" maxlength="80" />
-            <span>.pdf</span>
-          </div>
-        </label>
+        <div class="export-fields">
+          <label class="field">
+            <span class="field-label">Tên file</span>
+            <div class="filename-wrap">
+              <input id="fileName" type="text" value="ScanVuong" maxlength="80" autocomplete="off" />
+              <span>.pdf</span>
+            </div>
+          </label>
 
-        <label class="field">
-          <span>Khổ trang</span>
-          <select id="pageSize">
-            <option value="a4">A4 tự xoay</option>
-            <option value="fit">Theo tỷ lệ tài liệu</option>
-          </select>
-        </label>
+          <label class="field">
+            <span class="field-label">Khổ trang</span>
+            <select id="pageSize">
+              <option value="a4">A4 tự xoay</option>
+              <option value="fit">Theo tỷ lệ tài liệu</option>
+            </select>
+          </label>
 
-        <label class="field">
-          <span>Chất lượng</span>
-          <select id="quality">
-            <option value="high">Cao</option>
-            <option value="standard" selected>Tiêu chuẩn</option>
-            <option value="small">Nhẹ</option>
-            <option value="2mb">Cố gắng dưới 2 MB</option>
-          </select>
-        </label>
+          <label class="field">
+            <span class="field-label">Chất lượng</span>
+            <select id="quality">
+              <option value="high">Cao</option>
+              <option value="standard" selected>Tiêu chuẩn</option>
+              <option value="small">Nhẹ</option>
+              <option value="2mb">Cố gắng dưới 2 MB</option>
+            </select>
+          </label>
 
-        <label class="field check-field">
-          <input id="marginToggle" type="checkbox" />
-          <span>Chừa lề trắng nhỏ</span>
-        </label>
+          <label class="field check-field">
+            <input id="marginToggle" type="checkbox" />
+            <span>Chừa lề trắng nhỏ</span>
+          </label>
+        </div>
 
         <div id="exportSummary" class="export-summary">
           <div><span>Số trang</span><strong>0</strong></div>
           <div><span>Trang cần kiểm tra</span><strong>0</strong></div>
         </div>
 
-        <button id="exportBtn" class="btn primary full export-btn" type="button">Xuất PDF</button>
+        <button id="exportBtn" class="btn primary full export-btn" type="button">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="10" y1="11" x2="10" y2="16" />
+            <polyline points="7 14 10 17 13 14" />
+          </svg>
+          <span>Xuất PDF</span>
+        </button>
+
         <div id="exportProgress" class="progress-wrap hidden" aria-live="polite">
           <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
           <span id="progressLabel">Đang chuẩn bị…</span>
@@ -167,54 +333,110 @@
       </aside>
     </section>
 
+    <!-- 4. Scan ID Workspace -->
     <section id="idWorkspace" class="workspace id-workspace hidden">
-      <aside class="sidebar card">
+      <aside class="sidebar card id-sidebar">
         <div class="sidebar-head">
-          <div>
+          <div class="id-step-indicator">
+            <span class="step-badge">Scan ID</span>
             <strong id="idStepBadge">Mặt trước</strong>
             <span id="idStepHint" class="muted">Chụp hoặc chọn ảnh mặt trước căn cước.</span>
           </div>
         </div>
         <div class="id-capture-actions">
-          <button id="idChooseBtn" class="btn primary full" type="button">Chọn ảnh</button>
-          <button id="idCameraBtn" class="btn secondary full" type="button">Chụp ảnh</button>
+          <button id="idCameraBtn" class="btn primary full touch-lg" type="button">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 16a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3l2-2h4l2 2h3a2 2 0 0 1 2 2z" />
+              <circle cx="10" cy="11.5" r="3.5" />
+            </svg>
+            <span>Chụp ảnh</span>
+          </button>
+          <button id="idChooseBtn" class="btn secondary full touch-lg" type="button">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="16" height="16" rx="2" />
+              <circle cx="7" cy="7" r="1.5" />
+              <polyline points="18 13 13 8 4 17" />
+            </svg>
+            <span>Chọn từ thiết bị</span>
+          </button>
         </div>
-        <div class="sidebar-footer">
-          <button id="idBackStepBtn" class="btn secondary full hidden" type="button">← Quay lại mặt trước</button>
-          <button id="idConfirmBtn" class="btn primary full" type="button" disabled>Xác nhận mặt trước →</button>
+        <div class="sidebar-footer id-sidebar-footer">
+          <button id="idBackStepBtn" class="btn secondary full hidden" type="button">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13 16l-6-6 6-6" />
+            </svg>
+            <span>Quay lại mặt trước</span>
+          </button>
+          <button id="idConfirmBtn" class="btn primary full" type="button" disabled>
+            <span>Xác nhận mặt trước</span>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 4l6 6-6 6" />
+            </svg>
+          </button>
         </div>
       </aside>
       <div id="idEditorSlot" class="editor-slot"></div>
     </section>
 
+    <!-- 5. Scan ID Preview Section (A4 Result) -->
     <section id="idPreviewSection" class="id-preview-section card hidden">
       <div class="id-preview-head">
-        <h2>Xem trước trang A4</h2>
-        <p class="muted">Mặt trước ở trên, mặt sau ở dưới, cùng một trang A4 dọc.</p>
+        <div class="id-preview-title">
+          <span class="mode-pill">A4 Portrait</span>
+          <h2>Xem trước trang A4</h2>
+        </div>
+        <p class="muted">Mặt trước ở trên, mặt sau ở dưới, căn giữa chuẩn trang in</p>
       </div>
+
       <div class="id-preview-stage">
         <canvas id="idPreviewCanvas"></canvas>
       </div>
+
       <div class="id-preview-actions">
-        <button id="idEditFrontBtn" class="btn secondary" type="button">Sửa mặt trước</button>
-        <button id="idEditBackBtn" class="btn secondary" type="button">Sửa mặt sau</button>
-        <button id="idExportBtn" class="btn primary export-btn" type="button">Xuất PDF</button>
+        <button id="idEditFrontBtn" class="btn secondary" type="button">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+          <span>Sửa mặt trước</span>
+        </button>
+        <button id="idEditBackBtn" class="btn secondary" type="button">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+          <span>Sửa mặt sau</span>
+        </button>
+        <button id="idExportBtn" class="btn primary export-btn" type="button">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="10" y1="11" x2="10" y2="16" />
+            <polyline points="7 14 10 17 13 14" />
+          </svg>
+          <span>Xuất PDF</span>
+        </button>
       </div>
+
       <div id="idExportProgress" class="progress-wrap hidden" aria-live="polite">
         <div class="progress-track"><div id="idProgressBar" class="progress-bar"></div></div>
         <span id="idProgressLabel">Đang chuẩn bị…</span>
       </div>
       <p id="idExportNotice" class="notice hidden"></p>
     </section>
+
   </main>
 
+  <!-- Hidden Native Inputs -->
   <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />
   <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
   <input id="idFileInput" type="file" accept="image/jpeg,image/png,image/webp" hidden />
   <input id="idCameraInput" type="file" accept="image/*" capture="environment" hidden />
 
+  <!-- Toast notification -->
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
+  <!-- Scripts -->
   <script src="document-detector.js" defer></script>
   <script src="app.js" defer></script>
 </body>

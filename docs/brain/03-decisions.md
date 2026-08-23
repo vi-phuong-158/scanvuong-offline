@@ -5,6 +5,19 @@
 
 ---
 
+## [2026-08-23] Redesign UI Mobile-First với Be Vietnam Pro tự host & Icon SVG nhất quán
+
+- **Quyết định:** Nâng cấp toàn bộ giao diện thành ứng dụng tiện ích di động hiện đại (Premium Mobile Document Utility) tối ưu hoá thao tác một tay:
+  1. Sử dụng font chữ tiếng Việt **Be Vietnam Pro** (OFL-1.1) tự host cục bộ dạng `.woff2` (400, 500, 600, 700) trong `assets/fonts/`, precached trong Service Worker `sw.js`, tuyệt đối không dùng Google Fonts hay kết nối mạng runtime.
+  2. Thay thế toàn bộ emoji icon (`📄`, `🪪`, ...) bằng hệ thống icon SVG vector nhất quán (viewBox 20/24, stroke 2px, round join/caps).
+  3. Áp dụng kiến trúc Design Tokens với màu nhấn Cobalt Blue (`#2563eb`), độ tương phản cao, bóng mờ tự nhiên, hỗ trợ Safe Area insets (`env(safe-area-inset-top)`, `env(safe-area-inset-bottom)`), và touch targets $\ge 44\text{px}$.
+  4. Bố cục mobile-first thông minh: Vùng vẽ chỉnh góc 50dvh cho ngón tay thao tác, dải thumbnails cuộn ngang gọn gàng trên mobile và tự động mở rộng thành 3 cột trên Desktop $\ge 1025\text{px}$.
+- **Lý do:** Khắc phục tình trạng font chữ tiếng Việt bị lỗi dấu/lệch kerning trên một số hệ điều hành khi chỉ dùng hệ thống font fallback; loại bỏ emoji đa nền tảng không đồng bộ; nâng cao tốc độ quét và chất lượng trải nghiệm tương đương ứng dụng native.
+- **Đánh đổi:** Tăng dung lượng cache offline thêm ~170 KB cho 4 file WOFF2 (đã nén tối ưu). Hoàn toàn phù hợp tiêu chuẩn PWA offline.
+- **Người quyết định:** Lead Product Designer & Senior Frontend Engineer.
+
+---
+
 ## [2026-08-23] Tích hợp Scanic ML (DocCornerNet Lean) làm Detector góc chính kèm Classical Fallback
 
 - **Quyết định:** Thay thế detector góc tài liệu chính bằng `DocumentDetector` (`document-detector.js`) sử dụng mô hình neural network siêu nhẹ DocCornerNet Lean (~1.93 MB) chạy offline qua ONNX Runtime Web WASM, bảo vệ bởi bộ lọc hình học nghiêm ngặt (Geometry Guard: lồi, không tự cắt, diện tích $\ge 5\%$, biên an toàn). Nếu ML không tải được, gặp lỗi runtime hoặc hình học không hợp lệ, hệ thống tự động kích hoạt detector cổ điển (`detectDocument`: Otsu/Connected Components/Sobel) làm chốt chặn an toàn (fallback).

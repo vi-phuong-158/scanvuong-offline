@@ -16,6 +16,35 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-08-23] Redesign UI mobile-first với Be Vietnam Pro, SVG icons và layout thích ứng
+
+- **Agent:** Codex
+- **Thay đổi:**
+  1. Tích hợp font chữ tiếng Việt **Be Vietnam Pro** (Regular 400, Medium 500, SemiBold 600, Bold 700) tự host cục bộ dạng `.woff2` trong `assets/fonts/`, không phụ thuộc Google Fonts/mạng runtime.
+  2. Nâng cấp Service Worker cache lên `scanvuong-v2.1.0`, bổ sung 4 file font WOFF2 vào danh sách 16 precached assets trong `sw.js`.
+  3. Cập nhật `THIRD_PARTY_NOTICES.md` (Mục 4: Be Vietnam Pro Font - SIL Open Font License 1.1).
+  4. Redesign toàn bộ giao diện HTML (`index.html`) & CSS (`styles.css`):
+     - Thay thế 100% icon emoji sang hệ thống icon SVG nhất quán (stroke 2px, rounded joins).
+     - Thiết kế hệ thống Design Tokens hoàn chỉnh (surfaces, text contrast, cobalt primary `#2563eb`, semantic status colors, radius hierarchy, soft shadows).
+     - Mobile-first layout: Topbar với Safe Area insets, Home screen mode selection (Scan tài liệu vs Scan Căn cước), Drop zone tài liệu, Editor stage 50dvh cho thao tác kéo góc một tay, thanh cuộn thumbnails ngang trên mobile (`.thumb-list` horizontal rail), Export panel dưới cùng.
+     - Layout Desktop $\ge 1025\text{px}$ giữ nguyên dạng 3 cột (Sidebar 240px | Editor flex | Export 280px).
+     - Đảm bảo touch targets $\ge 44\text{px}$, responsive mượt mà trên tất cả viewports (360×800, 375×812, 390×844, 412×915, 430×932, 768×1024, 1280×800, landscape).
+  5. Giữ nguyên 100% logic xử lý tài liệu, DOM ID contract trong `app.js`, ML DocumentDetector, homography warp, bộ lọc canvas và handwritten PDF writer.
+  6. Cập nhật các bộ regression test (`validate_static.py`, `regression_sw_update.cjs`, `acceptance_offline_pwa.cjs`) để xác thực 16 assets và pass 100% các gate kiểm thử.
+- **File đã sửa:** `index.html`, `styles.css`, `sw.js`, `THIRD_PARTY_NOTICES.md`, `scripts/regression_sw_update.cjs`, `scripts/acceptance_offline_pwa.cjs`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Nâng cấp trải nghiệm quét tài liệu trên di động theo tiêu chuẩn Premium Mobile Document Utility, cải thiện typography tiếng Việt, tăng tốc độ thao tác và đảm bảo chuẩn responsive không phụ thuộc mạng.
+- **Kiểm tra:**
+  - `node --check app.js`, `node --check sw.js`, `node --check document-detector.js` PASS.
+  - `python scripts/validate_static.py` PASS (8/8).
+  - `node scripts/regression_export_busy.js` PASS (29/29).
+  - `node scripts/regression_scan_id.js` PASS (52/52).
+  - `node scripts/regression_ml_detector.js` PASS (53/53).
+  - `node scripts/regression_sw_update.cjs` PASS (9/9).
+  - `node scripts/rehearsal_dataset.cjs` PASS (25/25 images).
+  - `node scripts/acceptance_offline_pwa.cjs` PASS (Chromium offline with cut network).
+
+---
+
 ## [2026-08-23] Fix fail-safe classical fallback geometry validation & expand regression gates
 
 - **Agent:** Codex

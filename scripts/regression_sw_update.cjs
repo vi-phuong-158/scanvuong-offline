@@ -119,8 +119,13 @@ function createSwContext(initialCaches = {}) {
   return { listeners, cacheStorage };
 }
 
+const currentCacheMatch = swCode.match(/const\s+CACHE\s*=\s*['"]([^'"]+)['"]/);
+const currentCache = currentCacheMatch ? currentCacheMatch[1] : 'scanvuong-v2.1.0';
+const assetsMatch = swCode.match(/const\s+ASSETS\s*=\s*\[([\s\S]*?)\];/);
+const expectedAssetCount = assetsMatch ? (assetsMatch[1].match(/['"]\.\/[^'"]*['"]/g) || []).length : 16;
+
 async function testUpgrade() {
-  console.log('--- Case 1: Service Worker v1.0.0 -> v2.0.0 Safe Upgrade ---');
+  console.log(`--- Case 1: Service Worker v1.0.0 -> ${currentCache} Safe Upgrade ---`);
   MockCache.failUrl = null;
 
   // Setup initial v1 cache
@@ -130,7 +135,7 @@ async function testUpgrade() {
 
   assert(cacheStorage.caches.has('scanvuong-v1.0.0'), 'Initial state has scanvuong-v1.0.0 cache');
 
-  // 1. Install event: precaches v2.0.0
+  // 1. Install event: precaches new version
   let installPromise = null;
   const installEvent = {
     waitUntil: (p) => { installPromise = p; }
@@ -138,12 +143,12 @@ async function testUpgrade() {
   listeners['install'](installEvent);
   await installPromise;
 
-  assert(cacheStorage.caches.has('scanvuong-v2.0.0'), 'scanvuong-v2.0.0 cache created on install');
+  assert(cacheStorage.caches.has(currentCache), `${currentCache} cache created on install`);
   assert(cacheStorage.caches.has('scanvuong-v1.0.0'), 'scanvuong-v1.0.0 preserved DURING install (atomic)');
 
-  const v2Cache = await cacheStorage.open('scanvuong-v2.0.0');
-  const v2Keys = await v2Cache.keys();
-  assert(v2Keys.length === 12, `All 12 assets precached in v2.0.0 (got ${v2Keys.length})`);
+  const newCache = await cacheStorage.open(currentCache);
+  const newKeys = await newCache.keys();
+  assert(newKeys.length === expectedAssetCount, `All ${expectedAssetCount} assets precached in ${currentCache} (got ${newKeys.length})`);
 
   // 2. Activate event: deletes old caches
   let activatePromise = null;
@@ -154,7 +159,7 @@ async function testUpgrade() {
   await activatePromise;
 
   assert(!cacheStorage.caches.has('scanvuong-v1.0.0'), 'Old scanvuong-v1.0.0 cache purged only AFTER activation');
-  assert(cacheStorage.caches.has('scanvuong-v2.0.0'), 'Active scanvuong-v2.0.0 cache preserved');
+  assert(cacheStorage.caches.has(currentCache), `Active ${currentCache} cache preserved`);
   console.log('✓ SW_UPGRADE_SAFETY: PASS');
 }
 
