@@ -44,6 +44,9 @@ jobs:
       - name: Benchmark engine unit tests (dependency-free)
         run: node scripts/test_benchmark_engine.cjs
 
+      - name: Real-World Pilot Pipeline unit tests (dependency-free)
+        run: node scripts/test_pilot_pipeline.cjs
+
       - name: Install benchmark dev dependencies
         run: npm ci --prefix benchmark
 
