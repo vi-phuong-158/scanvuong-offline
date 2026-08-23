@@ -3,7 +3,7 @@
 /**
  * Unit Test Suite for Real-World Pilot Evidence Pipeline
  * Validates provenance rules, hash duplicate detection, annotation geometry bounds,
- * metric calculations, score semantics, and contact-sheet generation.
+ * metric calculations, score semantics, auto-accept rates, and offline tool integrity.
  */
 
 const assert = require('assert');
@@ -126,7 +126,7 @@ test('Annotation Validation: rejects degenerate near-zero area', () => {
 });
 
 // -------------------------------------------------------------
-// 4. Quality Classification Tests
+// 4. Quality & AUTO_ACCEPT_RATE Classification Tests
 // -------------------------------------------------------------
 function classifyQuality(iou, cornerErr) {
   if (iou === null || cornerErr === null) return 'UNKNOWN';
@@ -136,12 +136,24 @@ function classifyQuality(iou, cornerErr) {
   return 'CATASTROPHIC';
 }
 
+function computeAutoAcceptRate(classifications) {
+  if (!classifications || classifications.length === 0) return 0;
+  const accepted = classifications.filter(c => c === 'EXCELLENT' || c === 'GOOD').length;
+  return Number(((accepted / classifications.length) * 100).toFixed(1));
+}
+
 test('Classification: EXCELLENT, GOOD, MANUAL_ADJUST, CATASTROPHIC boundaries', () => {
   assert.strictEqual(classifyQuality(0.98, { worst: 0.01 }), 'EXCELLENT');
   assert.strictEqual(classifyQuality(0.92, { worst: 0.04 }), 'GOOD');
   assert.strictEqual(classifyQuality(0.78, { worst: 0.10 }), 'MANUAL_ADJUST');
   assert.strictEqual(classifyQuality(0.50, { worst: 0.20 }), 'CATASTROPHIC');
-  assert.strictEqual(classifyQuality(0.96, { worst: 0.08 }), 'MANUAL_ADJUST'); // IoU high but worst error pulls to manual
+  assert.strictEqual(classifyQuality(0.96, { worst: 0.08 }), 'MANUAL_ADJUST');
+});
+
+test('AUTO_ACCEPT_RATE: calculates percentage of EXCELLENT + GOOD correctly', () => {
+  const classes = ['EXCELLENT', 'EXCELLENT', 'GOOD', 'MANUAL_ADJUST', 'CATASTROPHIC'];
+  // 3 out of 5 = 60.0%
+  assert.strictEqual(computeAutoAcceptRate(classes), 60.0);
 });
 
 // -------------------------------------------------------------
@@ -187,9 +199,27 @@ test('Pilot Status: partial images gives REAL_WORLD_PILOT_INCOMPLETE: X/20', () 
 });
 
 // -------------------------------------------------------------
-// 7. Contact Sheet HTML Offline Invariant Tests
+// 7. Offline / 0-CDN Invariant Tests on Tools
 // -------------------------------------------------------------
-test('Contact Sheet HTML: zero CDN / external network links', () => {
+test('Assistant Tool HTML: zero CDN / external network links in pilot_capture_assistant.html', () => {
+  const assistantPath = path.join(__dirname, '..', 'benchmark', 'tools', 'pilot_capture_assistant.html');
+  assert.strictEqual(fs.existsSync(assistantPath), true, 'Assistant tool must exist');
+  const html = fs.readFileSync(assistantPath, 'utf8');
+  assert.strictEqual(html.includes('http://'), false, 'Assistant must not contain http://');
+  assert.strictEqual(html.includes('https://'), false, 'Assistant must not contain https://');
+  assert.strictEqual(html.includes('<script src='), false, 'Assistant must not load external scripts');
+});
+
+test('Annotator Tool HTML: zero CDN / external network links in ground_truth_annotator.html', () => {
+  const annotatorPath = path.join(__dirname, '..', 'benchmark', 'tools', 'ground_truth_annotator.html');
+  assert.strictEqual(fs.existsSync(annotatorPath), true, 'Annotator tool must exist');
+  const html = fs.readFileSync(annotatorPath, 'utf8');
+  assert.strictEqual(html.includes('http://'), false, 'Annotator must not contain http://');
+  assert.strictEqual(html.includes('https://'), false, 'Annotator must not contain https://');
+  assert.strictEqual(html.includes('<script src='), false, 'Annotator must not load external scripts');
+});
+
+test('Contact Sheet HTML: zero CDN / external network links in contact_sheet.html', () => {
   const contactSheetPath = path.join(__dirname, '..', 'benchmark-output', 'contact_sheet.html');
   if (fs.existsSync(contactSheetPath)) {
     const html = fs.readFileSync(contactSheetPath, 'utf8');

@@ -1,102 +1,74 @@
-# Hướng dẫn thu thập & Đánh giá Dữ liệu Thực tế (Real-World Pilot Guide)
+# ScanVuông — Hướng Dẫn Thực Hiện Real-World Pilot (100% Offline)
 
-Tài liệu này hướng dẫn chi tiết cách bổ sung ảnh chụp camera thật, gán nhãn 4 góc ground truth, chạy pipeline đánh giá và mở visual contact sheet trực quan cho **ScanVuông Offline**.
-
----
-
-## 1. Mục tiêu Tập Pilot (20 Ảnh Camera Thật)
-
-Để kiểm chứng các cải tiến nhận diện góc (đặc biệt là Experiment B — Local Contrast Preprocessing trên nền trắng) mà không bị phụ thuộc vào dữ liệu mô phỏng (synthetic), tập pilot cần thu thập tối thiểu **20 ảnh camera thật** thuộc các nhóm khó:
-
-| Nhóm thử thách | Số lượng tối thiểu | Mô tả bối cảnh chụp thực tế |
-| :--- | :---: | :--- |
-| **`RW01_WHITE_ON_WHITE`** | **5 ảnh** | Giấy A4 trắng đặt trên bàn trắng, gạch men sáng, sàn đá hoa nhạt màu. |
-| **`RW02_PARTIAL_OCCLUSION`** | **3 ảnh** | Ngón tay đang cầm mép giấy, kẹp bướm kim loại, hoặc giấy ghi chú nhỏ đè lên góc. |
-| **`RW03_STRONG_PERSPECTIVE`** | **4 ảnh** | Chụp nghiêng góc hẹp ($< 35^\circ$), chụp chéo từ cạnh hoặc góc nhìn phối cảnh cao. |
-| **`RW04_SHADOW_UNEVEN_LIGHT`** | **3 ảnh** | Bóng người/điện thoại đổ ngang qua văn bản, ánh sáng đèn bàn gắt một phía. |
-| **`RW05_NEAR_FRAME`** | **2 ảnh** | Tài liệu chiếm sát 4 viền camera ($> 92\%$ diện tích khung hình). |
-| **`NEG_DOCUMENT_LIKE`** | **3 ảnh** | Vật thể hình chữ nhật không phải tài liệu: Laptop mở, màn hình máy tính bảng, hộp carton, khung tranh. |
+Tài liệu này hướng dẫn quy trình đơn giản nhất để chuẩn bị và đánh giá **20 ảnh camera thực tế** cho hệ thống nhận diện 4 góc tài liệu ScanVuông.
 
 ---
 
-## 2. Cấu trúc Thư mục Đặt Ảnh
+## QUY TRÌNH 3 BƯỚC ĐƠN GIẢN (ONE-COMMAND WORKFLOW)
 
-Tất cả ảnh thực tế được đặt trong thư mục **`benchmark-private/`** (thư mục này được bảo vệ trong `.gitignore`, tuyệt đối không commit lên git):
+Bạn **không cần** tự tạo 6 thư mục con, không cần đổi tên ảnh phức tạp hay tính toán mã băm SHA-256. Tất cả được tự động hóa.
+
+### Bước 1: Mở Trình Trợ Lý Thu Thập & Gán Nhãn Cục Bộ
+
+Mở file sau trên trình duyệt (hoạt động 100% offline, không tải bất kỳ thứ gì lên mạng):
 
 ```text
-scanvuong-offline/
-  benchmark-private/
-    positives/
-      RW01_WHITE_ON_WHITE/          <-- 5 ảnh giấy trắng trên nền trắng (.jpg/.png)
-      RW02_PARTIAL_OCCLUSION/       <-- 3 ảnh ngón tay / kẹp che góc
-      RW03_STRONG_PERSPECTIVE/      <-- 4 ảnh chụp chéo / nghiêng góc hẹp
-      RW04_SHADOW_UNEVEN_LIGHT/     <-- 3 ảnh bóng đổ / ánh sáng loang
-      RW05_NEAR_FRAME/              <-- 2 ảnh chụp sát mép khung hình
-    negatives/
-      NEG_DOCUMENT_LIKE/            <-- 3 ảnh laptop, tablet, hộp carton (đặt tên doclike_01.jpg, ...)
+benchmark/tools/pilot_capture_assistant.html
 ```
 
----
+### Bước 2: Thêm 20 Ảnh Camera Thực Tế & Gán 4 Góc
 
-## 3. Quy trình Gán Nhãn Ground Truth (100% Offline)
+Kéo thả hoặc bấm **"📷 Thêm ảnh"** để nạp 20 ảnh chụp từ điện thoại theo danh mục gợi ý:
 
-1. Mở file công cụ gán nhãn trực tiếp trên trình duyệt:
-   ```text
-   benchmark/tools/ground_truth_annotator.html
-   ```
-2. Bấm nút **"📷 Mở ảnh"** và chọn ảnh chụp thực tế.
-3. Chọn đúng **Danh mục (Category)** tương ứng.
-4. Kéo 4 handle tròn màu sắc tới đúng 4 góc tài liệu theo thứ tự chiều kim đồng hồ:
-   - **1. Top-Left (Xanh dương)**
-   - **2. Top-Right (Xanh lá)**
-   - **3. Bottom-Right (Vàng)**
-   - **4. Bottom-Left (Đỏ)**
-5. **Phím tắt hỗ trợ:**
-   - Phím `1`, `2`, `3`, `4`: Chuyển nhanh giữa 4 góc cần chỉnh.
-   - Phím `Mũi tên` (Arrow Keys): Vi chỉnh toạ độ 1 pixel.
-   - Nhấn `Shift + Mũi tên`: Vi chỉnh 5 pixel.
-   - Phím `S` (hoặc `Ctrl+S`): Lưu file JSON ground truth.
-6. Lưu file JSON ground truth (ví dụ `RW01_001_ground_truth.json`) vào cùng thư mục với ảnh hoặc xuất chung vào file `benchmark-private/annotations.json`.
+1. **`RW01_WHITE_ON_WHITE` (5 ảnh):** Giấy trắng đặt trên bàn trắng hoặc nền gạch sáng màu (tương phản mép thấp).
+2. **`RW02_PARTIAL_OCCLUSION` (3 ảnh):** Ngón tay cầm góc/mép, kẹp bướm hoặc giấy note che một phần góc.
+3. **`RW03_STRONG_PERSPECTIVE` (4 ảnh):** Chụp nghiêng góc hẹp ($< 35^\circ$), chụp chéo góc cao từ các phía.
+4. **`RW04_SHADOW_UNEVEN_LIGHT` (3 ảnh):** Bóng người/đèn đổ ngang qua tài liệu, ánh sáng phòng không đều.
+5. **`RW05_NEAR_FRAME` (2 ảnh):** Tài liệu chụp rất gần, chiếm sát 4 mép camera ($> 92\%$ khung hình).
+6. **`NEG_DOCUMENT_LIKE` (3 ảnh vật thể không phải tài liệu):** Màn hình laptop mở, màn hình tablet, hộp carton, khung tranh chữ nhật.
 
----
+*Thao tác:*
+- Chọn danh mục tương ứng cho từng ảnh.
+- Kéo 4 góc về đúng 4 góc tài liệu (dùng phím `1`, `2`, `3`, `4` và `Phím mũi tên` để vi chỉnh).
+- Bấm **"💾 Xuất Gói Pilot (`pilot_manifest.json`)"** và lưu chung vào thư mục chứa ảnh.
 
-## 4. Chạy Pipeline Đánh giá (Chỉ 1 Lệnh Duy Nhất)
+### Bước 3: Chạy 1 Lệnh Duy Nhất Để Đánh Giá
 
-Sau khi đặt ảnh và gán nhãn, chạy lệnh:
+Chạy lệnh sau trên terminal (thay đường dẫn thư mục ảnh của bạn):
 
 ```bash
+node scripts/run_real_world_pilot.cjs --input "D:\DuongDanChuaAnhVaManifest"
+```
+
+Lệnh này sẽ tự động:
+1. Kiểm toán mã băm SHA-256 đối chiếu với 25 ảnh lịch sử `REGRESSION_V1`.
+2. Kiểm tra tính hợp lệ hình học của ground-truth 4 góc.
+3. Tự động sao chép và phân loại vào cấu trúc chuẩn `benchmark-private/`.
+4. Chạy song song **Production Baseline**, **Experiment B** (Tiền xử lý tương phản), và **Experiment C2** (Multi-Signal False Positive Rejection).
+5. Tính toán chỉ số trải nghiệm `AUTO_ACCEPT_RATE = EXCELLENT + GOOD`.
+6. Xuất báo cáo JSON, Markdown và **Visual Contact Sheet HTML** tại:
+   ```text
+   benchmark-output/contact_sheet.html
+   ```
+
+---
+
+## CÁC LỆNH HỖ TRỢ BỔ SUNG
+
+Nếu bạn muốn chuẩn bị thư mục `benchmark-private/` trước rồi chạy riêng:
+
+```bash
+# 1. Tự động chuẩn bị thư mục benchmark-private
+node scripts/prepare_real_world_pilot.cjs --input "D:\DuongDanChuaAnh"
+
+# 2. Chạy đánh giá
 node scripts/benchmark_real_world.cjs
 ```
 
-Hệ thống sẽ tự động:
-1. Kiểm tra mã băm SHA-256 chống trùng lặp với 25 ảnh lịch sử (`REGRESSION_V1`).
-2. Xác thực cấu trúc hình học của ground truth (đảm bảo không tự cắt, đủ 4 góc, diện tích hợp lệ).
-3. Chạy song song **Production Baseline** và **Experiment B** (Tiền xử lý tương phản cục bộ).
-4. Tính toán Polygon IoU, Corner Error, Phân loại chất lượng (`EXCELLENT`, `GOOD`, `MANUAL_ADJUST`, `CATASTROPHIC`).
-5. Xuất báo cáo máy đọc được (`benchmark-output/pilot_evidence_report.json`), báo cáo Markdown (`benchmark-output/pilot_evidence_summary.md`), và **Visual Contact Sheet HTML** (`benchmark-output/contact_sheet.html`).
-
 ---
 
-## 5. Mở và Xem Visual Contact Sheet
+## NGUYÊN TẮC BẢO MẬT & BẢN QUYỀN
 
-Mở file sau trực tiếp bằng trình duyệt (Chrome/Edge/Firefox):
-
-```text
-benchmark-output/contact_sheet.html
-```
-
-Contact sheet hiển thị trực quan toàn bộ các ảnh cạnh nhau:
-- **Đường viền màu Xanh lá (`#4ade80`):** Ground Truth chuẩn do người dùng gán nhãn.
-- **Đường viền màu Xanh dương (`#38bdf8` nét đứt):** Kết quả nhận diện của Production Baseline.
-- **Đường viền màu Vàng (`#facc15` nét chấm):** Kết quả nhận diện của Experiment B.
-- **Hộp thông số:** Hiển thị chi tiết IoU, độ lệch góc, thời gian suy luận (Latency) và điểm tin cậy ML.
-
----
-
-## 6. Phân biệt Rõ Ràng các Phân tập Dữ liệu (Provenance)
-
-- **`REGRESSION_V1` (`LEGACY_REGRESSION`):** 25 ảnh lịch sử dùng để bảo vệ baseline chấp thuận ban đầu. Tuyệt đối không tính vào validation độc lập.
-- **`SYNTHETIC_HARD_CASE_V1` (`SYNTHETIC_GENERATED`):** 24 ca thử thách toán học phục vụ CI tự động. Không được coi là bằng chứng thay thế ảnh thật.
-- **`REAL_WORLD_PILOT_V1` (`CAMERA_REAL`):** 20 ảnh camera thực tế giai đoạn đầu để quyết định có mở rộng nghiên cứu hay không.
-- **`REAL_WORLD_HARD_CASE_V1` (`CAMERA_REAL`):** $\ge 50$ ảnh camera độc lập phục vụ điều kiện release candidate cuối cùng.
-- **`CAMSCANNER_REFERENCE_V1` (`CAMERA_REAL`):** Tập ảnh kèm toạ độ crop thực tế từ CamScanner (nếu người dùng cung cấp).
+- **Không đưa thông tin cá nhân:** Vui lòng sử dụng giấy trắng, văn bản mẫu, hóa đơn không chứa thông tin nhạy cảm.
+- **Không bao giờ tải lên mạng:** Toàn bộ quá trình chạy hoàn toàn cục bộ trên máy bạn.
+- **Không commit ảnh vào Git:** Thư mục `benchmark-private/` và `benchmark-output/` được cấu hình tự động trong `.gitignore` để không bao giờ bị đẩy lên GitHub.

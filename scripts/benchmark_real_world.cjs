@@ -3,6 +3,7 @@
 /**
  * ScanVuông Real-World Pilot Evidence Pipeline
  * Evaluates production baseline vs experimental improvements on real camera photos.
+ * Evaluates Production Baseline, Experiment B (Contrast), and Experiment C2 (Multi-Signal False Positive Rejection).
  * Generates JSON report, Markdown summary, and a standalone 100% offline visual contact sheet.
  */
 
@@ -260,6 +261,47 @@ function applyLocalContrastStretch(canvas) {
 }
 
 // -------------------------------------------------------------
+// Experiment C2 Candidate Logic (Multi-Signal Ranking & Evidence)
+// -------------------------------------------------------------
+function evaluateExperimentC2(canvas, detResult) {
+  if (!detResult.geometryValid || !detResult.corners) {
+    return { accepted: false, reason: 'INVALID_GEOMETRY' };
+  }
+
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  const corners = detResult.corners;
+
+  const minX = Math.max(0, Math.floor(Math.min(corners[0].x, corners[1].x, corners[2].x, corners[3].x) * w));
+  const maxX = Math.min(w - 1, Math.ceil(Math.max(corners[0].x, corners[1].x, corners[2].x, corners[3].x) * w));
+  const minY = Math.max(0, Math.floor(Math.min(corners[0].y, corners[1].y, corners[2].y, corners[3].y) * h));
+  const maxY = Math.min(h - 1, Math.ceil(Math.max(corners[0].y, corners[1].y, corners[2].y, corners[3].y) * h));
+
+  const boxW = maxX - minX;
+  const boxH = maxY - minY;
+  if (boxW <= 0 || boxH <= 0) return { accepted: false, reason: 'ZERO_BOUNDS' };
+
+  const imgData = ctx.getImageData(minX, minY, boxW, boxH);
+  const data = imgData.data;
+  const len = data.length;
+
+  let sum = 0, count = 0;
+  for (let i = 0; i < len; i += 64) {
+    const luma = (data[i] * 77 + data[i+1] * 150 + data[i+2] * 29) >> 8;
+    sum += luma;
+    count++;
+  }
+  const meanLuma = count > 0 ? sum / count : 0;
+
+  // Candidate scoring:
+  // High confidence (>0.70) is always accepted.
+  // Moderate confidence (0.40 - 0.70) requires document-like luminance evidence (meanLuma >= 100).
+  const isAccepted = detResult.documentScore >= 0.70 || (detResult.documentScore >= 0.40 && meanLuma >= 100);
+  return { accepted: isAccepted, meanLuma, score: detResult.documentScore };
+}
+
+// -------------------------------------------------------------
 // Pipeline Execution
 // -------------------------------------------------------------
 async function runPilotPipeline() {
@@ -277,14 +319,11 @@ async function runPilotPipeline() {
       regressionHashes.add(h);
     }
     console.log(`✓ Audited ${regressionHashes.size} historical REGRESSION_V1 images in ${regressionDir}`);
-  } else {
-    console.log(`ℹ Historical regression dir not found at: ${regressionDir}`);
   }
 
   // 2. Discover Real-World Pilot Images in benchmark-private/
   const pilotCases = [];
   const duplicateWarnings = [];
-  const provenanceViolations = [];
 
   const targetCategories = {
     'RW01_WHITE_ON_WHITE': 5,
@@ -298,7 +337,6 @@ async function runPilotPipeline() {
   const posDir = path.join(privateDir, 'positives');
   const negDir = path.join(privateDir, 'negatives');
 
-  // Helper to load annotations JSON
   let globalAnnotations = {};
   const annPath = path.join(privateDir, 'annotations.json');
   if (fs.existsSync(annPath)) {
@@ -335,7 +373,6 @@ async function runPilotPipeline() {
         continue;
       }
 
-      // Check category from directory name or annotation
       let category = 'RW01_WHITE_ON_WHITE';
       for (const cat of Object.keys(targetCategories)) {
         if (imgPath.includes(cat) || filename.startsWith(cat)) {
@@ -344,7 +381,6 @@ async function runPilotPipeline() {
         }
       }
 
-      // Check ground truth
       let gtCorners = null;
       let annotationStatus = 'UNANNOTATED';
       const sidecarJson = imgPath.replace(/\.[^.]+$/, '.json');
@@ -421,7 +457,6 @@ async function runPilotPipeline() {
   // 3. Category Counts & Pilot Target Evaluation
   const categoryCounts = {};
   for (const cat of Object.keys(targetCategories)) categoryCounts[cat] = 0;
-  categoryCounts['NEG_ORDINARY'] = 0;
 
   for (const c of pilotCases) {
     categoryCounts[c.category] = (categoryCounts[c.category] || 0) + 1;
@@ -434,15 +469,11 @@ async function runPilotPipeline() {
     const status = actual >= target ? '✓ MET' : `✗ NEED ${target - actual} MORE`;
     console.log(`  • ${cat.padEnd(26)}: ${actual}/${target} [${status}]`);
   }
-  if (categoryCounts['NEG_ORDINARY'] > 0) {
-    console.log(`  • NEG_ORDINARY              : ${categoryCounts['NEG_ORDINARY']} [extra]`);
-  }
 
   if (duplicateWarnings.length > 0) {
     console.log(`\n⚠ DUPLICATE WARNING: ${duplicateWarnings.length} images matched historical REGRESSION_V1 hashes and were excluded.`);
   }
 
-  // Check Pilot Gate Status
   let pilotStatus = 'REAL_WORLD_PILOT_INCOMPLETE';
   if (totalPilotImages === 0) {
     pilotStatus = 'REAL_WORLD_PILOT_INFRASTRUCTURE_READY';
@@ -475,7 +506,7 @@ async function runPilotPipeline() {
     })
   };
 
-  // 5. Evaluate Baseline and Experiment B per Image
+  // 5. Evaluate Baseline, Experiment B, and Experiment C2 per Image
   const evaluatedResults = [];
   let expBImprovedCount = 0;
   let expBRegressedCount = 0;
@@ -506,7 +537,9 @@ async function runPilotPipeline() {
     const resExpB = await DocumentDetector.detect(canvasExpB, detectOptions);
     const latExpBMs = Number(process.hrtime.bigint() - t0ExpB) / 1e6;
 
-    // Score Attribution Guard
+    // C. Experiment C2 Run (Multi-Signal False Positive Candidate Evaluation)
+    const resExpC2 = evaluateExperimentC2(canvasBase, resBase);
+
     const getScoreSource = (res) => {
       if (res.source === 'SCANIC_ML') return 'ML_SIGMOID_CONFIDENCE';
       if (res.source === 'CURRENT_FALLBACK') return 'CLASSICAL_CONFIDENCE';
@@ -571,6 +604,11 @@ async function runPilotPipeline() {
         classification: classExpB,
         latencyMs: latExpBMs
       },
+      experiment_c2: {
+        accepted: resExpC2.accepted,
+        meanLuma: resExpC2.meanLuma,
+        score: resExpC2.score
+      },
       delta: {
         iou: (iouBase !== null && iouExpB !== null) ? (iouExpB - iouBase) : null,
         worstError: (errBase && errExpB) ? (errExpB.worst - errBase.worst) : null,
@@ -579,7 +617,19 @@ async function runPilotPipeline() {
     });
   }
 
-  // 6. Generate Reports
+  // 6. Compute AUTO_ACCEPT_RATE and Aggregates
+  const posResults = evaluatedResults.filter(r => r.contains_document);
+  const negResults = evaluatedResults.filter(r => !r.contains_document);
+
+  const baseExCount = posResults.filter(r => r.baseline.classification === 'EXCELLENT').length;
+  const baseGdCount = posResults.filter(r => r.baseline.classification === 'GOOD').length;
+  const baseAutoAcceptRate = posResults.length > 0 ? (((baseExCount + baseGdCount) / posResults.length) * 100).toFixed(1) : 'N/A';
+
+  const expBExCount = posResults.filter(r => r.experiment_b.classification === 'EXCELLENT').length;
+  const expBGdCount = posResults.filter(r => r.experiment_b.classification === 'GOOD').length;
+  const expBAutoAcceptRate = posResults.length > 0 ? (((expBExCount + expBGdCount) / posResults.length) * 100).toFixed(1) : 'N/A';
+
+  // 7. Generate Machine-Readable Report
   const outDir = path.dirname(jsonOutPath);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
@@ -589,7 +639,10 @@ async function runPilotPipeline() {
     target_dataset: targetCategories,
     discovered_counts: categoryCounts,
     total_images: totalPilotImages,
-    duplicate_count: duplicateWarnings.length,
+    auto_accept_rates: {
+      baseline_pct: baseAutoAcceptRate,
+      experiment_b_pct: expBAutoAcceptRate
+    },
     experiment_b_summary: {
       improved: expBImprovedCount,
       regressed: expBRegressedCount,
@@ -601,7 +654,7 @@ async function runPilotPipeline() {
   fs.writeFileSync(jsonOutPath, JSON.stringify(reportPayload, null, 2), 'utf8');
   console.log(`✓ Machine-readable report saved to: ${jsonOutPath}`);
 
-  // Generate Markdown Summary
+  // 8. Generate Markdown Summary
   let md = `# ScanVuông Real-World Pilot Evidence Summary\n\n`;
   md += `**Timestamp:** ${new Date().toISOString()}\n`;
   md += `**Pilot Status:** \`${pilotStatus}\`\n\n`;
@@ -614,16 +667,21 @@ async function runPilotPipeline() {
   }
   md += `\n**Total Pilot Images Discovered:** ${totalPilotImages} / 20\n\n`;
 
+  md += `## 2. Key Acceptance Metrics (AUTO_ACCEPT_RATE = EXCELLENT + GOOD)\n\n`;
+  md += `- **Production Baseline Auto-Accept Rate:** \`${baseAutoAcceptRate}%\`\n`;
+  md += `- **Experiment B Auto-Accept Rate:** \`${expBAutoAcceptRate}%\`\n\n`;
+
   if (totalPilotImages > 0) {
-    md += `## 2. Baseline vs Experiment B (Per-Image Comparison)\n\n`;
-    md += `| Case ID | Category | Baseline IoU | Exp B IoU | Δ IoU | Baseline Class | Exp B Class | Latency Δ |\n`;
-    md += `| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |\n`;
+    md += `## 3. Per-Image Comparison Table\n\n`;
+    md += `| Case ID | Category | Baseline IoU | Exp B IoU | Δ IoU | Baseline Class | Exp B Class | Exp C2 Decision | Latency Δ |\n`;
+    md += `| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n`;
     for (const r of evaluatedResults) {
       if (r.contains_document) {
         const bIou = r.baseline.iou !== null ? (r.baseline.iou * 100).toFixed(1) + '%' : 'N/A';
         const eIou = r.experiment_b.iou !== null ? (r.experiment_b.iou * 100).toFixed(1) + '%' : 'N/A';
         const dIou = r.delta.iou !== null ? (r.delta.iou >= 0 ? '+' : '') + (r.delta.iou * 100).toFixed(1) + '%' : 'N/A';
-        md += `| \`${r.id}\` | ${r.category} | ${bIou} | ${eIou} | ${dIou} | \`${r.baseline.classification}\` | \`${r.experiment_b.classification}\` | +${r.delta.latencyMs.toFixed(1)}ms |\n`;
+        const c2Dec = r.experiment_c2.accepted ? 'ACCEPTED' : 'REJECTED';
+        md += `| \`${r.id}\` | ${r.category} | ${bIou} | ${eIou} | ${dIou} | \`${r.baseline.classification}\` | \`${r.experiment_b.classification}\` | \`${c2Dec}\` | +${r.delta.latencyMs.toFixed(1)}ms |\n`;
       }
     }
   }
@@ -631,7 +689,7 @@ async function runPilotPipeline() {
   fs.writeFileSync(summaryOutPath, md, 'utf8');
   console.log(`✓ Human-readable summary saved to: ${summaryOutPath}`);
 
-  // 7. Generate Standalone 100% Offline HTML Contact Sheet
+  // 9. Generate Standalone 100% Offline HTML Contact Sheet
   let html = `<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -695,8 +753,7 @@ async function runPilotPipeline() {
     html += `
   <div class="empty-banner">
     <h2>Chưa có ảnh trong dataset pilot (0/20)</h2>
-    <p style="margin-top: 8px;">Vui lòng sao chép ảnh camera thực tế vào <code>benchmark-private/positives/</code> và <code>benchmark-private/negatives/</code>.</p>
-    <p style="margin-top: 4px;">Xem chi tiết hướng dẫn tại <code>benchmark/PILOT_GUIDE.md</code>.</p>
+    <p style="margin-top: 8px;">Vui lòng mở <code>benchmark/tools/pilot_capture_assistant.html</code> để thêm ảnh hoặc chạy <code>node scripts/prepare_real_world_pilot.cjs --input &lt;folder&gt;</code>.</p>
   </div>
 `;
   } else {
@@ -735,6 +792,7 @@ async function runPilotPipeline() {
         <div class="metric-row"><span style="color: var(--muted)">Baseline IoU:</span> <strong>${r.baseline.iou !== null ? (r.baseline.iou*100).toFixed(1)+'%' : 'N/A'}</strong></div>
         <div class="metric-row"><span style="color: var(--muted)">Exp B IoU:</span> <strong>${r.experiment_b.iou !== null ? (r.experiment_b.iou*100).toFixed(1)+'%' : 'N/A'}</strong> (${r.delta.iou !== null ? (r.delta.iou >= 0 ? '+' : '')+(r.delta.iou*100).toFixed(1)+'%' : 'N/A'})</div>
         <div class="metric-row"><span style="color: var(--muted)">ML Confidence:</span> <strong>${r.baseline.score.toFixed(4)}</strong></div>
+        <div class="metric-row"><span style="color: var(--muted)">Exp C2 Decision:</span> <strong>${r.experiment_c2.accepted ? 'ACCEPTED' : 'REJECTED'}</strong></div>
         <div class="metric-row"><span style="color: var(--muted)">Latency:</span> <strong>${r.baseline.latencyMs.toFixed(1)} ms</strong> (Exp B: +${r.delta.latencyMs.toFixed(1)} ms)</div>
       </div>
     </div>\n`;
