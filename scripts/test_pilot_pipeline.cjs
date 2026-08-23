@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * Comprehensive Failure-Path & Evidence-Integrity Test Suite
+ * Comprehensive Failure-Path & Evidence-Integrity Test Suite (Dependency-Free)
  * Validates strict geometry, missing-manifest rejection, human-confirmation enforcement,
- * SHA mismatch detection, duplicate collisions, and safe path invocation.
+ * SHA mismatch detection, duplicate collisions, and safe Unicode / Windows path handling.
  */
 
 const assert = require('assert');
@@ -133,30 +133,17 @@ const tmpDir = path.join(ROOT, 'benchmark-output', 'tmp_test_fixtures');
 if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
 fs.mkdirSync(tmpDir, { recursive: true });
 
-// Create valid PNG image buffer helper
-let createCanvas;
-try {
-  createCanvas = require(path.join(ROOT, 'benchmark', 'node_modules', 'canvas')).createCanvas;
-} catch (e) {
-  // fallback if needed
-}
+// Minimal 1x1 valid PNG (70 bytes, 100% dependency-free)
+const MINIMAL_1X1_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 
-function createSamplePng(name, color = '#38bdf8') {
+function createSamplePng(name) {
   const p = path.join(tmpDir, name);
-  if (createCanvas) {
-    const c = createCanvas(20, 20);
-    const ctx = c.getContext('2d');
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, 20, 20);
-    fs.writeFileSync(p, c.toBuffer('image/png'));
-  } else {
-    fs.writeFileSync(p, Buffer.from(`IMAGE_DATA_${name}_${Math.random()}`));
-  }
+  fs.writeFileSync(p, MINIMAL_1X1_PNG);
   return p;
 }
 
-const img1 = createSamplePng('img1.png', '#ff0000');
-const img2 = createSamplePng('img2.png', '#00ff00');
+const img1 = createSamplePng('img1.png');
+const img2 = createSamplePng('img2.png');
 const hash1 = crypto.createHash('sha256').update(fs.readFileSync(img1)).digest('hex');
 const hash2 = crypto.createHash('sha256').update(fs.readFileSync(img2)).digest('hex');
 
@@ -361,15 +348,7 @@ test('Test 17 & 18: Windows paths with spaces and Vietnamese Unicode characters 
   const unicodeDir = path.join(tmpDir, 'Thư Mục Ảnh Pilot (Chụp Thử 2026)');
   fs.mkdirSync(unicodeDir, { recursive: true });
   const uImg = path.join(unicodeDir, 'ảnh gốc 01.png');
-  if (createCanvas) {
-    const c = createCanvas(20, 20);
-    const ctx = c.getContext('2d');
-    ctx.fillStyle = '#0000ff';
-    ctx.fillRect(0, 0, 20, 20);
-    fs.writeFileSync(uImg, c.toBuffer('image/png'));
-  } else {
-    fs.writeFileSync(uImg, Buffer.from('UNICODE_IMAGE_SAMPLE_DATA'));
-  }
+  fs.writeFileSync(uImg, MINIMAL_1X1_PNG);
   const uHash = crypto.createHash('sha256').update(fs.readFileSync(uImg)).digest('hex');
 
   const uManifestPath = path.join(unicodeDir, 'pilot_manifest.json');
@@ -388,7 +367,7 @@ test('Test 17 & 18: Windows paths with spaces and Vietnamese Unicode characters 
   fs.writeFileSync(uManifestPath, JSON.stringify(manifest));
 
   const outDest = path.join(tmpDir, 'unicode_dest');
-  const res = spawnSync(process.execPath, [runScript, '--input', unicodeDir, '--dest', outDest, '--dir', outDest], { encoding: 'utf8' });
+  const res = spawnSync(process.execPath, [prepScript, '--input', unicodeDir, '--dest', outDest], { encoding: 'utf8' });
   assert.strictEqual(res.status, 0);
   assert.strictEqual(fs.existsSync(path.join(outDest, 'positives', 'RW01_WHITE_ON_WHITE', 'ảnh gốc 01.png')), true);
 });
