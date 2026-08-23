@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ScanVuông — Ground Truth Corner Annotator</title>
+<title>ScanVuông — Ground Truth Corner Annotator (Offline)</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -13,6 +13,7 @@
     --text-muted: #94a3b8;
     --primary: #38bdf8;
     --success: #4ade80;
+    --warning: #facc15;
     --danger: #f87171;
     --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
@@ -36,12 +37,12 @@
   }
   h1 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
   .badge { background: #0284c7; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 999px; }
-  .top-controls { display: flex; gap: 10px; align-items: center; }
+  .top-controls { display: flex; gap: 8px; align-items: center; }
   button, .file-label {
     background: #334155;
     color: var(--text);
     border: 1px solid #475569;
-    padding: 6px 14px;
+    padding: 6px 12px;
     border-radius: 6px;
     font-size: 13px;
     font-weight: 500;
@@ -53,6 +54,7 @@
   button:hover, .file-label:hover { background: #475569; }
   button.primary { background: #0284c7; border-color: #38bdf8; }
   button.primary:hover { background: #0369a1; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
   input[type="file"] { display: none; }
   main {
     display: flex;
@@ -62,7 +64,7 @@
   #canvas-container {
     flex: 1;
     position: relative;
-    background: #000;
+    background: #090d16;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -74,18 +76,19 @@
     max-height: 100%;
     object-fit: contain;
     box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    cursor: crosshair;
   }
   #sidebar {
-    width: 320px;
+    width: 340px;
     background: var(--panel);
     border-left: 1px solid var(--panel-border);
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 14px;
     overflow-y: auto;
   }
-  .section-title { font-size: 13px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; letter-spacing: 0.5px; }
+  .section-title { font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; }
   .meta-group { display: flex; flex-direction: column; gap: 8px; }
   label { font-size: 12px; color: var(--text-muted); }
   input[type="text"], select {
@@ -97,7 +100,17 @@
     font-size: 13px;
     width: 100%;
   }
-  .corner-list { display: flex; flex-direction: column; gap: 8px; }
+  .nav-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #0f172a;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--panel-border);
+    font-size: 13px;
+  }
+  .corner-list { display: flex; flex-direction: column; gap: 6px; }
   .corner-card {
     background: #0f172a;
     border: 1px solid var(--panel-border);
@@ -110,12 +123,12 @@
     cursor: pointer;
   }
   .corner-card.active { border-color: var(--primary); background: #082f49; }
-  .corner-label { font-weight: 600; }
+  .corner-label { font-weight: 600; font-size: 12px; }
   .corner-coords { font-family: monospace; color: var(--primary); font-size: 12px; }
   .instructions {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-muted);
-    line-height: 1.5;
+    line-height: 1.6;
     background: #0f172a;
     padding: 10px;
     border-radius: 6px;
@@ -128,6 +141,14 @@
     border-radius: 3px;
     font-size: 10px;
   }
+  .validation-box {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .val-valid { background: #064e3b; color: #34d399; border: 1px solid #059669; }
+  .val-invalid { background: #7f1d1d; color: #f87171; border: 1px solid #dc2626; }
 </style>
 </head>
 <body>
@@ -138,11 +159,11 @@
     <span class="badge">100% Offline / Local</span>
   </h1>
   <div class="top-controls">
-    <label class="file-label" for="image-input">📷 Mở ảnh</label>
-    <input type="file" id="image-input" accept="image/*">
+    <label class="file-label" for="image-batch-input">📁 Chọn tập ảnh (Batch)</label>
+    <input type="file" id="image-batch-input" accept="image/*" multiple>
     <label class="file-label" for="json-input">📂 Nạp JSON</label>
     <input type="file" id="json-input" accept=".json">
-    <button class="primary" id="btn-export">💾 Xuất Ground Truth</button>
+    <button id="btn-export-all" class="primary">💾 Xuất toàn bộ JSON</button>
   </div>
 </header>
 
@@ -150,25 +171,32 @@
   <div id="canvas-container">
     <canvas id="view-canvas"></canvas>
   </div>
+
   <aside id="sidebar">
+    <div class="nav-bar">
+      <button id="btn-prev" style="padding: 4px 8px;">◀ Trước</button>
+      <span id="nav-counter" style="font-weight: 600;">Ảnh 0 / 0</span>
+      <button id="btn-next" style="padding: 4px 8px;">Sau ▶</button>
+    </div>
+
     <div class="meta-group">
       <div class="section-title">Thông tin mẫu</div>
       <div>
-        <label for="input-id">ID ảnh</label>
-        <input type="text" id="input-id" value="RW_001">
+        <label for="input-id">ID / Tên file</label>
+        <input type="text" id="input-id" value="RW01_001">
       </div>
       <div>
         <label for="select-cat">Danh mục (Category)</label>
         <select id="select-cat">
           <option value="RW01_WHITE_ON_WHITE">RW01 — White on White</option>
           <option value="RW02_PARTIAL_OCCLUSION">RW02 — Partial Occlusion</option>
-          <option value="RW03_PERSPECTIVE">RW03 — Perspective Oblique</option>
-          <option value="RW04_SHADOW">RW04 — Shadows & Uneven Light</option>
+          <option value="RW03_STRONG_PERSPECTIVE">RW03 — Strong Perspective</option>
+          <option value="RW04_SHADOW_UNEVEN_LIGHT">RW04 — Shadow & Uneven Light</option>
           <option value="RW05_NEAR_FRAME">RW05 — Near Frame / Cropped</option>
           <option value="RW06_SMALL_RECEIPT_CARD">RW06 — Small Receipt / Card</option>
           <option value="RW07_MULTIPLE_RECTANGLES">RW07 — Multiple Rectangles</option>
-          <option value="NEG_ORDINARY">NEG-A — Ordinary Non-Document</option>
           <option value="NEG_DOCUMENT_LIKE">NEG-B — Document-Like Object</option>
+          <option value="NEG_ORDINARY">NEG-A — Ordinary Non-Document</option>
         </select>
       </div>
       <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
@@ -177,7 +205,9 @@
       </div>
     </div>
 
-    <div class="section-title">4 Góc Ground Truth</div>
+    <div id="val-status" class="validation-box val-valid">✓ Ground Truth Hợp Lệ</div>
+
+    <div class="section-title">4 Góc Ground Truth (Clockwise)</div>
     <div class="corner-list">
       <div class="corner-card active" data-index="0" id="card-0">
         <span class="corner-label" style="color: #38bdf8;">1. TL (Top-Left)</span>
@@ -197,31 +227,79 @@
       </div>
     </div>
 
+    <div style="display: flex; gap: 8px;">
+      <button id="btn-reset" style="flex: 1;">🔄 Mặc định</button>
+      <button id="btn-export-single" style="flex: 1;">💾 Xuất ảnh này</button>
+    </div>
+
     <div class="instructions">
       <strong>Phím tắt:</strong><br>
-      • <kbd>Click</kbd> trực tiếp lên ảnh để đặt góc đang chọn.<br>
-      • <kbd>Kéo chuột</kbd> handle tròn để căn chỉnh vị trí.<br>
-      • <kbd>1</kbd>, <kbd>2</kbd>, <kbd>3</kbd>, <kbd>4</kbd> để đổi góc active.<br>
-      • <kbd>Phím mũi tên</kbd> để vi chỉnh toạ độ 1 pixel.<br>
-      • <kbd>S</kbd> hoặc nút "Xuất" để tải JSON.
+      • <kbd>1</kbd>, <kbd>2</kbd>, <kbd>3</kbd>, <kbd>4</kbd>: Đổi góc active.<br>
+      • <kbd>Mũi tên</kbd>: Vi chỉnh góc 1px (Shift: 5px).<br>
+      • <kbd>[</kbd> / <kbd>]</kbd>: Chuyển ảnh Trước / Sau.<br>
+      • <kbd>R</kbd>: Reset 4 góc về khung mặc định.<br>
+      • <kbd>Ctrl+S</kbd>: Xuất JSON ground truth.
     </div>
   </aside>
 </main>
 
 <script>
-  let currentImage = null;
+  let imageList = [];
+  let currentIndex = -1;
   let activeCorner = 0;
-  let corners = [
-    { x: 0.15, y: 0.15 },
-    { x: 0.85, y: 0.15 },
-    { x: 0.85, y: 0.85 },
-    { x: 0.15, y: 0.85 }
-  ];
-  let isDragging = false;
-  let dragIndex = -1;
+  let annotationsStore = {};
 
   const canvas = document.getElementById('view-canvas');
   const ctx = canvas.getContext('2d');
+
+  function getDefaultCorners() {
+    return [
+      { x: 0.15, y: 0.15 },
+      { x: 0.85, y: 0.15 },
+      { x: 0.85, y: 0.85 },
+      { x: 0.15, y: 0.85 }
+    ];
+  }
+
+  let corners = getDefaultCorners();
+  let isDragging = false;
+  let dragIndex = -1;
+
+  function polygonArea(pts) {
+    if (!pts || pts.length < 3) return 0;
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i + 1) % pts.length;
+      a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+    }
+    return Math.abs(a) / 2;
+  }
+
+  function validateCorners(pts) {
+    if (!pts || pts.length !== 4) return { valid: false, reason: 'Phải có đúng 4 góc' };
+    const area = polygonArea(pts);
+    if (area < 0.01) return { valid: false, reason: 'Diện tích quá nhỏ (<1%)' };
+    if (area > 0.99) return { valid: false, reason: 'Diện tích quá lớn (>99%)' };
+    return { valid: true };
+  }
+
+  function updateValidation() {
+    const hasDoc = document.getElementById('check-has-doc').checked;
+    const valBox = document.getElementById('val-status');
+    if (!hasDoc) {
+      valBox.className = 'validation-box val-valid';
+      valBox.textContent = '✓ Nhãn Negative (Không chứa tài liệu)';
+      return;
+    }
+    const val = validateCorners(corners);
+    if (val.valid) {
+      valBox.className = 'validation-box val-valid';
+      valBox.textContent = '✓ Ground Truth Hợp Lệ (Convex Quad)';
+    } else {
+      valBox.className = 'validation-box val-invalid';
+      valBox.textContent = `✗ Lỗi: ${val.reason}`;
+    }
+  }
 
   function updateCards() {
     for (let i = 0; i < 4; i++) {
@@ -230,24 +308,26 @@
       card.classList.toggle('active', i === activeCorner);
       coords.textContent = `(${corners[i].x.toFixed(4)}, ${corners[i].y.toFixed(4)})`;
     }
+    updateValidation();
   }
 
   function render() {
-    if (!currentImage) {
+    if (currentIndex === -1 || !imageList[currentIndex]) {
       canvas.width = 800;
       canvas.height = 600;
-      ctx.fillStyle = '#1e293b';
+      ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, 800, 600);
       ctx.fillStyle = '#64748b';
       ctx.font = '16px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Chọn ảnh hoặc kéo thả ảnh vào đây để bắt đầu', 400, 300);
+      ctx.fillText('Chọn tập ảnh bằng nút "📁 Chọn tập ảnh" để bắt đầu', 400, 300);
       return;
     }
 
-    canvas.width = currentImage.width;
-    canvas.height = currentImage.height;
-    ctx.drawImage(currentImage, 0, 0);
+    const item = imageList[currentIndex];
+    canvas.width = item.img.width;
+    canvas.height = item.img.height;
+    ctx.drawImage(item.img, 0, 0);
 
     const hasDoc = document.getElementById('check-has-doc').checked;
     if (!hasDoc) return;
@@ -291,6 +371,40 @@
     }
   }
 
+  function saveCurrentToStore() {
+    if (currentIndex === -1 || !imageList[currentIndex]) return;
+    const item = imageList[currentIndex];
+    const hasDoc = document.getElementById('check-has-doc').checked;
+    const cat = document.getElementById('select-cat').value;
+    annotationsStore[item.name] = {
+      filename: item.name,
+      category: cat,
+      contains_document: hasDoc,
+      corners: hasDoc ? corners.map(p => ({ x: Number(p.x.toFixed(4)), y: Number(p.y.toFixed(4)) })) : null,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  function loadIndex(idx) {
+    if (idx < 0 || idx >= imageList.length) return;
+    saveCurrentToStore();
+    currentIndex = idx;
+    const item = imageList[currentIndex];
+    document.getElementById('input-id').value = item.name;
+    document.getElementById('nav-counter').textContent = `Ảnh ${currentIndex + 1} / ${imageList.length}`;
+
+    if (annotationsStore[item.name]) {
+      const ann = annotationsStore[item.name];
+      document.getElementById('select-cat').value = ann.category || 'RW01_WHITE_ON_WHITE';
+      document.getElementById('check-has-doc').checked = ann.contains_document !== false;
+      corners = ann.corners ? ann.corners.map(p => ({ x: p.x, y: p.y })) : getDefaultCorners();
+    } else {
+      corners = getDefaultCorners();
+    }
+    updateCards();
+    render();
+  }
+
   function getCanvasPos(e) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
@@ -302,11 +416,10 @@
   }
 
   canvas.addEventListener('mousedown', (e) => {
-    if (!currentImage) return;
+    if (currentIndex === -1 || !imageList[currentIndex]) return;
     const pos = getCanvasPos(e);
     const radius = Math.max(16, Math.round(canvas.width / 60));
 
-    // Check handle hit
     dragIndex = -1;
     for (let i = 0; i < 4; i++) {
       const cx = corners[i].x * canvas.width;
@@ -321,7 +434,6 @@
       }
     }
 
-    // Set active corner to click pos
     corners[activeCorner] = {
       x: Math.max(0, Math.min(1, Number((pos.x / canvas.width).toFixed(4)))),
       y: Math.max(0, Math.min(1, Number((pos.y / canvas.height).toFixed(4))))
@@ -334,7 +446,7 @@
   });
 
   window.addEventListener('mousemove', (e) => {
-    if (!isDragging || dragIndex === -1 || !currentImage) return;
+    if (!isDragging || dragIndex === -1 || currentIndex === -1) return;
     const pos = getCanvasPos(e);
     corners[dragIndex] = {
       x: Math.max(0, Math.min(1, Number((pos.x / canvas.width).toFixed(4)))),
@@ -357,40 +469,80 @@
     });
   });
 
-  document.getElementById('image-input').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    document.getElementById('input-id').value = file.name.replace(/\.[^.]+$/, '');
-    const reader = new FileReader();
-    reader.onload = (re) => {
-      const img = new Image();
-      img.onload = () => {
-        currentImage = img;
-        render();
-      };
-      img.src = re.target.result;
-    };
-    reader.readAsDataURL(file);
+  document.getElementById('btn-prev').addEventListener('click', () => loadIndex(currentIndex - 1));
+  document.getElementById('btn-next').addEventListener('click', () => loadIndex(currentIndex + 1));
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    corners = getDefaultCorners();
+    updateCards();
+    render();
   });
 
-  document.getElementById('btn-export').addEventListener('click', () => {
-    const id = document.getElementById('input-id').value;
-    const category = document.getElementById('select-cat').value;
-    const hasDoc = document.getElementById('check-has-doc').checked;
+  document.getElementById('image-batch-input').addEventListener('change', (e) => {
+    const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
 
-    const record = {
-      id,
-      category,
-      contains_document: hasDoc,
-      corners: hasDoc ? corners.map(p => ({ x: Number(p.x.toFixed(4)), y: Number(p.y.toFixed(4)) })) : null,
-      timestamp: new Date().toISOString()
+    let loadedCount = 0;
+    imageList = [];
+    files.sort((a, b) => a.name.localeCompare(b.name));
+
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (re) => {
+        const img = new Image();
+        img.onload = () => {
+          imageList.push({ name: file.name, file, img });
+          loadedCount++;
+          if (loadedCount === files.length) {
+            imageList.sort((a, b) => a.name.localeCompare(b.name));
+            loadIndex(0);
+          }
+        };
+        img.src = re.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+
+  document.getElementById('json-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (re) => {
+      try {
+        const data = JSON.parse(re.target.result);
+        if (typeof data === 'object') {
+          annotationsStore = { ...annotationsStore, ...data };
+          if (currentIndex !== -1) loadIndex(currentIndex);
+          alert(`Đã nạp thành công ${Object.keys(data).length} nhãn ground truth!`);
+        }
+      } catch (err) {
+        alert(`Lỗi nạp JSON: ${err.message}`);
+      }
     };
+    reader.readAsText(file);
+  });
 
-    const blob = new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' });
+  document.getElementById('btn-export-all').addEventListener('click', () => {
+    saveCurrentToStore();
+    const blob = new Blob([JSON.stringify(annotationsStore, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${id}_ground_truth.json`;
+    a.download = `annotations.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('btn-export-single').addEventListener('click', () => {
+    saveCurrentToStore();
+    if (currentIndex === -1 || !imageList[currentIndex]) return;
+    const item = imageList[currentIndex];
+    const rec = annotationsStore[item.name];
+    const blob = new Blob([JSON.stringify(rec, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${item.name.replace(/\.[^.]+$/, '')}_ground_truth.json`;
     a.click();
     URL.revokeObjectURL(url);
   });
@@ -400,9 +552,28 @@
       activeCorner = parseInt(e.key, 10) - 1;
       updateCards();
       render();
+    } else if (e.key === '[') {
+      loadIndex(currentIndex - 1);
+    } else if (e.key === ']') {
+      loadIndex(currentIndex + 1);
+    } else if (e.key.toLowerCase() === 'r') {
+      corners = getDefaultCorners();
+      updateCards();
+      render();
     } else if (e.key.toLowerCase() === 's' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      document.getElementById('btn-export').click();
+      document.getElementById('btn-export-all').click();
+    } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && currentIndex !== -1) {
+      e.preventDefault();
+      const step = e.shiftKey ? 0.01 : 0.002;
+      if (e.key === 'ArrowUp') corners[activeCorner].y = Math.max(0, corners[activeCorner].y - step);
+      if (e.key === 'ArrowDown') corners[activeCorner].y = Math.min(1, corners[activeCorner].y + step);
+      if (e.key === 'ArrowLeft') corners[activeCorner].x = Math.max(0, corners[activeCorner].x - step);
+      if (e.key === 'ArrowRight') corners[activeCorner].x = Math.min(1, corners[activeCorner].x + step);
+      corners[activeCorner].x = Number(corners[activeCorner].x.toFixed(4));
+      corners[activeCorner].y = Number(corners[activeCorner].y.toFixed(4));
+      updateCards();
+      render();
     }
   });
 
