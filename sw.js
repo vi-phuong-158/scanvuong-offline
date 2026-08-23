@@ -1,5 +1,18 @@
-const CACHE = 'scanvuong-v1.0.2';
-const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
+const CACHE = 'scanvuong-v2.0.0';
+const ASSETS = [
+  './',
+  './index.html',
+  './styles.css',
+  './app.js',
+  './document-detector.js',
+  './manifest.webmanifest',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './assets/ml/doccornernet_lean.ort',
+  './assets/ml/ort-wasm-simd-threaded.wasm',
+  './assets/ml/ort-wasm-simd-threaded.mjs',
+  './assets/ml/scanic-ort.wasm.min.js'
+];
 
 self.addEventListener('install', e => e.waitUntil(
   caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())
@@ -17,22 +30,26 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
   if (new URL(req.url).origin !== self.location.origin) return;
-  e.respondWith(caches.match(req).then(cached => {
-    const network = fetch(req).then(res => {
-      if (res && res.ok && res.type !== 'opaque') {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy));
-      }
-      return res;
-    }).catch(() => cached || caches.match('./index.html'));
-    // A cached hit is returned immediately below, but the refresh fetch above
-    // must not be abandoned when the fetch event is otherwise done — without
-    // waitUntil the service worker can be torn down mid-fetch, before the
-    // cache is ever updated for the next load.
-    if (cached) {
-      e.waitUntil(network.catch(() => {}));
-      return cached;
-    }
-    return network;
-  }));
+  e.respondWith(
+    caches.open(CACHE).then(cache =>
+      cache.match(req, { ignoreSearch: true }).then(cached => {
+        if (cached) {
+          e.waitUntil(
+            fetch(req).then(res => {
+              if (res && res.ok && res.type !== 'opaque') {
+                cache.put(req, res.clone());
+              }
+            }).catch(() => {})
+          );
+          return cached;
+        }
+        return fetch(req).then(res => {
+          if (res && res.ok && res.type !== 'opaque') {
+            cache.put(req, res.clone());
+          }
+          return res;
+        }).catch(() => cache.match('./index.html'));
+      })
+    )
+  );
 });

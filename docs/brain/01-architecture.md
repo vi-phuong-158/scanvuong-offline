@@ -4,14 +4,14 @@
 
 | Layer | Công nghệ |
 |-------|-----------|
-| Frontend | HTML + CSS thuần + JavaScript ES2020 (một IIFE duy nhất trong `app.js`). Không framework, không bundler, không `package.json`. |
-| Xử lý ảnh | Canvas 2D + `createImageBitmap`; warp phối cảnh bằng shader WebGL1, có fallback CPU thuần JS (`warpCpu`) khi không có WebGL. |
+| Frontend | HTML + CSS thuần + JavaScript ES2020 (`app.js` và `document-detector.js`). Không framework, không bundler, không `package.json`. |
+| Xử lý ảnh & ML | Nhận diện góc tự động bằng mô hình neural network DocCornerNet Lean chạy qua ONNX Runtime Web WASM (`document-detector.js` + `assets/ml/`), kèm fallback classical CV (`detectDocument` trong `app.js`). Xử lý ảnh bằng Canvas 2D + `createImageBitmap`; warp phối cảnh bằng shader WebGL1, có fallback CPU thuần JS (`warpCpu`). |
 | PDF | Bộ ghi PDF 1.4 viết tay trong `app.js` (nhúng ảnh JPEG qua `/DCTDecode`), không dùng thư viện PDF nào. |
-| PWA / offline | `manifest.webmanifest` + `sw.js` (Service Worker, cache-first + refresh nền giữ sống bằng `event.waitUntil()`). |
+| PWA / offline | `manifest.webmanifest` + `sw.js` (Service Worker, cache-first + precache toàn bộ assets ML phục vụ 100% offline). |
 | Backend | Không có. |
 | Database | Không có — không `localStorage`/`sessionStorage`/`indexedDB`/cookie. |
 | Hạ tầng / Hosting | Chạy local qua `server.py` (Python stdlib, `http.server`) khởi động bởi `start-windows.bat`. `vercel.json` chỉ khai báo header cho trường hợp deploy tĩnh, không bắt buộc để chạy app. |
-| Khác | Không có dependency runtime nào — cố ý dependency-free. |
+| Khác | Toàn bộ tài nguyên và mô hình ML đóng gói cục bộ trong repo — 100% offline, zero network telemetry. |
 
 ## Cấu trúc thư mục chính
 
@@ -19,8 +19,15 @@
 scanvuong-offline/
 ├── index.html            # Toàn bộ DOM; mọi phần tử app.js thao tác đều khai báo ở đây bằng id
 ├── styles.css             # Layout responsive: desktop / ≤1080px / ≤720px
-├── app.js                  # Toàn bộ logic: detect, editor, warp, filter, quản lý trang, PDF writer, PWA glue
-├── sw.js                   # Service Worker — cache app shell, phục vụ offline
+├── app.js                  # Toàn bộ logic: editor, warp, filter, quản lý trang, PDF writer, PWA glue
+├── document-detector.js    # Detector module: lazy ML runtime, geometry guard, classical fallback
+├── assets/
+│   └── ml/                 # Tài nguyên ML cục bộ (100% offline)
+│       ├── doccornernet_lean.ort          # Trọng số mô hình DocCornerNet Lean (1.93 MB)
+│       ├── ort-wasm-simd-threaded.wasm    # ONNX Runtime Web WASM binary (1.52 MB)
+│       ├── ort-wasm-simd-threaded.mjs     # Emscripten WASM loader
+│       └── scanic-ort.wasm.min.js         # ONNX Runtime Web JS API
+├── sw.js                   # Service Worker — cache app shell và assets ML, phục vụ offline
 ├── manifest.webmanifest    # Khai báo PWA (tên, icon, display mode, start_url)
 ├── icons/
 │   ├── icon-192.png
@@ -28,6 +35,7 @@ scanvuong-offline/
 ├── server.py                # Static HTTP server cục bộ (chỉ dùng thư viện chuẩn Python)
 ├── start-windows.bat        # Launcher Windows: tìm py/python, chạy server.py
 ├── vercel.json               # Header khi deploy lên host tĩnh (không bắt buộc để chạy local)
+├── THIRD_PARTY_NOTICES.md   # Giấy phép và xuất xứ các thành phần bên thứ ba (MIT)
 ├── AGENTS.md / CLAUDE.md      # Hướng dẫn cho AI agent — trỏ tới docs/brain/
 └── docs/brain/                 # Bộ nhớ dự án dùng chung (thư mục này)
 ```
@@ -36,15 +44,17 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 
 ## Code Graph (bản đồ module)
 
-> `app.js` là một IIFE duy nhất, không có import/require giữa các file JS. Vì vậy "code graph" ở đây là **đồ thị gọi hàm nội bộ trong `app.js`**, chia theo 7 cụm chức năng tương ứng đúng pipeline `Image → Detection → Corners → Perspective → Filter → Pages → PDF`.
+> `app.js` và `document-detector.js` là các script độc lập chạy trong trình duyệt mà không cần bundler. Code graph dưới đây là **đồ thị gọi hàm nội bộ**, chia theo các cụm chức năng tương ứng đúng pipeline `Image → Detection → Corners → Perspective → Filter → Pages → PDF`.
 
 ### Cụm / hàm then chốt
 
 | Cụm | Hàm chính | Được gọi bởi | Gọi tới |
 |---|---|---|---|
 | **Import** | `addFiles()` | sự kiện `change` trên `#fileInput`/`#cameraInput`, `drop` trên `#dropZone` | `isSupportedImage()`, `detectPage()`, `sleepFrame()`, `updateShell()` |
-| **Detection** | `detectPage()` | `addFiles()`, nút `#detectBtn`, `#autoAllBtn` | `loadImage()`, `drawRotatedToCanvas()`, `detectDocument()` |
-| | `detectDocument()` | `detectPage()` | `otsuThreshold()`, `componentQuad()` (light-mode), `edgeQuad()`, `orderCorners()` |
+| **Detection** | `detectPage()` | `addFiles()`, nút `#detectBtn`, `#autoAllBtn` | `loadImage()`, `drawRotatedToCanvas()`, `DocumentDetector.detect()` |
+| | `DocumentDetector.detect()` | `detectPage()` | `detectMl()`, `validateGeometry()`, fallback sang `detectDocument()` |
+| | `detectMl()` | `DocumentDetector.detect()` | `initMlSession()`, `preprocessToTensor()`, session inference, `validateGeometry()` |
+| | `detectDocument()` (fallback) | `DocumentDetector.detect()` | `otsuThreshold()`, `componentQuad()` (light-mode), `edgeQuad()`, `orderCorners()` |
 | | `componentQuad()` / `edgeQuad()` | `detectDocument()` | `orderCorners()`, `polygonArea()`, `quadShapeScore()` |
 | **Corners** | `orderCorners()` | `detectDocument()`, `endCornerDrag()`, `resetCropBtn`, `rotateCorners90()` | — (thuần toán học, không gọi hàm khác) |
 | | `endCornerDrag()` (pointerup/pointercancel trên `#editorCanvas`) | sự kiện con trỏ | `orderCorners()`, `renderThumbs()`, `drawEditor()`, `updateSummaryOnly()` |
@@ -83,9 +93,14 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
    detectPage() ──► loadImage() + drawRotatedToCanvas() (canvas làm việc ≤560px)
         │
         ▼
-   detectDocument() ──┬─► componentQuad()  (Otsu + connected components)
-                       └─► edgeQuad()       (Sobel + percentile threshold)
-        │        (chọn candidate mạnh hơn, độ tin cậy điều chỉnh theo mức 2 detector đồng thuận)
+   DocumentDetector.detect() ──┬─► Scanic ML (DocCornerNet Lean ONNX WASM)
+                               │   ├─► validateGeometry() (lồi, không tự cắt, diện tích ≥5%)
+                               │   └─► Thành công: trả về 4 góc ML TL/TR/BR/BL
+                               │
+                               └─► Fallback khi ML lỗi / hình học không hợp lệ:
+                                   detectDocument() ──┬─► componentQuad() (Otsu + connected components)
+                                                      └─► edgeQuad()      (Sobel + percentile)
+        │
         ▼
    orderCorners() ──► góc chuẩn hoá TL/TR/BR/BL, lưu vào page.corners
         │

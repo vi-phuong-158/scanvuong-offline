@@ -86,27 +86,34 @@ Nút **Chụp ảnh** sẽ mở camera sau của máy.
 - Xuất PDF nhiều trang ở chế độ nén mạnh có thể mất vài chục giây — mọi việc đều chạy bằng CPU/GPU của chính máy bạn.
 - Máy không hỗ trợ WebGL vẫn dùng được: ứng dụng tự chuyển sang sửa phối cảnh bằng CPU, chỉ chậm hơn.
 
-## Cấu trúc thư mục
-
-| File | Vai trò |
+| File / Thư mục | Vai trò |
 |---|---|
 | `index.html` | Giao diện, khai báo toàn bộ phần tử DOM |
 | `styles.css` | Giao diện responsive cho máy tính và điện thoại |
-| `app.js` | Nhận diện mép giấy, editor 4 góc, warp phối cảnh, bộ lọc, quản lý trang, bộ ghi PDF |
-| `sw.js` | Service Worker — cache offline |
+| `app.js` | Logic UI, editor 4 góc, warp phối cảnh, bộ lọc, quản lý trang, bộ ghi PDF |
+| `document-detector.js` | Module tự động nhận diện 4 góc: ML runtime, geometry guard, classical fallback |
+| `assets/ml/` | Tài nguyên ML cục bộ: mô hình DocCornerNet Lean (`.ort`) và ONNX Runtime Web WASM |
+| `sw.js` | Service Worker — cache offline toàn bộ app shell và tài nguyên ML |
 | `manifest.webmanifest` | Khai báo PWA (tên, icon, chế độ hiển thị) |
 | `icons/` | Icon 192px và 512px cho PWA |
 | `server.py` | Máy chủ tĩnh cục bộ (chỉ dùng thư viện chuẩn của Python) |
 | `start-windows.bat` | Chạy nhanh trên Windows |
 | `vercel.json` | Header khi deploy lên host tĩnh (không bắt buộc để chạy) |
+| `THIRD_PARTY_NOTICES.md` | Giấy phép phần mềm bên thứ ba (MIT) |
 | `AGENTS.md`, `CLAUDE.md` | Hướng dẫn cho công cụ AI khi sửa dự án |
 
 ## Dành cho người phát triển
 
-Dự án **không có** package manager, bundler, linter hay test runner — đó là chủ ý. Kiểm tra nhanh:
+Dự án không dùng bundler phức tạp để bảo đảm tính đơn giản và dễ kiểm tra. Các lệnh kiểm thử:
 
 ```bash
 node --check app.js
+node --check document-detector.js
+node --check sw.js
+node scripts/regression_ml_detector.js
+node scripts/regression_export_busy.js
+node scripts/regression_scan_id.js
+python scripts/validate_static.py
 ```
 
 Xem [`AGENTS.md`](AGENTS.md) để biết kiến trúc, ranh giới riêng tư và danh sách kiểm tra đầy đủ.

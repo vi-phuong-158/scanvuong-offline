@@ -22,6 +22,8 @@ class ScanVuongHandler(SimpleHTTPRequestHandler):
         '.css': 'text/css',
         '.webp': 'image/webp',
         '.svg': 'image/svg+xml',
+        '.wasm': 'application/wasm',
+        '.ort': 'application/octet-stream',
     }
 
     def end_headers(self):

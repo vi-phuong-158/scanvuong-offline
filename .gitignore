@@ -17,3 +17,7 @@ __pycache__/
 # they are all required for the PWA to work offline.
 *.local
 .vercel
+
+# Benchmark tools, outputs & caches
+benchmark/
+benchmark-output/

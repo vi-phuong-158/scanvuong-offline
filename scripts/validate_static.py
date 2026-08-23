@@ -78,7 +78,7 @@ check("every sw.js ASSETS entry exists on disk")(_sw_assets_exist)
 # anywhere in these files — including inside a comment — is worth failing CI
 # over, since this project's rule is that none should ever appear here.
 EXTERNAL_URL_RE = re.compile(r"https?://")
-SCANNED_FOR_EXTERNAL_URLS = ['index.html', 'app.js', 'styles.css', 'sw.js', 'manifest.webmanifest']
+SCANNED_FOR_EXTERNAL_URLS = ['index.html', 'app.js', 'document-detector.js', 'styles.css', 'sw.js', 'manifest.webmanifest']
 
 
 def _no_external_urls():
