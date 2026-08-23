@@ -16,6 +16,20 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-08-23] PWA In-App Update Banner
+
+- **Agent:** Antigravity (Claude Opus 4.6)
+- **Thay đổi:** Thêm cơ chế phát hiện và cập nhật phiên bản mới cho PWA đã cài trên điện thoại:
+  - Bỏ `self.skipWaiting()` tự động trong SW install → SW mới sẽ chờ ở trạng thái `waiting`
+  - Thêm `message` listener trong `sw.js` để nhận lệnh `SKIP_WAITING` từ app
+  - Thêm update detection trong `app.js`: lắng nghe `updatefound` + `statechange`, kiểm tra `reg.waiting`, auto-check mỗi 60 phút
+  - Thêm banner UI "Phiên bản mới đã sẵn sàng" với nút "Cập nhật" và nút đóng
+  - Khi user nhấn "Cập nhật" → `postMessage({type:'SKIP_WAITING'})` → SW activate → `controllerchange` → `location.reload()`
+  - Bump cache version lên `vigil-lens-v2.3.0`
+- **File đã sửa:** `sw.js`, `app.js`, `index.html`, `styles.css`, `scripts/acceptance_offline_pwa.cjs`
+- **Lý do:** Người dùng cài PWA trên điện thoại cần biết khi nào có phiên bản mới và chủ động cập nhật
+- **Kiểm tra:** `node --check app.js sw.js` PASS, `python scripts/validate_static.py` 9/9 PASS, `node scripts/regression_sw_update.cjs` 9/9 PASS, `node scripts/test_touch_targets.cjs` 140/140 PASS
+
 ## [2026-08-23] Final Acceptance Closure & PWA Icon Rebrand cho PR #8 (VPH Vigil Lens)
 
 - **Agent:** Codex

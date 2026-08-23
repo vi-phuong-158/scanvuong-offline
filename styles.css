@@ -1265,7 +1265,102 @@ button {
 }
 
 /* ==========================================================================
-   12. Responsive Breakpoints & Adaptive Layouts
+   12. Update Banner
+   ========================================================================== */
+
+.update-banner {
+  position: sticky;
+  top: var(--topbar-h, 54px);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.3);
+  color: var(--text-secondary, #94a3b8);
+  font-size: 13px;
+  font-weight: 500;
+  animation: updateSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.update-banner.hidden {
+  display: none;
+}
+
+.update-banner-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  stroke: #3b82f6;
+  animation: updateSpin 2s linear infinite;
+}
+
+@keyframes updateSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes updateSlideIn {
+  from { opacity: 0; transform: translateY(-100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.update-banner-text {
+  flex: 1;
+  min-width: 0;
+  color: #e2e8f0;
+}
+
+.update-banner-btn {
+  flex-shrink: 0;
+  padding: 6px 16px;
+  min-height: 36px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: var(--radius-pill, 9999px);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.update-banner-btn:hover {
+  background: #2563eb;
+}
+
+.update-banner-btn:active {
+  background: #1d4ed8;
+  transform: scale(0.97);
+}
+
+.update-banner-close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s;
+  padding: 0;
+  font-family: inherit;
+}
+
+.update-banner-close:hover {
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ==========================================================================
+   13. Responsive Breakpoints & Adaptive Layouts
    ========================================================================== */
 
 /* --- Desktop Layout (>= 1025px) --- */

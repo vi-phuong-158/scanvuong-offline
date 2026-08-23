@@ -24,7 +24,8 @@
     idBackStepBtn: $('#idBackStepBtn'), idConfirmBtn: $('#idConfirmBtn'), idEditorSlot: $('#idEditorSlot'),
     idPreviewSection: $('#idPreviewSection'), idPreviewCanvas: $('#idPreviewCanvas'),
     idEditFrontBtn: $('#idEditFrontBtn'), idEditBackBtn: $('#idEditBackBtn'), idExportBtn: $('#idExportBtn'),
-    idExportProgress: $('#idExportProgress'), idProgressBar: $('#idProgressBar'), idProgressLabel: $('#idProgressLabel'), idExportNotice: $('#idExportNotice')
+    idExportProgress: $('#idExportProgress'), idProgressBar: $('#idProgressBar'), idProgressLabel: $('#idProgressLabel'), idExportNotice: $('#idExportNotice'),
+    updateBanner: $('#updateBanner'), updateBtn: $('#updateBtn'), updateDismiss: $('#updateDismiss')
   };
 
   const state = {
@@ -1271,7 +1272,42 @@
   els.installBtn.addEventListener('click',async()=>{if(!state.deferredInstallPrompt)return;state.deferredInstallPrompt.prompt();await state.deferredInstallPrompt.userChoice;state.deferredInstallPrompt=null;els.installBtn.classList.add('hidden');});
   function updateOnlineBadge(){els.offlineBadge.textContent=navigator.onLine?'Xử lý trên thiết bị':'Offline · vẫn dùng được';}
   addEventListener('online',updateOnlineBadge);addEventListener('offline',updateOnlineBadge);updateOnlineBadge();
-  if('serviceWorker'in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('./sw.js').catch(err=>console.warn('Service worker:',err));
+
+  // Service Worker registration + update detection
+  if('serviceWorker'in navigator&&location.protocol!=='file:'){
+    let pendingWorker=null;
+    function showUpdateBanner(worker){
+      pendingWorker=worker;
+      if(els.updateBanner)els.updateBanner.classList.remove('hidden');
+    }
+    navigator.serviceWorker.register('./sw.js').then(reg=>{
+      // If a new SW is already waiting (e.g. page was open during install)
+      if(reg.waiting){showUpdateBanner(reg.waiting);}
+      // Watch for new SW installing
+      reg.addEventListener('updatefound',()=>{
+        const newWorker=reg.installing;
+        if(!newWorker)return;
+        newWorker.addEventListener('statechange',()=>{
+          if(newWorker.state==='installed'&&navigator.serviceWorker.controller){
+            showUpdateBanner(newWorker);
+          }
+        });
+      });
+      // Periodically check for updates (every 60 minutes when online)
+      setInterval(()=>{if(navigator.onLine)reg.update().catch(()=>{});},60*60*1000);
+    }).catch(err=>console.warn('Service worker:',err));
+    // "Cập nhật" button → tell waiting SW to activate, then reload
+    if(els.updateBtn)els.updateBtn.addEventListener('click',()=>{
+      if(pendingWorker){pendingWorker.postMessage({type:'SKIP_WAITING'});}
+      if(els.updateBanner)els.updateBanner.classList.add('hidden');
+    });
+    // Dismiss button
+    if(els.updateDismiss)els.updateDismiss.addEventListener('click',()=>{
+      if(els.updateBanner)els.updateBanner.classList.add('hidden');
+    });
+    // When the new SW takes over, reload the page to load new assets
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{location.reload();});
+  }
 
   renderModeShell();
 })();

@@ -1,4 +1,4 @@
-const CACHE = 'vigil-lens-v2.2.1';
+const CACHE = 'vigil-lens-v2.3.0';
 const ASSETS = [
   './',
   './index.html',
@@ -19,8 +19,13 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => e.waitUntil(
-  caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())
+  caches.open(CACHE).then(c => c.addAll(ASSETS))
 ));
+
+// Allow the app to trigger activation via postMessage when user taps "Cập nhật"
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
 
 self.addEventListener('activate', e => e.waitUntil(
   caches.keys()

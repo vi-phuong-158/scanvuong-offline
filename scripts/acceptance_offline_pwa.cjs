@@ -92,7 +92,7 @@ const injectedScript = `
           results.swReady = !!reg;
 
           const cacheKeys = await caches.keys();
-          const activeCacheName = cacheKeys.find(k => k.startsWith('vigil-lens-') || k.startsWith('scanvuong-')) || 'vigil-lens-v2.2.1';
+          const activeCacheName = cacheKeys.find(k => k.startsWith('vigil-lens-') || k.startsWith('scanvuong-')) || 'vigil-lens-v2.3.0';
           const cache = await caches.open(activeCacheName);
           const keys = await cache.keys();
           results.cachedCount = keys.length;
