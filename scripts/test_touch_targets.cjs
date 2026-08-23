@@ -134,10 +134,40 @@ const server = http.createServer((req, res) => {
   }
 });
 
+function findBrowser() {
+  if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
+    return process.env.CHROME_PATH;
+  }
+  if (process.env.CHROMIUM_PATH && fs.existsSync(process.env.CHROMIUM_PATH)) {
+    return process.env.CHROMIUM_PATH;
+  }
+
+  const winPaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+  ];
+  for (const p of winPaths) {
+    if (fs.existsSync(p)) return p;
+  }
+
+  const binaries = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'msedge'];
+  const { execSync } = require('child_process');
+  for (const b of binaries) {
+    try {
+      const isWin = process.platform === 'win32';
+      const cmd = isWin ? `where ${b}` : `which ${b}`;
+      const res = execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim().split(/\r?\n/)[0];
+      if (res && fs.existsSync(res)) return res;
+    } catch (e) {}
+  }
+
+  throw new Error('No compatible Chrome / Chromium / Edge browser binary found on this system.');
+}
+
 server.listen(PORT, async () => {
-  const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-  const edgePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-  const browserBin = fs.existsSync(chromePath) ? chromePath : edgePath;
+  const browserBin = findBrowser();
 
   const reportPromise = new Promise(resolve => {
     const checkInterval = setInterval(() => {

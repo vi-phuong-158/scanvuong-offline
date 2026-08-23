@@ -222,8 +222,12 @@
 
 - **Quyết định:** Tách `calculateIdA4Layout(frontW, frontH, backW, backH, options)` thành hàm pure helper kiểm thử được. Giữ target width của thẻ ở **65%** chiều rộng trang A4 (`cardW = 806px` trên raster 1240×1754, tương đương ~136.5 mm trên khổ A4 210 mm); giảm khoảng cách (gap) giữa mặt trước và mặt sau từ ~70 mm xuống **~28 mm** (`165px`); và **căn giữa dọc toàn bộ cụm block (front + gap + back)** trên trang A4 thay vì chia cứng hai nửa riêng biệt.
 - **Lý do:** Kích thước 65% phóng to thẻ ~1.59x so với thẻ thật (85.6 mm) giúp chữ sắc nét dễ đọc. Thu hẹp khoảng cách xuống 28 mm và căn giữa toàn block giúp bố cục bản in A4 thanh thoát, cân xứng, khoảng trắng trên/dưới đồng đều (~4.9 cm), không để lại khoảng trống quá lớn ở giữa hai mặt thẻ.
-- **Đánh đổi:** Không có — đây là tinh chỉnh UX/print layout hoàn thiện cho bản in đẹp.
-- **Người quyết định:** Antigravity (theo final hardening PR #4).
+## [2026-08-23] Thiết kế PWA Launcher Icon cho VPH Vigil Lens (Optical Symbol Mark)
+
+- **Quyết định:** Thiết kế lại toàn bộ launcher icon PWA (`icons/icon-192.png` và `icons/icon-512.png`) theo biểu tượng quang học của VPH Vigil Lens (chữ **V** hình học platinum, 4 ngoặc lấy nét/đăng ký góc tài liệu xanh cobalt `#3b82f6` và tâm quang học `#60a5fa` trên nền slate `#090d16` có ánh sáng radial lens). Toàn bộ đồ họa chính nằm gọn trong vùng an toàn maskable (bán kính $\le 40\%$ canvas). Loại bỏ hoàn toàn chữ nhỏ/typography khỏi icon để giữ nét căng, dễ nhận diện ở mọi kích thước launcher (32px, 48px, 96px, 192px, 512px).
+- **Lý do:** Icon cũ là hình vẽ tờ giấy bitmap pixelated của ScanVuông. Icon mới đồng bộ 100% với hệ thống nhận diện thương hiệu VPH Vigil Lens, thể hiện tinh thần công cụ quang học độ chính xác cao và an toàn hiển thị khi hệ điều hành Android/iOS bo tròn hoặc cắt theo hình tròn/squircle adaptive.
+- **Đánh đổi:** Không có — icon vector được render trực tiếp qua HTML5 Canvas độ phân giải cao thành PNG, không thêm bất kỳ runtime dependency nào.
+- **Người quyết định:** Codex (theo yêu cầu acceptance PR #8).
 
 ## Template cho entry mới
 

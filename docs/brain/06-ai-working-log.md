@@ -16,6 +16,29 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-08-23] Final Acceptance Closure & PWA Icon Rebrand cho PR #8 (VPH Vigil Lens)
+
+- **Agent:** Codex
+- **Baseline SHA:** `2822426eaeebfd3a919aec7c936abaea761f6639`
+- **Thay đổi:**
+  1. **PWA Icons Rebrand:** Tạo mới hoàn toàn `icons/icon-192.png` và `icons/icon-512.png` theo biểu tượng quang học của VPH Vigil Lens (chữ V hình học, 4 ngoặc lấy nét cobalt, reticle quang học trên nền slate navy, maskable-safe).
+  2. **Service Worker Cache Bump:** Nâng cấp cache lên `vigil-lens-v2.2.1` trong `sw.js` để đảm bảo client đã cài đặt PWA tự động cập nhật icon mới.
+  3. **CI Portability & Touch Targets:** Tích hợp kiểm thử `test_touch_targets.cjs` vào `.github/workflows/static-validation.yml` kèm bộ dò tìm trình duyệt đa nền tảng (`findBrowser()` hỗ trợ Linux runner, Windows, macOS).
+  4. **Documentation & Decision Log:** Viết lại `docs/brain/04-current-tasks.md` phản ánh chính xác trạng thái PR #8, tách bạch automated offline acceptance (PASS) và manual OS installability prompt (PENDING); bổ sung quyết định thiết kế icon trong `docs/brain/03-decisions.md`.
+- **File đã sửa:** `icons/icon-192.png`, `icons/icon-512.png`, `sw.js`, `.github/workflows/static-validation.yml`, `scripts/test_touch_targets.cjs`, `scripts/acceptance_offline_pwa.cjs`, `scripts/capture_ui_states.cjs`, `scripts/generate_pwa_icons.cjs`, `docs/brain/03-decisions.md`, `docs/brain/04-current-tasks.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Hoàn thiện 100% các tiêu chuẩn release candidate cho PR #8, đóng toàn bộ acceptance gaps trước khi đưa ra khuyến nghị merge.
+- **Kiểm tra:**
+  - `python scripts/validate_static.py` PASS (9/9 checks).
+  - `node scripts/test_touch_targets.cjs` PASS (140/140 checks).
+  - `node scripts/regression_sw_update.cjs` PASS (9/9 checks).
+  - `node scripts/acceptance_offline_pwa.cjs` PASS.
+  - `node scripts/regression_export_busy.js` PASS (29/29).
+  - `node scripts/regression_scan_id.js` PASS (52/52).
+  - `node scripts/regression_ml_detector.js` PASS (53/53).
+  - `node scripts/rehearsal_dataset.cjs` PASS (25/25 images).
+
+---
+
 ## [2026-08-23] Rebrand toàn diện ứng dụng thành VPH Vigil Lens
 
 - **Agent:** Codex
