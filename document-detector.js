@@ -335,7 +335,10 @@
       tensorData[j + 2] = (data[i + 2] / 255 - IMAGENET_MEAN[2]) / IMAGENET_STD[2];
     }
 
-    return new ortModule.Tensor('float32', tensorData, [1, INPUT_SIZE, INPUT_SIZE, 3]);
+    if (ortModule && ortModule.Tensor) {
+      return new ortModule.Tensor('float32', tensorData, [1, INPUT_SIZE, INPUT_SIZE, 3]);
+    }
+    return { type: 'float32', data: tensorData, dims: [1, INPUT_SIZE, INPUT_SIZE, 3] };
   }
 
   /**

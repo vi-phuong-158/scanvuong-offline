@@ -92,14 +92,20 @@ try {
   }
 }
 
-function setupMockMlSession() {
-  DocumentDetector.__test.setInferenceSession({
+function createMockSession() {
+  return {
     inputNames: ['input'],
     run: async () => ({
       coords: { data: [0.1, 0.1, 0.9, 0.1, 0.9, 0.9, 0.1, 0.9] },
       score_logit: { data: [5.0] }
     })
-  });
+  };
+}
+
+function ensureValidRuntime() {
+  if (!hasNativeOrt) {
+    DocumentDetector.__test.setRuntimeFactory(async () => createMockSession());
+  }
 }
 
 async function runTests() {
@@ -122,7 +128,7 @@ async function runTests() {
   // -------------------------------------------------------------
   console.log('--- Gate 1: Baseline Clean ML Detection ---');
   DocumentDetector.__test.resetState();
-  if (!hasNativeOrt) setupMockMlSession();
+  ensureValidRuntime();
 
   const res1 = await DocumentDetector.detect(testCanvas, defaultOptions);
   assert(res1.source === 'SCANIC_ML', `Gate 1: source is SCANIC_ML (got ${res1.source})`);
@@ -260,7 +266,7 @@ async function runTests() {
   assert(DocumentDetector.__test.getSessionCreateCount() === 0, 'Gate 5: initial create count is 0');
   assert(DocumentDetector.__test.getSessionRunCount() === 0, 'Gate 5: initial run count is 0');
 
-  if (!hasNativeOrt) setupMockMlSession();
+  ensureValidRuntime();
 
   const res5a = await DocumentDetector.detect(testCanvas, defaultOptions);
   const res5b = await DocumentDetector.detect(testCanvas, defaultOptions);
@@ -287,7 +293,7 @@ async function runTests() {
 
   // Step 6.2: Second call with valid model MUST recover and succeed
   DocumentDetector.__test.setRuntimeFactory(null);
-  if (!hasNativeOrt) setupMockMlSession();
+  ensureValidRuntime();
 
   const recoverRes = await DocumentDetector.detect(testCanvas, defaultOptions);
   assert(recoverRes.source === 'SCANIC_ML', `Gate 6.2: recovery attempt succeeds with SCANIC_ML (got ${recoverRes.source})`);
@@ -300,7 +306,7 @@ async function runTests() {
   console.log('\n--- Gate 7: Rotation Invariance ---');
   for (const rot of [0, 90, 180, 270]) {
     DocumentDetector.__test.resetState();
-    if (!hasNativeOrt) setupMockMlSession();
+    ensureValidRuntime();
     const rotCanvas = createSyntheticCanvas(800, 600, true);
     const rotRes = await DocumentDetector.detect(rotCanvas, { ...defaultOptions, rotation: rot });
     assert(rotRes.geometryValid === true, `Gate 7: rotation ${rot}° produces valid geometry`);
