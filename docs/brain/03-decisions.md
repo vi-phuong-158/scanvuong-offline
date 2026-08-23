@@ -61,6 +61,34 @@
 - **Đánh đổi:** Không có — vẫn giữ nguyên tắc "mở tức thì kể cả offline", chỉ thêm khả năng tự cập nhật.
 - **Người quyết định:** Claude. Mỗi lần đổi asset trong `ASSETS`, bắt buộc tăng version `CACHE` — xem [01-architecture.md](01-architecture.md#lưu-ý-kiến-trúc-quan-trọng).
 
+## [2026-08-22] Đóng băng dữ liệu export bằng snapshot bất biến
+
+- **Quyết định:** `exportPdf()` tạo một snapshot độc lập của `state.pages` (`snapshotPagesForExport()`: `file`, `name`, `corners` clone sâu, `rotation`, `filter`) ngay ở dòng đầu tiên, trước khi gọi `setBusy(true)`. `makeJpegs(settings, pages)` và `renderPageCanvas()` chỉ nhận dữ liệu qua tham số `pages` (snapshot), không bao giờ dereference `state.pages[i]` trong vòng lặp export nữa.
+- **Lý do:** Trước đây `makeJpegs()` đọc trực tiếp `state.pages[i]` trong một vòng lặp `await` kéo dài; nếu người dùng đổi thứ tự trang, filter, corners/rotation, hoặc xoá/thêm trang trong lúc export đang chạy, PDF cuối có thể không phản ánh đúng trạng thái tại thời điểm bấm Xuất PDF (sai thứ tự, sai filter, sai crop, hoặc crash do trang bị xoá giữa chừng).
+- **Đánh đổi:** Không đáng kể — snapshot chỉ clone các object nhỏ (corners), không clone `File`/Blob bytes (an toàn vì `File` object không tự đổi nội dung).
+- **Người quyết định:** Claude, theo yêu cầu audit race-condition trong export flow.
+
+## [2026-08-22] Khoá mọi mutation handler khi `state.busy === true`
+
+- **Quyết định:** Audit toàn bộ event handler có thể thay đổi `state.pages`/corners/filter/rotation/thứ tự trang (thêm ảnh, camera, drag/drop import, reorder thumbnail, move up/down, rotate, delete, clear all, reset crop, detect, auto-detect all, đổi filter, export lần hai) và thêm guard `if (state.busy) return;` trực tiếp trong từng handler — không chỉ dựa vào thuộc tính `disabled` của nút. `setBusy()` cũng disable thêm `clearBtn` và các nút `.filter-chip` (trước đó không nằm trong danh sách disable). Independent review (Codex-style second pass) phát hiện thêm một khoảng hở: `pointerdown` trên `#editorCanvas` guard đúng lúc bắt đầu kéo góc, nhưng `pointermove`/`endCornerDrag` (kết thúc kéo) không tự kiểm tra lại `state.busy` — nếu `busy` chuyển thành `true` giữa lúc đang kéo (ví dụ một thao tác async khác bắt đầu), `pointermove` vẫn ghi tiếp vào `page.corners`. Đã vá bằng cách kiểm tra `state.busy` trong cả `pointermove` (huỷ kéo ngay, đặt lại `dragCorner=-1`) và `endCornerDrag` (không `orderCorners()`/render lại nếu đang busy).
+- **Lý do:** `disabled` trên nút không chặn được drag/drop thumbnail (không đi qua thuộc tính `disabled`) và không phải là phòng thủ đáng tin cậy cho mọi code path — cần guard logic ở tầng handler để đảm bảo không có đường nào mutate document trong lúc export/detect đang chạy.
+- **Đánh đổi:** Không có — guard là một dòng `if` đơn giản mỗi handler, không thay đổi hành vi khi không busy.
+- **Người quyết định:** Claude, theo yêu cầu audit busy-state boundary.
+
+## [2026-08-22] `sw.js`: refresh nền phải gắn với `event.waitUntil()`
+
+- **Quyết định:** Khi `fetch` handler của `sw.js` trả về cached response ngay lập tức, fetch refresh chạy nền (để cập nhật cache cho lần mở sau) được bọc trong `event.waitUntil()` thay vì chạy tự do không ai theo dõi. Tăng `CACHE` lên `scanvuong-v1.0.2` vì thay đổi semantics; `activate` chỉ xoá cache có tiền tố `scanvuong-` khác version hiện tại (thay vì xoá mọi cache khác tên) để tránh rủi ro va chạm tên với cache khác nếu có trong tương lai.
+- **Lý do:** Không có `waitUntil`, trình duyệt có thể huỷ service worker ngay sau khi `respondWith()` resolve bằng cached response — refresh nền khi đó có thể không bao giờ hoàn tất, khiến "sw.js tự cập nhật cache khi có mạng" (quyết định trước đó, xem mục "Service Worker: cache-first kèm refresh nền" phía trên) không thực sự hoạt động đáng tin cậy.
+- **Đánh đổi:** Không có — hành vi cache-first/offline-first/same-origin/GET-only giữ nguyên hoàn toàn, chỉ sửa lifetime của refresh nền.
+- **Người quyết định:** Claude, theo yêu cầu audit service worker lifecycle.
+
+## [2026-08-23] Đóng băng luôn cấu hình xuất (quality/pageSize/margin/fileName), không chỉ `state.pages`
+
+- **Quyết định:** Đổi `snapshotPagesForExport()` (chỉ đóng băng trang) thành được gọi bên trong `snapshotExportJob()`, đóng băng thêm `quality`, `pageSize`, `marginToggle.checked`, `fileName` (đã sanitize) — đọc `els.*` đúng một lần ở đầu `exportPdf()`, trước `setBusy(true)`. Toàn bộ phần còn lại của `exportPdf()` (bao gồm nhánh nén lại nhiều vòng cho chế độ "2mb" và lời gọi `buildPdf()`) chỉ dùng `exportJob.*`. `setBusy()` disable thêm 4 control: `fileName`, `pageSize`, `quality`, `marginToggle`.
+- **Lý do:** Người dùng test PR #1 phát hiện: dù trang đã được snapshot đúng (P1, merge trước đó), 4 control cấu hình xuất vẫn bị đọc lại từ `els.*` ở cuối `exportPdf()` — SAU KHI vòng lặp render/nén nhiều trang đã chạy xong (có thể mất vài giây tới vài chục giây với chế độ nén mạnh). Đổi `pageSize`/chất lượng/lề/tên file trong lúc export đang chạy khiến PDF cuối dùng cấu hình khác thời điểm bấm "Xuất PDF" — cùng loại race đã sửa cho `state.pages` ở P1, chỉ khác là áp dụng cho export settings thay vì page data.
+- **Đánh đổi:** Không có — cùng cơ chế snapshot đã có, chỉ mở rộng phạm vi những gì được đóng băng.
+- **Người quyết định:** Claude, theo phát hiện của người dùng khi review PR #1 trước khi merge; xác minh bằng cách mở rộng `scripts/regression_export_busy.js` (Case 5) — parse MediaBox/nội dung PDF thật để xác nhận `pageSize`/`margin`/tên file xuất ra vẫn đúng giá trị tại thời điểm bấm Export dù bị đổi trực tiếp giữa chừng; đã tự xác minh test không vô nghĩa bằng cách revert fix trên bản `app.js` scratch và xác nhận harness FAIL đúng chỗ (3/3 assertion liên quan).
+
 ## Template cho entry mới
 
 ```

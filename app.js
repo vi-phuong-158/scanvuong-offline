@@ -74,8 +74,10 @@
     state.busy = busy;
     els.processingText.textContent = text;
     els.processingOverlay.classList.toggle('hidden', !busy);
-    [els.detectBtn, els.resetCropBtn, els.rotateBtn, els.moveUpBtn, els.moveDownBtn, els.deleteBtn, els.autoAllBtn, els.exportBtn]
+    [els.detectBtn, els.resetCropBtn, els.rotateBtn, els.moveUpBtn, els.moveDownBtn, els.deleteBtn, els.autoAllBtn, els.exportBtn, els.clearBtn,
+     els.fileName, els.pageSize, els.quality, els.marginToggle]
       .forEach(el => { if (el) el.disabled = busy; });
+    $$('.filter-chip').forEach(el => { el.disabled = busy; });
   }
 
   function selectedPage() {
@@ -114,10 +116,11 @@
         <span class="thumb-status ${page.confidence < 0.58 ? 'warn' : ''}" title="${page.confidence < 0.58 ? 'Cần kiểm tra góc cắt' : 'Đã nhận diện tốt'}"></span>
       `;
       btn.addEventListener('click', () => { state.selectedId = page.id; renderThumbs(); renderSelected(); });
-      btn.addEventListener('dragstart', (e) => { state.dragId = page.id; e.dataTransfer.effectAllowed = 'move'; });
+      btn.addEventListener('dragstart', (e) => { if (state.busy) { e.preventDefault(); return; } state.dragId = page.id; e.dataTransfer.effectAllowed = 'move'; });
       btn.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
       btn.addEventListener('drop', (e) => {
         e.preventDefault();
+        if (state.busy) return;
         const from = getPageIndex(state.dragId), to = getPageIndex(page.id);
         if (from < 0 || to < 0 || from === to) return;
         const [moved] = state.pages.splice(from, 1);
@@ -474,12 +477,17 @@
   });
   els.editorCanvas.addEventListener('pointermove', (e) => {
     const idx=state.preview.dragCorner,map=state.preview.mapping,page=selectedPage(); if(idx<0||!map||!page)return;
+    // Something else (e.g. an in-flight detect/export) can flip state.busy
+    // true after the drag already started via pointerdown's guard — bail out
+    // of the drag immediately rather than keep writing to page.corners.
+    if(state.busy){state.preview.dragCorner=-1;return;}
     const p=pointerToCss(e); page.corners[idx]={x:clamp((p.x-map.ox)/map.dw,.002,.998),y:clamp((p.y-map.oy)/map.dh,.002,.998)};
     page.confidence=Math.max(page.confidence,.62); drawEditor();
   });
   function endCornerDrag(){
     if(state.preview.dragCorner<0)return;
     state.preview.dragCorner=-1;
+    if(state.busy)return;
     // Re-label TL/TR/BR/BL only once the drag ends. Re-ordering on every
     // pointermove can move the handle out from under the finger mid-drag.
     const page=selectedPage(); if(page)page.corners=orderCorners(page.corners);
@@ -638,11 +646,20 @@
     chunks.push(strBytes(xref)); return new Blob([concatBytes(chunks)],{type:'application/pdf'});
   }
 
-  async function makeJpegs(settings){
+  // Frozen per-page data the export pipeline reads from — never state.pages
+  // directly — so reorder/filter/corner/rotation edits made while an export
+  // is in flight cannot change what gets written to the PDF.
+  function snapshotPagesForExport(){
+    return state.pages.map(p => ({
+      file: p.file, name: p.name, corners: cloneCorners(p.corners), rotation: p.rotation, filter: p.filter
+    }));
+  }
+
+  async function makeJpegs(settings,pages){
     const items=[];
-    for(let i=0;i<state.pages.length;i++){
-      setProgress((i/state.pages.length)*88,`Đang xử lý trang ${i+1}/${state.pages.length}…`);
-      const canvas=await renderPageCanvas(state.pages[i],settings.maxEdge); const blob=await canvasToJpeg(canvas,settings.jpeg); const bytes=new Uint8Array(await blob.arrayBuffer());
+    for(let i=0;i<pages.length;i++){
+      setProgress((i/pages.length)*88,`Đang xử lý trang ${i+1}/${pages.length}…`);
+      const canvas=await renderPageCanvas(pages[i],settings.maxEdge); const blob=await canvasToJpeg(canvas,settings.jpeg); const bytes=new Uint8Array(await blob.arrayBuffer());
       items.push({bytes,width:canvas.width,height:canvas.height}); await sleepFrame();
     }
     return items;
@@ -650,21 +667,35 @@
 
   function setProgress(percent,label){els.exportProgress.classList.remove('hidden');els.progressBar.style.width=`${clamp(percent,0,100)}%`;els.progressLabel.textContent=label;}
 
+  // Frozen alongside the page snapshot: the export-wide settings, so changing
+  // quality/page size/margin/filename in the UI while an export is already
+  // running can't change what gets written to the PDF either.
+  function snapshotExportJob(){
+    return {
+      pages: snapshotPagesForExport(),
+      quality: els.quality.value,
+      pageSize: els.pageSize.value,
+      margin: els.marginToggle.checked,
+      fileName: sanitizeFilename(els.fileName.value||'ScanVuong')
+    };
+  }
+
   async function exportPdf(){
     if(!state.pages.length||state.busy)return;
+    const exportJob=snapshotExportJob();
     setBusy(true,'Đang xuất PDF…');els.exportNotice.classList.add('hidden');setProgress(1,'Đang chuẩn bị…');
     try{
-      const q=els.quality.value; let settings={...QUALITY[q]}; let jpegs=await makeJpegs(settings); let total=jpegs.reduce((s,j)=>s+j.bytes.length,0);
-      if(q==='2mb'&&total>1.82*1024*1024){
+      let settings={...QUALITY[exportJob.quality]}; let jpegs=await makeJpegs(settings,exportJob.pages); let total=jpegs.reduce((s,j)=>s+j.bytes.length,0);
+      if(exportJob.quality==='2mb'&&total>1.82*1024*1024){
         const rounds=[{maxEdge:1250,jpeg:.52},{maxEdge:1050,jpeg:.43},{maxEdge:900,jpeg:.36}];
         for(let r=0;r<rounds.length&&total>1.82*1024*1024;r++){
-          setProgress(5,`Đang nén thêm để gần 2 MB (lần ${r+1})…`);settings=rounds[r];jpegs=await makeJpegs(settings);total=jpegs.reduce((s,j)=>s+j.bytes.length,0);
+          setProgress(5,`Đang nén thêm để gần 2 MB (lần ${r+1})…`);settings=rounds[r];jpegs=await makeJpegs(settings,exportJob.pages);total=jpegs.reduce((s,j)=>s+j.bytes.length,0);
         }
       }
-      setProgress(92,'Đang đóng gói PDF…'); const pdf=buildPdf(jpegs,els.pageSize.value,els.marginToggle.checked); const name=sanitizeFilename(els.fileName.value||'ScanVuong')+'.pdf';
+      setProgress(92,'Đang đóng gói PDF…'); const pdf=buildPdf(jpegs,exportJob.pageSize,exportJob.margin); const name=exportJob.fileName+'.pdf';
       const a=document.createElement('a');a.href=URL.createObjectURL(pdf);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
       setProgress(100,`Hoàn tất · ${(pdf.size/1024/1024).toFixed(2)} MB`);
-      if(q==='2mb'&&pdf.size>2*1024*1024){els.exportNotice.textContent=`PDF hiện ${(pdf.size/1024/1024).toFixed(2)} MB. Với ${state.pages.length} trang, không thể giữ chất lượng đọc tốt mà xuống dưới 2 MB; app đã nén ở mức an toàn nhất.`;els.exportNotice.classList.remove('hidden');}
+      if(exportJob.quality==='2mb'&&pdf.size>2*1024*1024){els.exportNotice.textContent=`PDF hiện ${(pdf.size/1024/1024).toFixed(2)} MB. Với ${jpegs.length} trang, không thể giữ chất lượng đọc tốt mà xuống dưới 2 MB; app đã nén ở mức an toàn nhất.`;els.exportNotice.classList.remove('hidden');}
       toast(`Đã xuất ${name} · ${(pdf.size/1024/1024).toFixed(2)} MB`,3500);
     }catch(err){console.error(err);els.exportNotice.textContent=`Không xuất được PDF: ${err.message||err}`;els.exportNotice.classList.remove('hidden');toast('Có lỗi khi xuất PDF.');}
     finally{setBusy(false);setTimeout(()=>els.exportProgress.classList.add('hidden'),5000);}
@@ -676,21 +707,25 @@
 
   // ---------- Events ----------
   els.chooseBtn.addEventListener('click',()=>els.fileInput.click()); els.addBtn.addEventListener('click',()=>els.fileInput.click()); els.cameraBtn.addEventListener('click',()=>els.cameraInput.click());
-  els.fileInput.addEventListener('change',async e=>{await addFiles(e.target.files);e.target.value='';}); els.cameraInput.addEventListener('change',async e=>{await addFiles(e.target.files);e.target.value='';});
+  // Every handler below guards on state.busy itself — during an export the
+  // matching buttons are also disabled, but drag/drop and other code paths
+  // don't go through `disabled`, so the guard has to live in the handler.
+  els.fileInput.addEventListener('change',async e=>{if(state.busy){e.target.value='';return;}await addFiles(e.target.files);e.target.value='';});
+  els.cameraInput.addEventListener('change',async e=>{if(state.busy){e.target.value='';return;}await addFiles(e.target.files);e.target.value='';});
   ['dragenter','dragover'].forEach(ev=>els.dropZone.addEventListener(ev,e=>{e.preventDefault();els.dropZone.classList.add('dragging');}));
   ['dragleave','drop'].forEach(ev=>els.dropZone.addEventListener(ev,e=>{e.preventDefault();els.dropZone.classList.remove('dragging');}));
-  els.dropZone.addEventListener('drop',e=>addFiles(e.dataTransfer.files)); els.dropZone.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();els.fileInput.click();}});
+  els.dropZone.addEventListener('drop',e=>{if(state.busy)return;addFiles(e.dataTransfer.files);}); els.dropZone.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();els.fileInput.click();}});
 
-  els.detectBtn.addEventListener('click',async()=>{const p=selectedPage();if(!p)return;setBusy(true,'Đang nhận lại mép giấy…');try{await detectPage(p);}finally{setBusy(false);}});
-  els.resetCropBtn.addEventListener('click',()=>{const p=selectedPage();if(!p)return;p.corners=cloneCorners(DEFAULT_CORNERS);p.confidence=.4;renderThumbs();renderSelected();updateSummaryOnly();});
-  els.rotateBtn.addEventListener('click',()=>{const p=selectedPage();if(!p)return;p.rotation=(p.rotation+90)%360;p.corners=rotateCorners90(p.corners);renderSelected();renderThumbs();});
+  els.detectBtn.addEventListener('click',async()=>{if(state.busy)return;const p=selectedPage();if(!p)return;setBusy(true,'Đang nhận lại mép giấy…');try{await detectPage(p);}finally{setBusy(false);}});
+  els.resetCropBtn.addEventListener('click',()=>{if(state.busy)return;const p=selectedPage();if(!p)return;p.corners=cloneCorners(DEFAULT_CORNERS);p.confidence=.4;renderThumbs();renderSelected();updateSummaryOnly();});
+  els.rotateBtn.addEventListener('click',()=>{if(state.busy)return;const p=selectedPage();if(!p)return;p.rotation=(p.rotation+90)%360;p.corners=rotateCorners90(p.corners);renderSelected();renderThumbs();});
   els.deleteBtn.addEventListener('click',()=>removeSelected());
-  function removeSelected(){const i=getPageIndex(state.selectedId);if(i<0)return;const [p]=state.pages.splice(i,1);URL.revokeObjectURL(p.url);state.selectedId=state.pages[Math.min(i,state.pages.length-1)]?.id||null;updateShell();}
+  function removeSelected(){if(state.busy)return;const i=getPageIndex(state.selectedId);if(i<0)return;const [p]=state.pages.splice(i,1);URL.revokeObjectURL(p.url);state.selectedId=state.pages[Math.min(i,state.pages.length-1)]?.id||null;updateShell();}
   els.moveUpBtn.addEventListener('click',()=>moveSelected(-1));els.moveDownBtn.addEventListener('click',()=>moveSelected(1));
-  function moveSelected(delta){const i=getPageIndex(state.selectedId),j=i+delta;if(i<0||j<0||j>=state.pages.length)return;[state.pages[i],state.pages[j]]=[state.pages[j],state.pages[i]];renderThumbs();}
-  els.clearBtn.addEventListener('click',()=>{if(!state.pages.length)return;if(!confirm('Xóa toàn bộ ảnh khỏi phiên làm việc này?'))return;state.pages.forEach(p=>URL.revokeObjectURL(p.url));state.pages=[];state.selectedId=null;updateShell();});
+  function moveSelected(delta){if(state.busy)return;const i=getPageIndex(state.selectedId),j=i+delta;if(i<0||j<0||j>=state.pages.length)return;[state.pages[i],state.pages[j]]=[state.pages[j],state.pages[i]];renderThumbs();}
+  els.clearBtn.addEventListener('click',()=>{if(state.busy)return;if(!state.pages.length)return;if(!confirm('Xóa toàn bộ ảnh khỏi phiên làm việc này?'))return;state.pages.forEach(p=>URL.revokeObjectURL(p.url));state.pages=[];state.selectedId=null;updateShell();});
   els.autoAllBtn.addEventListener('click',async()=>{if(state.busy)return;setBusy(true,'Đang nhận lại tất cả…');try{for(let i=0;i<state.pages.length;i++){els.processingText.textContent=`Đang nhận mép ${i+1}/${state.pages.length}…`;await detectPage(state.pages[i],false);await sleepFrame();}}finally{setBusy(false);updateShell();}});
-  $$('.filter-chip').forEach(btn=>btn.addEventListener('click',()=>{const p=selectedPage();if(!p)return;p.filter=btn.dataset.filter;$$('.filter-chip').forEach(b=>b.classList.toggle('active',b===btn));drawEditor();}));
+  $$('.filter-chip').forEach(btn=>btn.addEventListener('click',()=>{if(state.busy)return;const p=selectedPage();if(!p)return;p.filter=btn.dataset.filter;$$('.filter-chip').forEach(b=>b.classList.toggle('active',b===btn));drawEditor();}));
   els.exportBtn.addEventListener('click',exportPdf);
   window.addEventListener('resize',()=>{clearTimeout(window._scanResize);window._scanResize=setTimeout(drawEditor,80);});
 

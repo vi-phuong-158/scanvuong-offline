@@ -35,6 +35,7 @@ _(trống)_
 
 ## Đã hoàn thành gần đây
 
+- [2026-08-22] Đóng băng export state (snapshot bất biến trước `setBusy(true)`), khoá mọi mutation handler khi `busy`, sửa SW refresh lifecycle (`event.waitUntil`), bỏ số commit hard-code trong docs, thêm CI (`static-validation.yml` + `scripts/validate_static.py`) và regression harness dependency-free (`scripts/regression_export_busy.js`) — xem chi tiết trong [06-ai-working-log.md](06-ai-working-log.md). `GATE-01` **không** bị ảnh hưởng bởi task này — vẫn đang mở, chưa chạy trên Chrome/Edge thật.
 - [2026-08-22] Audit toàn bộ source, sửa các lỗi phát hiện qua rehearsal chức năng (xem [03-decisions.md](03-decisions.md)), viết `AGENTS.md`/`CLAUDE.md`/`README.md` đầu tiên cho dự án, `git init` cục bộ, cập nhật `PROJECTS.md` ở workspace root.
 - [2026-08-22] Hai lần thử đóng `GATE-01` — cả hai đều BLOCKED vì không có Chrome/Edge thật trong môi trường (không phải lỗi app, xem chi tiết trong `GATE-01` ở trên).
 - [2026-08-22] Dựng bộ AI project brain (`docs/brain/00-06`), hợp nhất với `AGENTS.md`/`CLAUDE.md` đã có sẵn từ trước (giữ nguyên nội dung kiến trúc/bảo mật/validation, thêm cấu trúc trỏ tới `docs/brain/` theo khung của skill `setup-ai-brain`).
