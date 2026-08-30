@@ -78,3 +78,15 @@ Không nằm trong phạm vi công việc thường xuyên — dự án là stat
 - `server.py` tự thử các cổng 8765→8768 nếu cổng trước bị chiếm — luôn đọc URL thật được in ra console thay vì giả định 8765.
 - Chế độ xuất PDF "Cố gắng dưới 2 MB" có thể mất vài chục giây với nhiều trang nội dung phức tạp — đây là hành vi bình thường (nén lại nhiều vòng), không phải app bị treo.
 - Mở trực tiếp `index.html` bằng `file://` sẽ **không** đăng ký được Service Worker — đây là giới hạn của trình duyệt, không phải lỗi app; phải chạy qua `http://localhost` hoặc HTTPS thật để test PWA/offline.
+
+## Party Document Mode validation
+
+    node --check party-pdf.js
+    node --check party-mode.js
+    node --check party-taxonomy.js
+    node scripts/regression_party_mode.cjs
+    node scripts/acceptance_party_ui.cjs
+
+Regression này xác minh PDF 10 trang tách đúng 2 trang, output giữ content stream/page-object path không có JPEG conversion cho source page, hybrid giữ source page và thêm image page, taxonomy có 104 id duy nhất, tìm kiếm không dấu và filename canonical type 05. Browser acceptance_party_ui.cjs còn kiểm tra thumbnail canvas có pixel nội dung thật, đủ portrait/landscape, đúng thứ tự, back/re-entry, overflow và touch target tại 1792×896, 1366×768, 1024×768, 768×1024, 390×844. Đây vẫn không thay thế nghiệm thu offline PWA thủ công.
+
+Preview hardening acceptance thêm delayed renderer để tạo stale generation có chủ đích, kiểm tra re-render và back/re-entry khi job còn pending, rồi chạy synthetic PDF 100 trang ảnh qua browser để xác nhận 100 derivative renders, cache không vượt `16/16`, và cache/DOM về `0` khi rời Party Mode. Real-PDF acceptance chỉ chạy khi có corpus local được phép; không dùng production input/output.

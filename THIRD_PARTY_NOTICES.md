@@ -204,3 +204,16 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE USE OR INABILITY TO USE THE
 FONT SOFTWARE OR FROM OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
+
+## 5. Party taxonomy mirror (project data, not a runtime dependency)
+
+assets/party/document_types.json and party-taxonomy.js are a local mirror of the canonical project taxonomy in vi-phuong-158/hoso-digitization-manager, branch main, commit bfdcbaae55238b06bdf297803789c63002741cc3. The mirror contains 104 document types and is included only for offline operation; no third-party library is added by Party Document Mode.
+---
+
+## 6. PDF.js (`assets/vendor/pdfjs/`)
+
+- **Upstream repository:** https://github.com/mozilla/pdf.js
+- **Pinned version:** 5.7.284
+- **License:** Apache License 2.0
+- **Use in this project:** local-only PDF thumbnail rendering for Party Document Mode. The worker and module are vendored and precached; source PDF export continues to copy original PDF page objects rather than using thumbnail pixels.
+- **Full license text:** `assets/vendor/pdfjs/LICENSE`

@@ -1,13 +1,19 @@
-const CACHE = 'vigil-lens-v2.3.0';
+const CACHE = 'vigil-lens-v2.5.0';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './party-pdf.js',
+  './party-mode.js',
+  './party-taxonomy.js',
+  './assets/vendor/pdfjs/pdf.mjs',
+  './assets/vendor/pdfjs/pdf.worker.mjs',
   './document-detector.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './assets/party/document_types.json',
   './assets/fonts/BeVietnamPro-Regular.woff2',
   './assets/fonts/BeVietnamPro-Medium.woff2',
   './assets/fonts/BeVietnamPro-SemiBold.woff2',

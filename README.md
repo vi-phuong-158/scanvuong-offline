@@ -1,4 +1,4 @@
-﻿# Vigil Lens
+# Vigil Lens
 
 > **See clearly. Capture precisely.**
 
@@ -35,6 +35,15 @@ $$\text{Capture} \longrightarrow \text{Detect} \longrightarrow \text{Correct} \l
 - Tự động ghép 2 mặt lên **một trang A4 dọc duy nhất** theo tỷ lệ chuẩn, căn giữa đối xứng và giữ nguyên màu ảnh/mã QR.
 - Bảo vệ dữ liệu cá nhân: không OCR, không trích xuất số thẻ, không nhận diện khuôn mặt.
 
+### 3. Scan tài liệu Đảng (Party Document Mode)
+- Nhập ảnh hoặc PDF lớn hoàn toàn tại chỗ; thumbnail PDF render bằng PDF.js 5.7.284 được vendor nội bộ, còn export giữ page-object copier local.
+- Chủ động tách/ghép, đổi thứ tự, chuyển trang giữa các tài liệu, thêm trang, thay trang và bỏ trang khỏi tài liệu.
+- Theo dõi page coverage của phiên: X/Y trang nguồn đã được phân vào tài liệu; không có checklist hay trạng thái thiếu thành phần hồ sơ.
+- Chọn loại tài liệu từ taxonomy canonical 104 loại, tìm theo mã/tên/không dấu; filename lấy từ filename_base, không hard-code.
+- Nhiều tài liệu cùng loại chỉ nhận hậu tố .1/.2/... sau khi người dùng xác nhận thứ tự.
+- Export từng tài liệu dạng PDF; trang PDF nguồn được copy trực tiếp, ảnh mới chỉ qua canvas crop/filter do cán bộ kiểm soát. Party mode không gọi OCR, AI hoặc ML, không upload và không persistence.
+- Party Mode chỉ là công cụ scan và xuất tài liệu, không phải phần mềm quản lý hồ sơ.
+
 ---
 
 ## Chạy ứng dụng
@@ -54,7 +63,7 @@ $$\text{Capture} \longrightarrow \text{Detect} \longrightarrow \text{Correct} \l
 
 1. Triển khai thư mục tĩnh lên một host HTTPS (Vercel, Cloudflare Pages, GitHub Pages...).
 2. Mở trình duyệt Chrome/Safari và chọn **Cài đặt ứng dụng** (**Add to Home Screen**).
-3. Ứng dụng sẽ được lưu vào Service Worker Cache (`vigil-lens-v2.2.0`) và hoạt động **100% Offline** không cần kết nối mạng.
+3. Ứng dụng sẽ được lưu vào Service Worker Cache (`vigil-lens-v2.5.0`) và hoạt động **100% Offline** không cần kết nối mạng.
 
 ---
 
@@ -73,14 +82,18 @@ $$\text{Capture} \longrightarrow \text{Detect} \longrightarrow \text{Correct} \l
 | `index.html` | Giao diện ứng dụng Vigil Lens, khai báo UI |
 | `styles.css` | Hệ thống Design Tokens, typography Be Vietnam Pro & bố cục responsive |
 | `app.js` | Quản lý vòng đời UI, tương tác 4 góc, bộ lọc, xử lý trang và xuất PDF |
+| `party-mode.js` | Quản lý vòng đời và tương tác Party Document Mode |
+| `party-pdf.js` | Trình import, preview và copy trang PDF local không qua rasterization |
+| `party-taxonomy.js` | Mirror local danh mục 104 loại tài liệu Đảng |
 | `document-detector.js` | Module nhận diện 4 góc tài liệu (ML inference + geometry validator + classical CV) |
 | `assets/fonts/` | Bộ font tiếng Việt Be Vietnam Pro tự host cục bộ (WOFF2) |
 | `assets/ml/` | Mô hình DocCornerNet Lean (`.ort`) và ONNX Runtime Web WASM |
+| `assets/vendor/pdfjs/` | PDF.js 5.7.284 và worker local dùng riêng để render thumbnail PDF |
 | `sw.js` | Service Worker quản lý precache và chế độ hoạt động offline |
 | `manifest.webmanifest` | Khai báo PWA (Vigil Lens, standalone display, icons) |
 | `icons/` | Icon ứng dụng PWA (192px, 512px) |
 | `server.py` | Máy chủ cục bộ lightweight bằng Python chuẩn |
-| `THIRD_PARTY_NOTICES.md` | Giấy phép phần mềm bên thứ ba (MIT, SIL OFL 1.1) |
+| `THIRD_PARTY_NOTICES.md` | Giấy phép phần mềm bên thứ ba (MIT, SIL OFL 1.1, Apache 2.0) |
 
 ---
 
@@ -90,6 +103,9 @@ $$\text{Capture} \longrightarrow \text{Detect} \longrightarrow \text{Correct} \l
 # Kiểm tra cú pháp
 node --check app.js
 node --check document-detector.js
+node --check party-pdf.js
+node --check party-mode.js
+node --check party-taxonomy.js
 node --check sw.js
 
 # Kiểm tra tĩnh & bảo mật
@@ -102,12 +118,11 @@ node scripts/test_touch_targets.cjs
 node scripts/regression_export_busy.js
 node scripts/regression_scan_id.js
 node scripts/regression_ml_detector.js
+node scripts/regression_party_mode.cjs
 node scripts/regression_sw_update.cjs
 
-# Kiểm tra tập ảnh thực tế
-node scripts/rehearsal_dataset.cjs
-
-# Kiểm tra PWA Offline
+# Browser acceptance
+node scripts/acceptance_party_ui.cjs
 node scripts/acceptance_offline_pwa.cjs
 ```
 

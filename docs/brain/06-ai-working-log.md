@@ -356,3 +356,51 @@
 - **File đã tạo:** `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore` (lần đầu, trước khi có bộ brain này).
 - **Lý do:** Yêu cầu ban đầu của người dùng — setup project hoàn chỉnh, tự audit và sửa lỗi trong phạm vi V1, không mở rộng scope.
 - **Kiểm tra:** Bộ rehearsal 5 case tổng hợp (thẳng, xiên mạnh, tương phản thấp, landscape, nhiều trang) chạy trong browser pane, xuất PDF được xác minh lại bằng `pypdf` (parse strict) và `pymupdf` (render từng trang + kiểm tra vị trí marker màu) — xác nhận không trang nào bị lật/mirror/sai thứ tự.
+
+## [2026-08-30] VPH Vigil Lens — Party Document Mode
+- Agent: Codex
+- Thay đổi: Thêm mode Scan tài liệu Đảng; nhập ảnh/PDF local; page coverage; split/merge/reorder/move/add/replace/remove; tìm kiếm taxonomy 104 loại; canonical filename; xác nhận thứ tự tài liệu cùng loại; export PDF source-page copy và hybrid; footer nhận diện.
+- File đã sửa: index.html, styles.css, app.js, sw.js, scripts/validate_static.py, .github/workflows/static-validation.yml, README.md, docs/brain/00-project-overview.md, docs/brain/01-architecture.md, docs/brain/03-decisions.md, docs/brain/04-current-tasks.md, docs/brain/05-testing-and-deploy.md, docs/brain/06-ai-working-log.md, THIRD_PARTY_NOTICES.md.
+- File đã tạo: party-mode.js, party-pdf.js, party-taxonomy.js, assets/party/document_types.json, scripts/regression_party_mode.cjs, scripts/acceptance_party_ui.cjs.
+- Lý do: Cung cấp công cụ scan/tách/ghép/xuất tài liệu Đảng tại chỗ mà không biến Vigil Lens thành hệ thống quản lý hồ sơ; bảo toàn page object PDF gốc và không thêm OCR/AI/backend/storage.
+- Kiểm tra: node --check cho script mới; node scripts/regression_party_mode.cjs 12/12; python scripts/validate_static.py sau khi cập nhật asset; các regression cũ và browser/offline Party acceptance còn phải chạy trước verdict kỹ thuật cuối.
+
+## [2026-08-30] Party Mode — real PDF thumbnail preview follow-up
+
+- Agent: Codex
+- Thay đổi: Thay placeholder số trang bằng canvas preview cục bộ theo từng PDF page; đọc MediaBox/CropBox, vector content và image XObject/stream filters phổ biến; giữ nguyên page model `{source, sourcePage}` và export PDF source-page copy. Thêm trạng thái loading/error riêng từng trang và kiểm tra responsive workspace.
+- File đã sửa: `party-pdf.js`, `party-mode.js`, `styles.css`, `scripts/acceptance_party_ui.cjs`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/04-current-tasks.md`, `docs/brain/05-testing-and-deploy.md`, `docs/brain/06-ai-working-log.md`.
+- Lý do: Người dùng cần nhận biết nội dung thật, thứ tự và tỷ lệ portrait/landscape trước thao tác Party Mode; không thêm PDF.js/framework/dependency và không gửi PDF ra mạng.
+- Kiểm tra: Chromium headless PASS với synthetic PDF 10 trang có vector content khác nhau, portrait/landscape, back/re-entry, no console error, no horizontal overflow và touch target tại 1792×896, 1366×768, 1024×768, 768×1024, 390×844; node check, Party regression 13/13, static validation và git diff --check PASS.
+
+## [2026-08-30] Party PDF preview lifecycle/resource hardening
+
+- Agent: Codex
+- Baseline: branch `feat/party-document-mode`; accepted thumbnail commit `e4f599a7c89d476e0fee74ded90a09ae250e9aee`. Khi bắt đầu, local checkout đã có sẵn commit tiếp nối `6916531962aae78108818105c1e3f757cf5e844a` chưa push; không reset/amend.
+- Thay đổi: thêm `previewGeneration` invalidation cho async thumbnail jobs; kiểm tra generation + page identity + connected canvas trước mọi state/paint/DOM mutation; cache derivative image LRU giới hạn 16; bounds cho stream length, Flate decoded bytes, image dimensions/components; cleanup pending/resolved preview resources và canvas DOM khi rời mode. Mở rộng browser acceptance với delayed stale job, back/re-entry, 100-page image-heavy synthetic PDF và cache cleanup.
+- Finding thực tế trong acceptance: `deactivate()` trước đây clear state/cache nhưng giữ canvas preview trong DOM ẩn; đã sửa tối thiểu bằng cách clear `#partyDocuments` khi discard Party state.
+- Kiểm tra: `node scripts/acceptance_party_ui.cjs` PASS (Party UI 3 viewports, PDF workflow, lazy 100 pages, stale lifecycle, back/re-entry, 100/100 image derivative probe, cache 16/16, cleanup 0, corrupt/encrypted handling, workspace 5 viewports); Party regression 13/13; export busy 29/29; Service Worker 9/9; Scan ID exit 0; static validation PASS; touch target 145/145; offline PWA acceptance PASS; `git diff --check` PASS.
+- Real-PDF acceptance: NOT_EXECUTED — không có PDF trong checkout và không được lấy dữ liệu production; synthetic acceptance không được trình bày như real-PDF acceptance.
+- Source review sau fix: P1 stale job FIXED; P1 unbounded full-resolution cache FIXED; P2 stream/image allocation bounds FIXED; bitmap/object URL/DOM cleanup FIXED; rare CCITT/JPX/inline full parser DEFERRED và fail-isolated.
+
+## [2026-08-30] PR #9 CI Browser Discovery Hotfix
+- **Agent:** Antigravity (Gemini 3.7 Flash)
+- **Thay đổi:**
+  1. Cập nhật hàm `browserPath()` trong `scripts/acceptance_party_ui.cjs` sang cơ chế phát hiện trình duyệt cross-platform deterministic 4 cấp:
+     - 1. Env variables (`CHROME_PATH`, `GOOGLE_CHROME_BIN`, `BROWSER_PATH`, `CHROMIUM_PATH`).
+     - 2. Linux absolute paths (`/usr/bin/google-chrome`, `/usr/bin/google-chrome-stable`, `/usr/bin/chromium`, `/usr/bin/chromium-browser`).
+     - 3. Windows absolute paths (`C:\Program Files\Google\Chrome\...`, `C:\Program Files (x86)\...`, Edge paths).
+     - 4. PATH lookup an toàn qua `execFileSync` không shell-injection (`where` trên Windows, `which` trên Unix/Linux/macOS).
+  2. Thêm bước diagnostic kiểm tra trình duyệt `Discover Chromium executable` trong CI workflow `.github/workflows/static-validation.yml`.
+- **File đã sửa:** `scripts/acceptance_party_ui.cjs`, `.github/workflows/static-validation.yml`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Khắc phục lỗi CI GitHub Actions runner Ubuntu 24.04 không tìm thấy trình duyệt do `where` chỉ hoạt động trên Windows.
+- **Kiểm tra:**
+  - Unit tests cho resolver logic (5/5 PASS).
+  - Party UI browser acceptance: `node scripts/acceptance_party_ui.cjs` PASS (viewports 1792×896, 1366×768, 390×844, PDF workflow, 100-page lazy thumbnail, preview lifecycle, corrupt/encrypted handling, smoke viewports).
+  - Party regression: `node scripts/regression_party_mode.cjs` (13/13 PASS).
+  - Export busy regression: `node scripts/regression_export_busy.js` (29/29 PASS).
+  - Scan ID regression: `node scripts/regression_scan_id.js` (52/52 PASS).
+  - Service Worker upgrade regression: `node scripts/regression_sw_update.cjs` (9/9 PASS).
+  - Static validation: `python scripts/validate_static.py` (10/10 PASS).
+  - Touch target audit: `node scripts/test_touch_targets.cjs` (145/145 PASS).
+  - Syntax check: `node --check app.js sw.js party-mode.js party-pdf.js scripts/acceptance_party_ui.cjs` PASS.

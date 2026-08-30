@@ -94,6 +94,14 @@
 - **Đánh đổi:** Không đáng kể — snapshot chỉ clone các object nhỏ (corners), không clone `File`/Blob bytes (an toàn vì `File` object không tự đổi nội dung).
 - **Người quyết định:** Claude, theo yêu cầu audit race-condition trong export flow.
 
+## [2026-08-30] Party Mode PDF thumbnail preview là derivative local, không sửa export
+
+- **Quyết định:** Party Mode render thumbnail PDF theo từng trang bằng canvas giới hạn kích thước, đọc MediaBox/CropBox, vector content và image XObject phổ biến ngay trong `party-pdf.js`. Page model hiện hữu vẫn giữ `{source, sourcePage}`; `buildMixedPdf()` tiếp tục copy page object/content stream gốc, không rasterize PDF đầu ra vì preview.
+- **Lý do:** Operator cần nhận biết nội dung thật, thứ tự và tỷ lệ portrait/landscape trước khi tách/ghép; placeholder số trang không đủ. Không thêm PDF.js/framework/dependency vì dự án phải offline, dependency-free và PDF nguồn không được upload.
+- **Failure handling:** PDF lỗi toàn bộ vẫn fail closed trước khi tạo page state; lỗi render từng trang chỉ đánh dấu preview trang đó, giữ position/page number và không làm crash Party Mode.
+- **Đánh đổi:** Renderer cố ý giới hạn ở PDF 1.x content stream và image filters phổ biến (FlateDecode, DCTDecode, raw 8-bit RGB/Gray/CMYK); format/filters chưa hỗ trợ hiển thị trạng thái lỗi riêng thay vì đoán hoặc làm mất trang.
+- **Hiệu năng:** Canvas được nạp theo IntersectionObserver với preload nhỏ và nhường frame giữa các trang; image XObject trong preview được downsample/cache ở tối đa 1200px. Cache derivative bị giải phóng khi rời Party Mode; export không đọc cache này.
+
 ## [2026-08-22] Khoá mọi mutation handler khi `state.busy === true`
 
 - **Quyết định:** Audit toàn bộ event handler có thể thay đổi `state.pages`/corners/filter/rotation/thứ tự trang (thêm ảnh, camera, drag/drop import, reorder thumbnail, move up/down, rotate, delete, clear all, reset crop, detect, auto-detect all, đổi filter, export lần hai) và thêm guard `if (state.busy) return;` trực tiếp trong từng handler — không chỉ dựa vào thuộc tính `disabled` của nút. `setBusy()` cũng disable thêm `clearBtn` và các nút `.filter-chip` (trước đó không nằm trong danh sách disable). Independent review (Codex-style second pass) phát hiện thêm một khoảng hở: `pointerdown` trên `#editorCanvas` guard đúng lúc bắt đầu kéo góc, nhưng `pointermove`/`endCornerDrag` (kết thúc kéo) không tự kiểm tra lại `state.busy` — nếu `busy` chuyển thành `true` giữa lúc đang kéo (ví dụ một thao tác async khác bắt đầu), `pointermove` vẫn ghi tiếp vào `page.corners`. Đã vá bằng cách kiểm tra `state.busy` trong cả `pointermove` (huỷ kéo ngay, đặt lại `dragCorner=-1`) và `endCornerDrag` (không `orderCorners()`/render lại nếu đang busy).
@@ -239,3 +247,18 @@
 - **Đánh đổi:** <cái gì bị đánh đổi>
 - **Người quyết định:** <user / Claude / Codex>
 ```
+
+## [2026-08-30] Party Document Mode dùng page-object copier local, không thêm dependency runtime
+
+- Quyết định: Thêm Party Mode bằng các script static party-mode.js, party-pdf.js, party-taxonomy.js và taxonomy JSON local. Không thêm framework, package manager, CDN hay runtime network dependency. PDF page nhập sẵn được giữ dưới dạng page reference và export bằng copier indirect-object local; ảnh mới vẫn tái sử dụng renderPageCanvas()/detector hiện tại.
+- Lý do: Repository đang khóa dependency-free/offline. Chuyển PDF sang canvas/JPEG sẽ làm mất chất lượng và vi phạm yêu cầu page-object preservation. Copier chỉ nhận PDF 1.x object model đọc được; PDF encrypted/corrupt/unsupported báo lỗi rõ và không tạo output giả.
+- Đánh đổi: Không có PDF renderer đầy đủ trong static app hiện tại, nên thumbnail PDF hiển thị placeholder PDF + số trang thay vì rasterize nội dung. Đây là giới hạn được công khai; output vẫn giữ page object. Muốn thumbnail nội dung thật cần vendor PDF.js và phải có quyết định dependency riêng.
+- Taxonomy: Bản local được copy từ vi-phuong-158/hoso-digitization-manager branch main tại commit bfdcbaae55238b06bdf297803789c63002741cc3, xác nhận 104 id duy nhất và filename_base đầy đủ.
+- Palette: Token Party Mode lấy từ app/manager/static/manager.css của cùng commit: #20303b, #6d7d83, #d9e1df, #ffffff, #173f5f, #2f7d72, #b7791f, #a84343.
+
+## [2026-08-30] Party PDF preview dùng generation invalidation và LRU derivative cache
+
+- **Quyết định:** Mỗi lần Party Mode dựng lại preview DOM hoặc thoát mode sẽ tăng `previewGeneration`; mỗi job giữ generation của nó và phải xác minh generation/page/canvas hiện tại trước khi cập nhật state, paint hoặc DOM. Preview image chỉ giữ derivative downsampled trong LRU tối đa 16 entry; khi thay source/thoát mode phải giải phóng pending/resolved resources và xoá canvas khỏi DOM.
+- **Lý do:** Source review phát hiện job render cũ có thể hoàn tất sau khi người dùng re-render/back-reenter và cache ảnh full-resolution có nguy cơ tăng không giới hạn. Invalidation tách biệt với queue worker để job cũ dừng im lặng mà không khóa job mới; bounds bảo vệ PDF ảnh lớn/malformed.
+- **Đánh đổi:** Preview chỉ hỗ trợ các filter/ảnh được parser local hiểu; filter hiếm như CCITT/JPX/inline image parser đầy đủ tiếp tục fail riêng từng trang thay vì thêm dependency nặng hoặc làm thay đổi source-page export.
+- **Người quyết định:** Codex, theo yêu cầu hardening của người dùng.

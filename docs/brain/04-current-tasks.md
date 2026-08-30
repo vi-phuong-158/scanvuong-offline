@@ -48,3 +48,19 @@
 - [2026-08-23] **Tự động nhận diện 4 góc bằng Machine Learning**: Mô hình DocCornerNet Lean (`assets/ml/`) chạy offline qua ONNX Runtime Web WASM kèm Geometry Guard và classical fallback (25/25 ảnh dataset thực tế đạt 100% usable).
 - [2026-08-23] **Scan ID (Căn cước 2 mặt → 1 trang A4)**: Workflow riêng biệt 2 mặt, ghép tự động lên A4 chuẩn đối xứng và khóa an toàn trong suốt quá trình xuất PDF.
 - [2026-08-23] **Auto Enhance ("Tự động")**: Shading correction và contrast tuning thời gian thực cho văn bản.
+
+## Party Document Mode — implementation status (2026-08-30)
+
+- Đã triển khai trên branch feat/party-document-mode: mode thứ ba, page coverage, operator-controlled page operations, local 104-type taxonomy, canonical naming, same-type order confirmation, image/PDF/hybrid export và footer nhận diện.
+- Đã thêm regression scripts/regression_party_mode.cjs cho page copy, hybrid output và taxonomy.
+- Đã thay placeholder PDF bằng preview canvas derivative cục bộ theo từng trang; giữ page-object copy nguyên gốc khi export. Renderer hỗ trợ geometry/vector và image filters phổ biến, fail riêng từng preview nếu gặp filter chưa hỗ trợ; parser vẫn fail-closed với PDF encrypted/corrupt/unsupported.
+- Browser acceptance Party Mode đã kiểm tra synthetic PDF có nội dung khác nhau, portrait/landscape, thứ tự canvas, back/re-entry, overflow và touch target trên 1792×896, 1366×768, 1024×768, 768×1024, 390×844.
+- Gate 100 trang đã xác nhận lazy preview: chỉ preload 6 trang, thumbnail cuối được render khi cuộn; fixture corrupt/encrypted bị từ chối fail-closed. Preview image cache downsample tối đa 1200px, không ảnh hưởng export.
+- Không thay đổi mục backlog Scan ID physical-size hoặc gate manual PWA installability.
+
+## Party PDF preview hardening — completed (2026-08-30)
+
+- Đã khóa stale async preview bằng monotonic generation token; job cũ không được ghi state, paint canvas hoặc cập nhật DOM sau re-render/back/re-entry.
+- Đã giới hạn image derivative cache ở 16 entry, giới hạn stream/decode/image allocation, đóng `ImageBitmap`, revoke object URL và dọn canvas DOM khi discard source.
+- Chromium acceptance synthetic đã PASS lifecycle delayed-render, re-entry, 100-page image-heavy probe (`100/100`, cache `16/16`), corrupt/encrypted fail-closed và responsive workspace 5 viewport; không có console error.
+- Real-PDF acceptance: NOT_EXECUTED — checkout không chứa PDF corpus được phép thử; không dùng dữ liệu production.
