@@ -199,13 +199,14 @@
     <section id="partyEmptyState" class="empty-state-section card hidden">
       <div class="drop-zone party-drop-zone">
         <div class="drop-icon party-drop-icon" aria-hidden="true">⇧</div>
-        <span class="party-kicker">PARTY DOCUMENT MODE</span>
+        <span class="party-kicker">SCAN TÀI LIỆU ĐẢNG</span>
         <h2>Nhập nguồn tài liệu</h2>
         <p class="drop-subtitle">Scan ảnh hoặc nhập PDF · Bạn chủ động tách, ghép và đặt tên</p>
         <div class="empty-buttons">
           <button id="partyCameraBtn" class="btn primary touch-lg" type="button">Chụp ảnh</button>
           <button id="partyChooseBtn" class="btn secondary touch-lg" type="button">Chọn ảnh</button>
           <button id="partyPdfBtn" class="btn secondary touch-lg" type="button">Nhập PDF</button>
+          <button class="btn ghost touch-lg" data-party-help type="button" aria-haspopup="dialog">? Hướng dẫn</button>
         </div>
         <div class="privacy-note"><span>Không OCR · Không tự phân loại · 100% xử lý trên thiết bị</span></div>
       </div>
@@ -384,19 +385,21 @@
       <div class="party-main card">
         <div class="party-page-head">
           <div>
-            <span class="party-kicker">PARTY DOCUMENT MODE</span>
+            <span class="party-kicker">SCAN TÀI LIỆU ĐẢNG</span>
             <h2>Tách và sắp xếp tài liệu</h2>
-            <p class="muted">Mỗi trang chỉ thuộc một tài liệu, trừ khi bạn chủ động tạo bản sao.</p>
+            <p class="muted party-toolbar-help">Chọn một trang để tách, xoay, sắp xếp hoặc thêm trang còn thiếu.</p>
           </div>
           <div class="party-head-actions">
+            <button class="btn ghost small" data-party-help type="button" aria-haspopup="dialog">? Hướng dẫn</button>
             <button id="partyAddBtn" class="btn secondary small" type="button">+ Thêm ảnh</button>
             <button id="partyAddPdfBtn" class="btn secondary small" type="button">+ Thêm PDF</button>
             <button id="partyNewDocumentBtn" class="btn primary small" type="button">+ Tài liệu</button>
           </div>
         </div>
         <div class="party-coverage" aria-live="polite">
-          <div><span>Page coverage</span><strong id="partyCoverageText">0/0 trang nguồn đã được phân vào tài liệu</strong></div>
+          <div><span>Kiểm tra số trang</span><strong id="partyCoverageText">0/0 trang nguồn đã được xếp vào tài liệu</strong></div>
           <div class="party-progress-track"><span id="partyCoverageBar"></span></div>
+          <p class="party-coverage-hint">Chức năng này chỉ kiểm tra trang scan có bị bỏ sót trong phiên làm việc hay không. Không phải kiểm tra hồ sơ còn thiếu giấy tờ.</p>
           <p id="partyCoverageWarning" class="party-warning hidden"></p>
         </div>
         <div id="partyDocuments" class="party-documents"></div>
@@ -405,13 +408,28 @@
         <div class="party-side-head">
           <span class="party-kicker">XUẤT TẠI CHỖ</span>
           <h2>Đặt tên chuẩn</h2>
-          <p class="muted">Chọn loại do cán bộ xác nhận. Tên file lấy từ taxonomy canonical.</p>
+          <p class="muted">Chọn loại tài liệu để Lens tạo tên file chuẩn. Phần mềm không tự phân loại nội dung.</p>
         </div>
         <div id="partyOrderPanel" class="party-order-panel"></div>
         <button id="partyExportAllBtn" class="btn primary full" type="button" disabled>Xuất tất cả tài liệu</button>
         <p id="partyExportStatus" class="party-export-status" aria-live="polite"></p>
       </aside>
     </section>
+    <dialog id="partyHelpDialog" class="party-help-dialog" aria-labelledby="partyHelpTitle">
+      <div class="party-help-sheet">
+        <header class="party-help-head"><div><span class="party-kicker">SCAN TÀI LIỆU ĐẢNG</span><h2 id="partyHelpTitle">Hướng dẫn sử dụng</h2></div><button id="partyHelpClose" class="btn ghost small" type="button">Đóng</button></header>
+        <div class="party-help-content">
+          <section><h3>1. Nhập tài liệu</h3><p><strong>Chụp ảnh:</strong> Chụp thêm một hoặc nhiều trang bằng camera.</p><p><strong>Chọn ảnh:</strong> Chọn ảnh tài liệu đã có trong máy.</p><p><strong>Nhập PDF:</strong> Chọn một file PDF đã scan sẵn. Các trang sẽ hiện thành hình thu nhỏ để tách và sắp xếp.</p></section>
+          <section><h3>2. Tách tài liệu</h3><p>Ví dụ: Trang 1 · Trang 2 · Trang 3 | Trang 4 · Trang 5. Chọn Trang 3 rồi bấm <strong>Tách sau trang đang chọn</strong> để tạo Tài liệu 1 gồm Trang 1–3 và Tài liệu 2 gồm Trang 4–5.</p><p>Dùng khi một file PDF lớn chứa nhiều tài liệu khác nhau.</p></section>
+          <section><h3>3. Ghép tài liệu</h3><p><strong>Ghép với trước</strong> ghép tài liệu đang chọn vào tài liệu đứng ngay trước. <strong>Ghép với sau</strong> ghép với tài liệu đứng ngay sau.</p></section>
+          <section><h3>4. Sắp xếp trang</h3><p><strong>Trước</strong> và <strong>Sau</strong> đổi vị trí trang trong danh sách. <strong>Xoay</strong> đổi chiều hiển thị/xuất của trang. <strong>Thêm sau</strong> chèn trang ngay sau trang đã chọn. <strong>Thay trang</strong> thay trang đã chọn bằng ảnh hoặc PDF. <strong>Xóa khỏi tài liệu</strong> đưa trang ra khỏi tài liệu hiện tại để cán bộ sắp xếp lại.</p></section>
+          <section><h3>5. Thiếu một mặt hoặc một trang</h3><p>Nếu đang scan một tài liệu nhưng thiếu mặt sau hoặc thiếu một trang, không cần tạo tài liệu mới.</p><ol><li>Chọn trang gần vị trí cần thêm.</li><li>Chọn <strong>Thêm sau</strong> hoặc <strong>Thêm trang</strong>.</li><li>Chụp ảnh, chọn ảnh hoặc lấy trang PDF.</li><li>Đưa trang về đúng vị trí.</li></ol></section>
+          <section><h3>6. Đặt tên</h3><p>Cán bộ tự chọn loại tài liệu trong danh mục 104 loại. App không tự đọc, không tự phân loại và không OCR. Sau khi chọn loại, Lens tự điền tên file chuẩn.</p></section>
+          <section><h3>7. Nhiều tài liệu cùng loại</h3><p>Sắp xếp theo thứ tự mong muốn rồi xác nhận thứ tự. Lens sẽ thêm hậu tố .1, .2, .3.</p></section>
+          <section><h3>8. Kiểm tra số trang</h3><p><strong>10/10 trang nguồn đã được xếp vào tài liệu</strong> nghĩa là không có trang scan nào bị bỏ sót trong phiên làm việc. Nếu chưa đủ, Lens báo số trang còn chưa được xếp. Đây không phải kiểm tra hồ sơ còn thiếu giấy tờ.</p></section>
+        </div>
+      </div>
+    </dialog>
     <!-- 4. Scan ID Workspace -->
     <section id="idWorkspace" class="workspace id-workspace hidden">
       <aside class="sidebar card id-sidebar">

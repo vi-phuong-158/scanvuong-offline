@@ -9,7 +9,8 @@
     orderPanel: $('partyOrderPanel'), exportAll: $('partyExportAllBtn'), exportStatus: $('partyExportStatus'),
     fileInput: $('partyFileInput'), cameraInput: $('partyCameraInput'), pdfInput: $('partyPdfInput'),
     cameraBtn: $('partyCameraBtn'), chooseBtn: $('partyChooseBtn'), pdfBtn: $('partyPdfBtn'),
-    addBtn: $('partyAddBtn'), addPdfBtn: $('partyAddPdfBtn'), newDocumentBtn: $('partyNewDocumentBtn')
+    addBtn: $('partyAddBtn'), addPdfBtn: $('partyAddPdfBtn'), newDocumentBtn: $('partyNewDocumentBtn'),
+    helpDialog: $('partyHelpDialog'), helpClose: $('partyHelpClose')
   };
 
   const state = {
@@ -34,6 +35,8 @@
     const node = $('toast');
     if (node) { node.textContent = message; node.classList.remove('hidden'); setTimeout(() => node.classList.add('hidden'), 3200); }
   }
+
+  function openHelp() { if (els.helpDialog?.showModal) els.helpDialog.showModal(); }
 
   function isImage(file) { return !!file && (/^image\/(jpeg|jpg|png|webp)$/i.test(file.type || '') || (!file.type && imageExt.test(file.name || ''))); }
   function isPdf(file) { return !!file && (/application\/pdf/i.test(file.type || '') || /\.pdf$/i.test(file.name || '')); }
@@ -88,7 +91,7 @@
     if (!isCurrentPreview(canvas, page, generation)) return;
     page.previewState = 'rendering';
     try {
-      const result = await PartyPdf.renderThumbnail(page.source.page(page.sourcePage), canvas, 320, () => isCurrentPreview(canvas, page, generation));
+      const result = await PartyPdf.renderThumbnail(page.source.page(page.sourcePage), canvas, 320, () => isCurrentPreview(canvas, page, generation), page.rotation);
       if (result?.stale || !isCurrentPreview(canvas, page, generation)) return;
       page.previewState = 'ready';
       canvas.dataset.previewRendered = 'true';
@@ -164,7 +167,7 @@
     return `<article class="party-document ${state.selected?.documentId === doc.id ? 'is-selected' : ''}" data-document-id="${doc.id}">
       <header class="party-document-head"><div><span class="party-doc-number">TÀI LIỆU ${docIndex + 1}</span><h3>${esc(type?.name_vi || 'Chưa chọn loại tài liệu')}</h3><p>${doc.pages.length} trang · ${type ? esc(type.filename_base) + '.pdf' : 'Chọn loại để sinh tên file'}</p></div>
       <button class="btn ghost small party-remove-document" data-document-id="${doc.id}" type="button">Xóa tài liệu</button></header>
-      <div class="party-page-rail" data-document-id="${doc.id}">${doc.pages.map((page, index) => `<div class="party-page ${state.selected?.pageId === page.id ? 'is-selected' : ''}" data-page-id="${page.id}" draggable="true"><button class="party-page-thumb" data-page-id="${page.id}" type="button">${pagePreview(page, index)}<span>${index + 1}</span></button><div class="party-page-meta"><strong>Trang ${index + 1}</strong><small>${esc(page.name)}</small></div><div class="party-page-actions"><button title="Đưa lên" aria-label="Đưa trang lên" data-page-action="up" data-page-id="${page.id}" type="button">↑</button><button title="Đưa xuống" aria-label="Đưa trang xuống" data-page-action="down" data-page-id="${page.id}" type="button">↓</button><button title="Thay trang" aria-label="Thay trang" data-page-action="replace" data-page-id="${page.id}" type="button">↺</button><button title="Thêm trang sau" aria-label="Thêm trang sau" data-page-action="insert" data-page-id="${page.id}" type="button">+</button><button title="Bỏ khỏi tài liệu" aria-label="Bỏ trang khỏi tài liệu" data-page-action="remove" data-page-id="${page.id}" type="button">×</button></div></div>`).join('')}</div>
+      <div class="party-page-rail" data-document-id="${doc.id}">${doc.pages.map((page, index) => `<div class="party-page ${state.selected?.pageId === page.id ? 'is-selected' : ''}" data-page-id="${page.id}" draggable="true"><button class="party-page-thumb" data-page-id="${page.id}" type="button">${pagePreview(page, index)}<span>${index + 1}</span></button><div class="party-page-meta"><strong>Trang ${index + 1}</strong><small>${esc(page.name)}</small></div><div class="party-page-actions"><button title="Đưa trang về trước" aria-label="Đưa trang về trước" data-page-action="up" data-page-id="${page.id}" type="button">← Trước</button><button title="Đưa trang về sau" aria-label="Đưa trang về sau" data-page-action="down" data-page-id="${page.id}" type="button">Sau →</button><button title="Xoay trang" aria-label="Xoay trang" data-page-action="rotate" data-page-id="${page.id}" type="button">↻ Xoay</button><button class="party-page-action-optional" title="Thay trang" aria-label="Thay trang" data-page-action="replace" data-page-id="${page.id}" type="button">↺ Thay trang</button><button class="party-page-action-optional" title="Thêm trang sau" aria-label="Thêm trang sau" data-page-action="insert" data-page-id="${page.id}" type="button">+ Thêm sau</button><button class="party-page-action-optional" title="Xóa khỏi tài liệu" aria-label="Xóa trang khỏi tài liệu" data-page-action="remove" data-page-id="${page.id}" type="button">Xóa</button><details class="party-page-more"><summary aria-label="Thêm thao tác cho trang này">••• Thêm</summary><div><button title="Thay trang" aria-label="Thay trang" data-page-action="replace" data-page-id="${page.id}" type="button">↺ Thay trang</button><button title="Thêm trang sau" aria-label="Thêm trang sau" data-page-action="insert" data-page-id="${page.id}" type="button">+ Thêm sau</button><button title="Xóa khỏi tài liệu" aria-label="Xóa trang khỏi tài liệu" data-page-action="remove" data-page-id="${page.id}" type="button">Xóa khỏi tài liệu</button></div></details></div></div>`).join('')}</div>
       <div class="party-document-actions"><button class="btn secondary small" data-doc-action="split" data-document-id="${doc.id}" type="button">Tách sau trang đang chọn</button><button class="btn secondary small" data-doc-action="merge-prev" data-document-id="${doc.id}" type="button">Ghép với trước</button><button class="btn secondary small" data-doc-action="merge-next" data-document-id="${doc.id}" type="button">Ghép với sau</button><button class="btn secondary small" data-doc-action="add" data-document-id="${doc.id}" type="button">+ Thêm trang</button><select class="party-move-select" aria-label="Chuyển trang sang tài liệu khác" data-document-id="${doc.id}"><option value="">Chuyển trang…</option>${docs.filter(other => other.id !== doc.id).map(other => `<option value="${other.id}">→ Tài liệu ${docs.indexOf(other) + 1}</option>`).join('')}</select></div>
       <div class="party-taxonomy-field"><label for="party-type-${doc.id}">Loại tài liệu do cán bộ chọn</label><input id="party-type-${doc.id}" list="party-types-${doc.id}" value="${type ? `${type.id} — ${esc(type.name_vi)}` : ''}" placeholder="Tìm theo mã, tên hoặc không dấu…" data-type-input="${doc.id}" autocomplete="off"><div class="party-type-results" data-type-results="${doc.id}"></div><datalist id="party-types-${doc.id}">${taxonomy().map(item => `<option value="${item.id} — ${esc(item.name_vi)}"></option>`).join('')}</datalist><small>${type ? `Tên chuẩn: ${esc(type.filename_base)}.pdf` : 'Chưa gán taxonomy — chưa thể xuất'}</small></div>
     </article>`;
@@ -191,7 +194,7 @@
     const total = state.sources.length;
     const assigned = new Set(state.documents.flatMap(doc => doc.pages.map(sourcePageKey))).size;
     const percent = total ? Math.round(assigned / total * 100) : 0;
-    els.coverageText.textContent = `${assigned}/${total} trang nguồn đã được phân vào tài liệu`;
+    els.coverageText.textContent = `${assigned}/${total} trang nguồn đã được xếp vào tài liệu`;
     els.coverageBar.style.width = `${percent}%`;
     const missing = total - assigned;
     els.coverageWarning.textContent = missing ? `Còn ${missing} trang chưa được đưa vào tài liệu` : 'Đã phân đủ mọi trang nguồn.';
@@ -262,6 +265,7 @@
     const found = pageById(pageId); if (!found) return;
     state.selected = { documentId: found.doc.id, pageId };
     if (action === 'up' || action === 'down') { const index = found.doc.pages.indexOf(found.page), target = action === 'up' ? index - 1 : index + 1; if (target >= 0 && target < found.doc.pages.length) [found.doc.pages[index], found.doc.pages[target]] = [found.doc.pages[target], found.doc.pages[index]]; render(); }
+    if (action === 'rotate') { found.page.rotation = (found.page.rotation + 90) % 360; if (found.page.kind === 'pdf') { [found.page.previewWidth, found.page.previewHeight] = [found.page.previewHeight, found.page.previewWidth]; found.page.previewState = 'pending'; } render(); }
     if (action === 'remove') { found.doc.pages.splice(found.doc.pages.indexOf(found.page), 1); render(); }
     if (action === 'replace' || action === 'insert') { setAction(action, found.doc.id, pageId); }
   }
@@ -331,7 +335,7 @@
     const mixedItems = [];
     for (const page of doc.pages) {
       if (page.kind === 'pdf') {
-        mixedItems.push({ kind: 'pdf', ref: page.source.page(page.sourcePage) });
+        mixedItems.push({ kind: 'pdf', ref: page.source.page(page.sourcePage), rotation: page.rotation });
         continue;
       }
       const core = window.VigilLensCore; if (!core?.renderPageCanvas || !core?.buildPdf) throw new Error('Pipeline ảnh Vigil Lens chưa sẵn sàng.');
@@ -379,6 +383,9 @@
   els.cameraInput.addEventListener('change', event => { if (state.active) addImages(event.target.files, null); event.target.value = ''; });
   els.pdfInput.addEventListener('change', async event => { if (state.active) await addPdf(event.target.files[0], null); event.target.value = ''; });
   els.exportAll.addEventListener('click', exportAll);
+  document.querySelectorAll('[data-party-help]').forEach(button => button.addEventListener('click', openHelp));
+  els.helpClose?.addEventListener('click', () => els.helpDialog.close());
+  els.helpDialog?.addEventListener('click', event => { if (event.target === els.helpDialog) els.helpDialog.close(); });
 
   window.VigilLensParty = { activate, deactivate, hasWork };
 })();

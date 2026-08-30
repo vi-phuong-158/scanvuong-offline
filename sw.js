@@ -1,4 +1,4 @@
-const CACHE = 'vigil-lens-v2.4.0';
+const CACHE = 'vigil-lens-v2.5.0';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,8 @@ const ASSETS = [
   './party-pdf.js',
   './party-mode.js',
   './party-taxonomy.js',
+  './assets/vendor/pdfjs/pdf.mjs',
+  './assets/vendor/pdfjs/pdf.worker.mjs',
   './document-detector.js',
   './manifest.webmanifest',
   './icons/icon-192.png',

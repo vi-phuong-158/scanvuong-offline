@@ -113,7 +113,9 @@ const injectedScript = `
             '/assets/ml/doccornernet_lean.ort',
             '/assets/ml/ort-wasm-simd-threaded.wasm',
             '/assets/ml/ort-wasm-simd-threaded.mjs',
-            '/assets/ml/scanic-ort.wasm.min.js'
+            '/assets/ml/scanic-ort.wasm.min.js',
+            '/assets/vendor/pdfjs/pdf.mjs',
+            '/assets/vendor/pdfjs/pdf.worker.mjs'
           ];
 
           results.missingAssets = [];
@@ -338,7 +340,7 @@ async function runPhaseA() {
 
   console.log(`  Service Worker Ready:              ${report.swReady}`);
   console.log(`  Total Cached Assets:               ${report.cachedCount}`);
-  console.log(`  Missing Assets:                    ${report.missingAssets.length === 0 ? 'None (All 16 Present)' : report.missingAssets.join(', ')}`);
+  console.log(`  Missing Assets:                    ${report.missingAssets.length === 0 ? 'None (All 18 Present)' : report.missingAssets.join(', ')}`);
   console.log(`  Be Vietnam Pro (400,500,600,700):  ${report.fontsLoaded ? 'PASS' : 'FAIL'}`);
   console.log(`  PWA Manifest Valid:                ${report.manifestOk ? 'PASS' : 'FAIL'}`);
   console.log(`  Online Detection Source:           ${report.onlineDetectionSource}`);
@@ -347,7 +349,7 @@ async function runPhaseA() {
 
   if (report.swReady && report.missingAssets.length === 0 && report.fontsLoaded && report.manifestOk && report.onlineDetectionSource === 'SCANIC_ML') {
     console.log('\n✓ SERVICE_WORKER_REGISTERED: PASS');
-    console.log('✓ PRECACHE_COMPLETE: PASS (16/16 assets)');
+    console.log('✓ PRECACHE_COMPLETE: PASS (18/18 assets)');
     console.log('✓ BE_VIETNAM_PRO_ONLINE_PASS\n');
     return true;
   } else {
