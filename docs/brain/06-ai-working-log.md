@@ -382,3 +382,25 @@
 - Kiểm tra: `node scripts/acceptance_party_ui.cjs` PASS (Party UI 3 viewports, PDF workflow, lazy 100 pages, stale lifecycle, back/re-entry, 100/100 image derivative probe, cache 16/16, cleanup 0, corrupt/encrypted handling, workspace 5 viewports); Party regression 13/13; export busy 29/29; Service Worker 9/9; Scan ID exit 0; static validation PASS; touch target 145/145; offline PWA acceptance PASS; `git diff --check` PASS.
 - Real-PDF acceptance: NOT_EXECUTED — không có PDF trong checkout và không được lấy dữ liệu production; synthetic acceptance không được trình bày như real-PDF acceptance.
 - Source review sau fix: P1 stale job FIXED; P1 unbounded full-resolution cache FIXED; P2 stream/image allocation bounds FIXED; bitmap/object URL/DOM cleanup FIXED; rare CCITT/JPX/inline full parser DEFERRED và fail-isolated.
+
+## [2026-08-30] PR #9 CI Browser Discovery Hotfix
+- **Agent:** Antigravity (Gemini 3.7 Flash)
+- **Thay đổi:**
+  1. Cập nhật hàm `browserPath()` trong `scripts/acceptance_party_ui.cjs` sang cơ chế phát hiện trình duyệt cross-platform deterministic 4 cấp:
+     - 1. Env variables (`CHROME_PATH`, `GOOGLE_CHROME_BIN`, `BROWSER_PATH`, `CHROMIUM_PATH`).
+     - 2. Linux absolute paths (`/usr/bin/google-chrome`, `/usr/bin/google-chrome-stable`, `/usr/bin/chromium`, `/usr/bin/chromium-browser`).
+     - 3. Windows absolute paths (`C:\Program Files\Google\Chrome\...`, `C:\Program Files (x86)\...`, Edge paths).
+     - 4. PATH lookup an toàn qua `execFileSync` không shell-injection (`where` trên Windows, `which` trên Unix/Linux/macOS).
+  2. Thêm bước diagnostic kiểm tra trình duyệt `Discover Chromium executable` trong CI workflow `.github/workflows/static-validation.yml`.
+- **File đã sửa:** `scripts/acceptance_party_ui.cjs`, `.github/workflows/static-validation.yml`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Khắc phục lỗi CI GitHub Actions runner Ubuntu 24.04 không tìm thấy trình duyệt do `where` chỉ hoạt động trên Windows.
+- **Kiểm tra:**
+  - Unit tests cho resolver logic (5/5 PASS).
+  - Party UI browser acceptance: `node scripts/acceptance_party_ui.cjs` PASS (viewports 1792×896, 1366×768, 390×844, PDF workflow, 100-page lazy thumbnail, preview lifecycle, corrupt/encrypted handling, smoke viewports).
+  - Party regression: `node scripts/regression_party_mode.cjs` (13/13 PASS).
+  - Export busy regression: `node scripts/regression_export_busy.js` (29/29 PASS).
+  - Scan ID regression: `node scripts/regression_scan_id.js` (52/52 PASS).
+  - Service Worker upgrade regression: `node scripts/regression_sw_update.cjs` (9/9 PASS).
+  - Static validation: `python scripts/validate_static.py` (10/10 PASS).
+  - Touch target audit: `node scripts/test_touch_targets.cjs` (145/145 PASS).
+  - Syntax check: `node --check app.js sw.js party-mode.js party-pdf.js scripts/acceptance_party_ui.cjs` PASS.

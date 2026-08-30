@@ -53,6 +53,13 @@ jobs:
       - name: Regression harness (Service Worker update safety)
         run: node scripts/regression_sw_update.cjs
 
+      - name: Discover Chromium executable
+        run: |
+          command -v google-chrome || true
+          command -v google-chrome-stable || true
+          command -v chromium || true
+          command -v chromium-browser || true
+
       - name: Chromium Party Mode UI acceptance (mobile + desktop)
         run: node scripts/acceptance_party_ui.cjs
 
