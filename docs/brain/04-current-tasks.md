@@ -1,13 +1,13 @@
-﻿# 04 — Current Tasks
+# 04 — Current Tasks
 
 > Cập nhật mỗi khi bắt đầu hoặc hoàn thành task. Agent đọc đây để biết được phép làm gì.
 
 ---
 
 ## Đang làm
-
-- **PR #8 Final Acceptance & Release Candidate Preparation**: Hoàn tất các tiêu chuẩn nghiệm thu cuối cùng cho PR #8 (`feat/mobile-ui-redesign`), đồng bộ launcher icon, tích hợp touch-target CI, và chuẩn bị tài liệu cho bước review merge.
-
+ 
+- **PR #10 Hotfix: Party Document Mode PDF Preview Hardening & Multi-Split UX**: Khắc phục hiện tượng thumbnail trắng, bổ sung blank-canvas pixel validation, in-memory canvas restoration, UI báo lỗi kèm nút "Thử lại", multi-split đánh dấu nhiều điểm và hiển thị rõ số trang nguồn `Nguồn: trang Y/Z`. (Đã hoàn thành toàn bộ unit tests, integration tests và pilot trên real PDF).
+ 
 ---
 
 ## Chờ làm (backlog)

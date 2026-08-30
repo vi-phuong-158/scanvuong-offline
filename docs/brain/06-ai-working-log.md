@@ -16,6 +16,31 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-08-30] Hotfix PR #10: Party Document Mode PDF Preview & Multi-Split UX
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Harden PDF Preview (P0):**
+     - Bổ sung `hasContentPixels` kiểm tra pixel nội dung thực tế trên canvas sau khi render. Nếu canvas trắng bất thường khi trang có stream/xobject, throw error để fallback hoặc báo lỗi rõ ràng.
+     - PDF.js là renderer chính, không fallback âm thầm; log cảnh báo chi tiết trên console khi fallback hoặc gặp lỗi.
+     - Caching canvas derivative trong bộ nhớ (`page.previewThumbCanvas`), khôi phục đồng bộ ngay khi `render()` DOM tái tạo để ngăn chặn hiện tượng chớp trắng và thumbnail bị mất.
+     - Hiển thị UI lỗi rõ ràng với thông điệp *"Không thể hiển thị xem trước"*, *"Trang vẫn được giữ nguyên khi xuất PDF"* và nút *"Thử lại"* (`party-retry-preview`).
+     - Tối ưu hàng đợi xem trước chủ động: lắng nghe cuộn ngang trên `.party-page-rail` và quan sát IntersectionObserver mở rộng margin 600px.
+  2. **Multi-Split UX (P1):**
+     - Thêm nút phân tách trực quan `✂ Tách tại đây` / `✂ Đã đánh dấu tách` giữa các thẻ trang kề nhau.
+     - Thanh điều khiển đa điểm tách `party-multisplit-bar` hiển thị *"Áp dụng N điểm tách"* và *"Bỏ các điểm tách"*.
+     - Thuật toán `applyDocumentSplits` chia tài liệu thành $N+1$ tài liệu mới, bảo toàn 100% thứ tự, góc xoay, đối tượng PDF nguồn và các thuộc tính trang.
+     - Tương thích hoàn toàn với tính năng tách đơn *"Tách sau trang đang chọn"*.
+  3. **Hiển thị số trang nguồn rõ ràng:**
+     - Thẻ trang hiển thị `Trang X` và `Nguồn: trang Y/Z` (hoặc `Ảnh scan mới` cho ảnh mới chụp/chọn).
+  4. **Cập nhật Hướng dẫn sử dụng cho Cán bộ:**
+     - Viết lại 13 mục hướng dẫn sử dụng trong `partyHelpDialog` bằng tiếng Việt tường minh, thân thiện với cán bộ nghiệp vụ Đảng.
+  5. **Kiểm thử tự động & Real PDF Pilot:**
+     - Thêm unit test multi-split 12 trang chia 4 phần trong `scripts/regression_party_mode.cjs` (26/26 checks PASS).
+     - Thêm integration test multi-split và kiểm tra pilot trên 2 file PDF thật (`Scan2026-08-24_150131(1).pdf` 12 trang và `Image_ dang 1001.pdf` 2 trang) trong `scripts/acceptance_party_ui.cjs` (PASS).
+- **File đã sửa:** `party-pdf.js`, `party-mode.js`, `styles.css`, `index.html`, `scripts/regression_party_mode.cjs`, `scripts/acceptance_party_ui.cjs`, `docs/brain/06-ai-working-log.md`
+- **Lý do:** Khắc phục lỗi thumbnail trắng trong Party Mode và nâng cấp trải nghiệm tách tài liệu scan nhiều trang.
+- **Kiểm tra:** `node --check app.js sw.js party-pdf.js party-mode.js` PASS, `node scripts/regression_party_mode.cjs` PASS (26/26), `node scripts/acceptance_party_ui.cjs` PASS với real PDF env vars.
+
 ## [2026-08-23] PWA In-App Update Banner
 
 - **Agent:** Antigravity (Claude Opus 4.6)

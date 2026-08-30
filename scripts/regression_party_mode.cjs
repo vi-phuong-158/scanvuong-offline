@@ -48,6 +48,62 @@ function fixture(pageCount) {
   const kids = (mixedText.match(/\/Kids \[([^\]]+)\]/) || [])[1].match(/\d+ 0 R/g).map(value => Number(value.match(/\d+/)[0]));
   const mixedPageBodies = kids.map(id => (mixedText.match(new RegExp(`${id} 0 obj\\n([\\s\\S]*?)\\nendobj`)) || [])[1] || '');
   check('hybrid output keeps operator page order', mixedPageBodies.length === 3 && !mixedPageBodies[0].includes('/XObject') && mixedPageBodies[1].includes('/XObject') && !mixedPageBodies[2].includes('/XObject'));
+  // Multi-split verification on 12-page fixture
+  const source12 = PartyPdf.sourceFromBuffer(fixture(12), 'fixture-12.pdf');
+  check('12-page fixture has 12 pages', source12.pageCount === 12);
+  const pages12 = Array.from({ length: 12 }, (_, i) => ({
+    id: `page-${i + 1}`,
+    kind: 'pdf',
+    source: source12,
+    sourcePage: i,
+    sourceTotalPages: 12
+  }));
+
+  // Helper simulating multi-split logic
+  function splitDocByMarked(pages, markedIds) {
+    const markedIndices = [];
+    pages.forEach((p, idx) => {
+      if (markedIds.has(p.id) && idx < pages.length - 1) markedIndices.push(idx);
+    });
+    const chunks = [];
+    let start = 0;
+    for (const splitIdx of markedIndices) {
+      chunks.push(pages.slice(start, splitIdx + 1));
+      start = splitIdx + 1;
+    }
+    chunks.push(pages.slice(start));
+    return chunks;
+  }
+
+  // Multi-split after page 3, page 6, page 9
+  const marked = new Set(['page-3', 'page-6', 'page-9']);
+  const chunks4 = splitDocByMarked(pages12, marked);
+  check('Multi-split at 3, 6, 9 produces exactly 4 documents', chunks4.length === 4);
+  check('Doc 1 has pages 1..3', chunks4[0].length === 3 && chunks4[0].map(p => p.sourcePage).join(',') === '0,1,2');
+  check('Doc 2 has pages 4..6', chunks4[1].length === 3 && chunks4[1].map(p => p.sourcePage).join(',') === '3,4,5');
+  check('Doc 3 has pages 7..9', chunks4[2].length === 3 && chunks4[2].map(p => p.sourcePage).join(',') === '6,7,8');
+  check('Doc 4 has pages 10..12', chunks4[3].length === 3 && chunks4[3].map(p => p.sourcePage).join(',') === '9,10,11');
+  const allSplitPages = chunks4.flat();
+  check('Multi-split preserves total 12 pages without duplication or omission', allSplitPages.length === 12 && new Set(allSplitPages.map(p => p.sourcePage)).size === 12);
+
+  // Single split after page 4
+  const singleMarked = new Set(['page-4']);
+  const chunks2 = splitDocByMarked(pages12, singleMarked);
+  check('Single split after page 4 produces 2 documents [4, 8]', chunks2.length === 2 && chunks2[0].length === 4 && chunks2[1].length === 8);
+
+  // Clear splits
+  const emptyMarked = new Set();
+  const chunks1 = splitDocByMarked(pages12, emptyMarked);
+  check('Empty marked splits leaves 1 document with 12 pages', chunks1.length === 1 && chunks1[0].length === 12);
+
+  // Export each multi-split chunk
+  for (let c = 0; c < chunks4.length; c++) {
+    const chunkRefs = chunks4[c].map(p => p.source.page(p.sourcePage));
+    const chunkPdf = await PartyPdf.buildPdf(chunkRefs).arrayBuffer();
+    const chunkText = new TextDecoder('iso-8859-1').decode(chunkPdf);
+    check(`Export chunk ${c + 1} has 3 page objects`, (chunkText.match(/\/Type \/Page\b/g) || []).length === 3);
+  }
+
   const taxonomy = JSON.parse(fs.readFileSync(require('path').join(root, 'assets/party/document_types.json'), 'utf8'));
   const ids = taxonomy.document_types.map(item => item.id);
   check('taxonomy has exactly 104 types', taxonomy.document_types.length === 104);

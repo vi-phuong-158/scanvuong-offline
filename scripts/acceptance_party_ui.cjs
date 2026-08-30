@@ -45,10 +45,22 @@ function browserPath() {
 async function cdpUrl() { for (let i = 0; i < 60; i++) { try { const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`); const tabs = await response.json(); const tab = tabs.find(item => item.type === 'page'); if (tab?.webSocketDebuggerUrl) return tab.webSocketDebuggerUrl; const newRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new`, { method: 'PUT' }); const newTab = await newRes.json(); if (newTab?.webSocketDebuggerUrl) return newTab.webSocketDebuggerUrl; } catch (_) {} await new Promise(resolve => setTimeout(resolve, 150)); } throw new Error('Không kết nối được Chrome CDP.'); }
 
 function syntheticPdf(pageCount, lineEnding = '\n') {
-  const objects = [
-    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
-    `2 0 obj\n<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${3 + i * 2} 0 R`).join(' ')}] /Count ${pageCount} >>\nendobj\n`
-  ];
+  let offset = 0;
+  const header = '%PDF-1.4\n';
+  const offsets = [];
+  const parts = [header];
+  offset += Buffer.byteLength(header, 'latin1');
+
+  function addObj(num, body) {
+    offsets[num] = offset;
+    const str = `${num} 0 obj\n${body}\nendobj\n`;
+    parts.push(str);
+    offset += Buffer.byteLength(str, 'latin1');
+  }
+
+  addObj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  addObj(2, `<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${3 + i * 2} 0 R`).join(' ')}] /Count ${pageCount} >>`);
+
   for (let i = 0; i < pageCount; i++) {
     const pageId = 3 + i * 2;
     const contentId = pageId + 1;
@@ -58,18 +70,41 @@ function syntheticPdf(pageCount, lineEnding = '\n') {
     const green = ((i * 61) % 100 + 100) / 255;
     const blue = ((i * 23) % 100 + 80) / 255;
     const content = `q\n${red.toFixed(3)} ${green.toFixed(3)} ${blue.toFixed(3)} rg\n40 40 ${width - 80} ${height - 80} re\nf\n0 0 0 RG\n8 w\n60 60 ${width - 120} ${height - 120} re\nS\nQ\n`;
-    objects.push(`${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Contents ${contentId} 0 R >>\nendobj\n`);
-    objects.push(`${contentId} 0 obj\n<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream\nendobj\n`);
+    addObj(pageId, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Contents ${contentId} 0 R >>`);
+    addObj(contentId, `<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream`);
   }
-  const pdf = `%PDF-1.4\n${objects.join('')}%%EOF`;
+
+  const startxref = offset;
+  const totalObjs = 2 + pageCount * 2 + 1;
+  let xref = `xref\n0 ${totalObjs}\n0000000000 65535 f \n`;
+  for (let num = 1; num < totalObjs; num++) {
+    const offStr = String(offsets[num] || 0).padStart(10, '0');
+    xref += `${offStr} 00000 n \n`;
+  }
+  const trailer = `trailer\n<< /Size ${totalObjs} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF`;
+  parts.push(xref, trailer);
+  const pdf = parts.join('');
   return Buffer.from(lineEnding === '\n' ? pdf : pdf.replace(/\n/g, lineEnding), 'latin1');
 }
 
 function syntheticImagePdf(pageCount) {
-  const objects = [
-    Buffer.from('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n', 'latin1'),
-    Buffer.from(`2 0 obj\n<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${3 + i * 3} 0 R`).join(' ')}] /Count ${pageCount} >>\nendobj\n`, 'latin1')
-  ];
+  let offset = 0;
+  const header = '%PDF-1.4\n';
+  const offsets = [];
+  const parts = [Buffer.from(header, 'latin1')];
+  offset += header.length;
+
+  function addObj(num, bodyBuffer) {
+    offsets[num] = offset;
+    const prefix = Buffer.from(`${num} 0 obj\n`, 'latin1');
+    const suffix = Buffer.from('\nendobj\n', 'latin1');
+    parts.push(prefix, bodyBuffer, suffix);
+    offset += prefix.length + bodyBuffer.length + suffix.length;
+  }
+
+  addObj(1, Buffer.from('<< /Type /Catalog /Pages 2 0 R >>', 'latin1'));
+  addObj(2, Buffer.from(`<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${3 + i * 3} 0 R`).join(' ')}] /Count ${pageCount} >>`, 'latin1'));
+
   for (let i = 0; i < pageCount; i++) {
     const pageId = 3 + i * 3;
     const contentId = pageId + 1;
@@ -80,11 +115,25 @@ function syntheticImagePdf(pageCount) {
     for (let pixel = 0; pixel < raw.length; pixel += 3) { raw[pixel] = red; raw[pixel + 1] = green; raw[pixel + 2] = blue; }
     const compressed = zlib.deflateSync(raw);
     const content = `q\n595 0 0 842 0 0 cm\n/Im0 Do\nQ\n`;
-    objects.push(Buffer.from(`${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>\nendobj\n`, 'latin1'));
-    objects.push(Buffer.from(`${contentId} 0 obj\n<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream\nendobj\n`, 'latin1'));
-    objects.push(Buffer.concat([Buffer.from(`${imageId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${compressed.length} >>\nstream\n`, 'latin1'), compressed, Buffer.from('\nendstream\nendobj\n', 'latin1')]));
+    addObj(pageId, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`, 'latin1'));
+    addObj(contentId, Buffer.from(`<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream`, 'latin1'));
+    addObj(imageId, Buffer.concat([
+      Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${compressed.length} >>\nstream\n`, 'latin1'),
+      compressed,
+      Buffer.from('\nendstream', 'latin1')
+    ]));
   }
-  return Buffer.concat([Buffer.from('%PDF-1.4\n', 'latin1'), ...objects, Buffer.from('%%EOF', 'latin1')]);
+
+  const startxref = offset;
+  const totalObjs = 2 + pageCount * 3 + 1;
+  let xref = `xref\n0 ${totalObjs}\n0000000000 65535 f \n`;
+  for (let num = 1; num < totalObjs; num++) {
+    const offStr = String(offsets[num] || 0).padStart(10, '0');
+    xref += `${offStr} 00000 n \n`;
+  }
+  const trailer = `trailer\n<< /Size ${totalObjs} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF`;
+  parts.push(Buffer.from(xref + trailer, 'latin1'));
+  return Buffer.concat(parts);
 }
 
 async function setFileInput(cdp, selector, filePath) {
@@ -112,7 +161,8 @@ async function runHelpUxAcceptance(cdp) {
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 360)); cdp.errors.length = 0;
   await cdp.eval("document.getElementById('modePartyBtn').click(); document.querySelector('[data-party-help]').click()"); await new Promise(resolve => setTimeout(resolve, 120));
   const help = JSON.parse(await cdp.eval("JSON.stringify({open:document.getElementById('partyHelpDialog').open,sections:document.querySelectorAll('#partyHelpDialog section').length,text:document.getElementById('partyHelpDialog').textContent})"));
-  if (!help.open || help.sections < 8 || !['Nhập tài liệu','Tách tài liệu','Ghép tài liệu','Sắp xếp trang','Thiếu một mặt hoặc một trang','Đặt tên','Nhiều tài liệu cùng loại','Kiểm tra số trang'].every(label => help.text.includes(label)) || cdp.errors.length) throw new Error(`Party help content failed: ${JSON.stringify({ open: help.open, sections: help.sections })}`);
+  const requiredTopics = ['Tài liệu là gì?','Trang nguồn là gì?','Tách tại đây là gì?','Cách chia 1 PDF thành nhiều tài liệu','Ghép với trước','Ghép với sau','Chuyển trang','Xoay trang','Thay trang','Thêm trang','Xóa trang','Chọn loại tài liệu','Xuất tất cả'];
+  if (!help.open || help.sections < 13 || !requiredTopics.every(label => help.text.includes(label)) || cdp.errors.length) throw new Error(`Party help content failed: ${JSON.stringify({ open: help.open, sections: help.sections })}`);
   await cdp.eval("document.getElementById('partyHelpClose').click()");
   const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_help_controls.pdf'); fs.writeFileSync(fixturePath, syntheticPdf(2)); await cdp.eval("document.getElementById('partyPdfBtn').click()"); await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 520));
   const desktop = JSON.parse(await cdp.eval("JSON.stringify((() => { const page=document.querySelector('.party-page'); const labels=[...page.querySelectorAll('.party-page-actions > button')].map(button=>button.textContent.trim()); const canvas=page.querySelector('.party-pdf-preview'); const before=[canvas.width,canvas.height]; page.querySelector('[data-page-action=rotate]').click(); return {labels,before}; })())")); await new Promise(resolve => setTimeout(resolve, 480));
@@ -132,13 +182,80 @@ async function preparePrivateDownloadCapture(cdp) {
   await cdp.eval("window.__partyDownloads=[]; HTMLAnchorElement.prototype.click=function(){if(this.download&&String(this.href).startsWith('blob:'))window.__partyDownloads.push({href:this.href});};");
 }
 
+async function runMultiSplitAcceptance(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_multisplit_fixture.pdf');
+  fs.writeFileSync(fixturePath, syntheticPdf(12));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 400));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 600));
+
+  // Check source page numbering format
+  const sourceCheck = JSON.parse(await cdp.eval("JSON.stringify({sources:[...document.querySelectorAll('.party-page-source')].map(el=>el.textContent.trim())})"));
+  if (sourceCheck.sources.length !== 12 || sourceCheck.sources[0] !== 'Nguồn: trang 1/12' || sourceCheck.sources[11] !== 'Nguồn: trang 12/12') {
+    throw new Error(`Source page number format mismatch: ${JSON.stringify(sourceCheck)}`);
+  }
+
+  // Toggle split marks at page 3 (index 2), page 6 (index 5), page 9 (index 8)
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[2].click()");
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[5].click()");
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[8].click()");
+  await new Promise(resolve => setTimeout(resolve, 120));
+
+  const markedState = JSON.parse(await cdp.eval("JSON.stringify({markedButtons:document.querySelectorAll('.party-split-btn.is-marked').length, applyBtnText:document.querySelector('.party-apply-splits')?.textContent.trim()})"));
+  if (markedState.markedButtons !== 3 || markedState.applyBtnText !== 'Áp dụng 3 điểm tách') {
+    throw new Error(`Marked split state mismatch: ${JSON.stringify(markedState)}`);
+  }
+
+  // Test clear marked splits
+  await cdp.eval("document.querySelector('.party-clear-splits').click()");
+  await new Promise(resolve => setTimeout(resolve, 120));
+  const clearedState = JSON.parse(await cdp.eval("JSON.stringify({markedButtons:document.querySelectorAll('.party-split-btn.is-marked').length, hasMultiSplitBar:!!document.querySelector('.party-multisplit-bar')})"));
+  if (clearedState.markedButtons !== 0 || clearedState.hasMultiSplitBar) {
+    throw new Error(`Clear marked splits failed: ${JSON.stringify(clearedState)}`);
+  }
+
+  // Re-mark at 3, 6, 9 and apply
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[2].click()");
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[5].click()");
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[8].click()");
+  await new Promise(resolve => setTimeout(resolve, 120));
+  await cdp.eval("document.querySelector('.party-apply-splits').click()");
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  const splitResult = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, docCounts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), docSources:[...document.querySelectorAll('.party-document')].map(doc=>[...doc.querySelectorAll('.party-page-source')].map(s=>s.textContent.trim())), coverage:document.getElementById('partyCoverageText').textContent})"));
+  if (splitResult.docs !== 4 || splitResult.docCounts.join(',') !== '3,3,3,3' || !splitResult.coverage.includes('12/12')) {
+    throw new Error(`Multi-split execution mismatch: ${JSON.stringify(splitResult)}`);
+  }
+  if (splitResult.docSources[0].join(';') !== 'Nguồn: trang 1/12;Nguồn: trang 2/12;Nguồn: trang 3/12' ||
+      splitResult.docSources[1].join(';') !== 'Nguồn: trang 4/12;Nguồn: trang 5/12;Nguồn: trang 6/12' ||
+      splitResult.docSources[2].join(';') !== 'Nguồn: trang 7/12;Nguồn: trang 8/12;Nguồn: trang 9/12' ||
+      splitResult.docSources[3].join(';') !== 'Nguồn: trang 10/12;Nguồn: trang 11/12;Nguồn: trang 12/12') {
+    throw new Error(`Multi-split source preservation mismatch: ${JSON.stringify(splitResult.docSources)}`);
+  }
+
+  console.log('PASS Party multi-split UX (toggle, clear, apply 3 points -> 4 docs, source preservation)');
+}
+
 async function runPrivateRealPdfAcceptance(cdp, fixturePath, expectedPages) {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 420)); cdp.errors.length = 0;
-  await cdp.eval("document.getElementById('modePartyBtn').click(); document.getElementById('partyPdfBtn').click()"); await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, expectedPages === 2 ? 1800 : 2400));
-  if (expectedPages > 6) { await cdp.eval("const last=document.querySelectorAll('.party-page-thumb')[document.querySelectorAll('.party-page-thumb').length-1]; last.scrollIntoView({block:'nearest',inline:'center'}); window.dispatchEvent(new Event('scroll'));"); await new Promise(resolve => setTimeout(resolve, 1400)); }
-  const imported = JSON.parse(await cdp.eval("JSON.stringify((() => { const ink=canvas=>{const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data; for(let i=0;i<data.length;i+=64) if(data[i]<244||data[i+1]<244||data[i+2]<244)return true; return false;}; const canvases=[...document.querySelectorAll('.party-pdf-preview')]; return {pages:document.querySelectorAll('.party-page').length,coverage:document.getElementById('partyCoverageText').textContent,ready:canvases.filter(canvas=>canvas.dataset.previewRendered==='true').length,ink:canvases.map(canvas=>canvas.dataset.previewRendered==='true'&&ink(canvas)),errors:document.querySelectorAll('.party-pdf-thumb.is-error').length,messages:[...document.querySelectorAll('.party-pdf-thumb.is-error small')].map(node=>node.textContent)};})())"));
-  if (imported.pages !== expectedPages || !imported.coverage.includes(`${expectedPages}/${expectedPages}`) || imported.errors || imported.ink.slice(0, Math.min(expectedPages, 6)).some(value => !value) || (expectedPages > 6 && !imported.ink[expectedPages - 1]) || cdp.errors.length) throw new Error(`Private real PDF preview failed: ${JSON.stringify({ expectedPages, imported, errors: cdp.errors })}`);
+  await cdp.eval("document.getElementById('modePartyBtn').click(); document.getElementById('partyPdfBtn').click()"); await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, expectedPages === 2 ? 1800 : 2500));
+  if (expectedPages > 6) {
+    // Scroll smoothly through rail to trigger all thumbnail renders
+    await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); for (let pos=0; pos<=rail.scrollWidth; pos+=300) { rail.scrollLeft=pos; rail.dispatchEvent(new Event('scroll',{bubbles:true})); } rail.scrollLeft=rail.scrollWidth; rail.dispatchEvent(new Event('scroll',{bubbles:true})); })()");
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  const imported = JSON.parse(await cdp.eval("JSON.stringify((() => { const ink=canvas=>{const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data; for(let i=0;i<data.length;i+=64) if(data[i]<244||data[i+1]<244||data[i+2]<244)return true; return false;}; const canvases=[...document.querySelectorAll('.party-pdf-preview')]; return {pages:document.querySelectorAll('.party-page').length,coverage:document.getElementById('partyCoverageText').textContent,ready:canvases.filter(canvas=>canvas.dataset.previewRendered==='true').length,ink:canvases.map(canvas=>canvas.dataset.previewRendered==='true'&&ink(canvas)),errors:document.querySelectorAll('.party-pdf-thumb.is-error').length,messages:[...document.querySelectorAll('.party-pdf-thumb.is-error small')].map(node=>node.textContent),sources:[...document.querySelectorAll('.party-page-source')].map(s=>s.textContent.trim())};})())"));
+  if (imported.pages !== expectedPages || !imported.coverage.includes(`${expectedPages}/${expectedPages}`) || imported.errors || imported.ink.some(value => !value) || cdp.errors.length) {
+    throw new Error(`Private real PDF preview failed: ${JSON.stringify({ expectedPages, imported, errors: cdp.errors })}`);
+  }
   if (expectedPages === 2) {
     await cdp.eval("const page=document.querySelector('.party-page'); page.querySelector('[data-page-action=down]').click(); document.querySelector('.party-page').querySelector('[data-page-action=rotate]').click()"); await new Promise(resolve => setTimeout(resolve, 520));
     await cdp.eval("document.querySelector('.party-page-thumb').click(); document.querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 180));
@@ -146,20 +263,23 @@ async function runPrivateRealPdfAcceptance(cdp, fixturePath, expectedPages) {
     if (split.docs !== 2 || !split.coverage.includes('2/2')) throw new Error(`Private real 2-page split failed: ${JSON.stringify(split)}`);
     await cdp.eval("document.querySelectorAll('.party-document')[1].querySelector('[data-doc-action=merge-prev]').click(); const input=document.querySelector('[data-type-input]'); input.value='05'; input.dispatchEvent(new Event('change',{bubbles:true}));"); await new Promise(resolve => setTimeout(resolve, 180));
   } else {
-    await cdp.eval("document.querySelectorAll('.party-document')[0].querySelectorAll('.party-page-thumb')[5].click()"); await new Promise(resolve => setTimeout(resolve, 100));
-    await cdp.eval("document.querySelectorAll('.party-document')[0].querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 180));
-    await cdp.eval("document.querySelectorAll('.party-document')[1].querySelectorAll('.party-page-thumb')[2].click()"); await new Promise(resolve => setTimeout(resolve, 100));
-    await cdp.eval("document.querySelectorAll('.party-document')[1].querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 180));
-    await cdp.eval("document.querySelectorAll('.party-document')[2].querySelectorAll('.party-page-thumb')[0].click()"); await new Promise(resolve => setTimeout(resolve, 100));
-    await cdp.eval("document.querySelectorAll('.party-document')[2].querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 200));
+    // Multi-split after page 6 (index 5), page 9 (index 8), page 10 (index 9)
+    await cdp.eval("document.querySelectorAll('[data-split-toggle]')[5].click()");
+    await new Promise(resolve => setTimeout(resolve, 80));
+    await cdp.eval("document.querySelectorAll('[data-split-toggle]')[8].click()");
+    await new Promise(resolve => setTimeout(resolve, 80));
+    await cdp.eval("document.querySelectorAll('[data-split-toggle]')[9].click()");
+    await new Promise(resolve => setTimeout(resolve, 120));
+    await cdp.eval("document.querySelector('.party-apply-splits').click()");
+    await new Promise(resolve => setTimeout(resolve, 250));
     const split = JSON.parse(await cdp.eval("JSON.stringify({counts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length),coverage:document.getElementById('partyCoverageText').textContent})"));
-    if (split.counts.join(',') !== '6,3,1,2' || !split.coverage.includes('12/12')) throw new Error(`Private real 12-page split failed: ${JSON.stringify(split)}`);
+    if (split.counts.join(',') !== '6,3,1,2' || !split.coverage.includes('12/12')) throw new Error(`Private real 12-page multi-split failed: ${JSON.stringify(split)}`);
     await cdp.eval("['05','07','38','37'].forEach((type,index)=>{const input=document.querySelectorAll('[data-type-input]')[index]; input.value=type; input.dispatchEvent(new Event('change',{bubbles:true}));});"); await new Promise(resolve => setTimeout(resolve, 200));
   }
   await preparePrivateDownloadCapture(cdp); await cdp.eval("document.getElementById('partyExportAllBtn').click()"); await new Promise(resolve => setTimeout(resolve, expectedPages === 2 ? 800 : 1300));
   const exported = await readPrivateExportPageCounts(cdp); const expected = expectedPages === 2 ? '2' : '6,3,1,2';
   if (exported.join(',') !== expected || cdp.errors.length) throw new Error(`Private real PDF export failed: ${JSON.stringify({ expected, exported, errors: cdp.errors })}`);
-  console.log(`PASS Party private real ${expectedPages}-page PDF preview, coverage, operation and export acceptance`);
+  console.log(`PASS Party private real ${expectedPages}-page PDF preview, coverage, multi-split and export acceptance`);
 }
 async function runPdfWorkflow(cdp) {
   const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_synthetic_fixture.pdf');
@@ -210,7 +330,11 @@ async function runLargePdfAcceptance(cdp) {
   const firstShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_100_lazy_initial_1366x768.png'), Buffer.from(firstShot.data, 'base64'));
   await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=rail.scrollWidth; rail.dispatchEvent(new Event('scroll',{bubbles:true})); })()");
-  await new Promise(resolve => setTimeout(resolve, 900));
+  for (let i = 0; i < 30; i++) {
+    const isDone = await cdp.eval("document.querySelectorAll('.party-pdf-preview')[99]?.dataset.previewRendered === 'true'");
+    if (isDone) break;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
   const final = JSON.parse(await cdp.eval("JSON.stringify({ready:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length, last:document.querySelectorAll('.party-pdf-preview')[99]?.dataset.previewRendered === 'true', scrollLeft:document.querySelector('.party-page-rail')?.scrollLeft || 0})"));
   if (!final.last || final.ready <= initial.ready || cdp.errors.length) throw new Error(`100-page lazy gate failed after scroll: ${JSON.stringify({ initial, final, errors: cdp.errors })}`);
   const finalShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
@@ -371,6 +495,7 @@ server.listen(PORT, async () => {
     await runLineEndingAcceptance(cdp);
     await runHelpUxAcceptance(cdp);
     await runPdfWorkflow(cdp);
+    await runMultiSplitAcceptance(cdp);
     await runLargePdfAcceptance(cdp);
     await runPreviewLifecycleAcceptance(cdp);
     await runPdfErrorAcceptance(cdp);
