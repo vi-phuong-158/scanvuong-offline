@@ -255,3 +255,10 @@
 - Đánh đổi: Không có PDF renderer đầy đủ trong static app hiện tại, nên thumbnail PDF hiển thị placeholder PDF + số trang thay vì rasterize nội dung. Đây là giới hạn được công khai; output vẫn giữ page object. Muốn thumbnail nội dung thật cần vendor PDF.js và phải có quyết định dependency riêng.
 - Taxonomy: Bản local được copy từ vi-phuong-158/hoso-digitization-manager branch main tại commit bfdcbaae55238b06bdf297803789c63002741cc3, xác nhận 104 id duy nhất và filename_base đầy đủ.
 - Palette: Token Party Mode lấy từ app/manager/static/manager.css của cùng commit: #20303b, #6d7d83, #d9e1df, #ffffff, #173f5f, #2f7d72, #b7791f, #a84343.
+
+## [2026-08-30] Party PDF preview dùng generation invalidation và LRU derivative cache
+
+- **Quyết định:** Mỗi lần Party Mode dựng lại preview DOM hoặc thoát mode sẽ tăng `previewGeneration`; mỗi job giữ generation của nó và phải xác minh generation/page/canvas hiện tại trước khi cập nhật state, paint hoặc DOM. Preview image chỉ giữ derivative downsampled trong LRU tối đa 16 entry; khi thay source/thoát mode phải giải phóng pending/resolved resources và xoá canvas khỏi DOM.
+- **Lý do:** Source review phát hiện job render cũ có thể hoàn tất sau khi người dùng re-render/back-reenter và cache ảnh full-resolution có nguy cơ tăng không giới hạn. Invalidation tách biệt với queue worker để job cũ dừng im lặng mà không khóa job mới; bounds bảo vệ PDF ảnh lớn/malformed.
+- **Đánh đổi:** Preview chỉ hỗ trợ các filter/ảnh được parser local hiểu; filter hiếm như CCITT/JPX/inline image parser đầy đủ tiếp tục fail riêng từng trang thay vì thêm dependency nặng hoặc làm thay đổi source-page export.
+- **Người quyết định:** Codex, theo yêu cầu hardening của người dùng.

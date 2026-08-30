@@ -12,6 +12,10 @@
 
   const decoder = new TextDecoder('iso-8859-1');
   const textEncoder = new TextEncoder();
+  const PREVIEW_SOURCE_MAX_EDGE = 640;
+  const PREVIEW_CACHE_LIMIT = 16;
+  const MAX_IMAGE_DIMENSION = 10000;
+  const MAX_DECODED_BYTES = 64 * 1024 * 1024;
 
   function latin1Encode(value) {
     const out = new Uint8Array(value.length);
@@ -144,9 +148,15 @@
     let dataStart = stream + 6;
     if (object.text[dataStart] === '\r' && object.text[dataStart + 1] === '\n') dataStart += 2;
     else if (object.text[dataStart] === '\n' || object.text[dataStart] === '\r') dataStart += 1;
+    if (dataStart < 0 || dataStart > object.bytes.length) throw new Error(`PDF object ${objectId} có stream offset không hợp lệ.`);
+    const dict = object.text.slice(0, stream);
+    const declaredLength = Number((dict.match(/\/Length\s+(\d+)\b(?!\s+\d+\s+R)/) || [])[1]);
+    if (Number.isSafeInteger(declaredLength) && declaredLength >= 0 && dataStart + declaredLength <= object.bytes.length) {
+      return { dict, bytes: object.bytes.slice(dataStart, dataStart + declaredLength) };
+    }
     const endStream = object.text.indexOf('endstream', dataStart);
-    if (endStream < 0) throw new Error(`PDF object ${objectId} thiếu endstream.`);
-    return { dict: object.text.slice(0, stream), bytes: object.bytes.slice(dataStart, endStream) };
+    if (endStream < dataStart || endStream > object.bytes.length) throw new Error(`PDF object ${objectId} có stream bounds không hợp lệ.`);
+    return { dict, bytes: object.bytes.slice(dataStart, endStream) };
   }
 
   function refsAfter(text, key) {
@@ -185,17 +195,27 @@
     return Array.from(match[1].matchAll(/\/([A-Za-z0-9]+)/g), item => item[1]);
   }
 
-  async function inflate(bytes) {
+  async function inflate(bytes, maxBytes = MAX_DECODED_BYTES) {
     if (typeof DecompressionStream === 'undefined') throw new Error('Trình duyệt không hỗ trợ giải nén PDF FlateDecode.');
     const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
+    const reader = stream.getReader();
+    const chunks = [];
+    let total = 0;
+    while (true) {
+      const item = await reader.read();
+      if (item.done) break;
+      total += item.value.byteLength;
+      if (total > maxBytes) { await reader.cancel(); throw new Error('Ảnh PDF vượt giới hạn bộ nhớ preview.'); }
+      chunks.push(item.value);
+    }
+    return concat(chunks);
   }
 
-  async function decodeStream(source, objectId) {
+  async function decodeStream(source, objectId, maxDecodedBytes = MAX_DECODED_BYTES) {
     const stream = streamFor(source, objectId);
     let bytes = stream.bytes;
     for (const filter of streamFilters(stream.dict)) {
-      if (filter === 'FlateDecode' || filter === 'Fl') bytes = await inflate(bytes);
+      if (filter === 'FlateDecode' || filter === 'Fl') bytes = await inflate(bytes, maxDecodedBytes);
       else if (filter === 'DCTDecode' || filter === 'DCT') break;
       else if (filter === 'ASCII85Decode' || filter === 'A85') throw new Error('Ảnh PDF ASCII85 chưa được hỗ trợ.');
       else throw new Error(`Bộ lọc PDF chưa hỗ trợ: ${filter}.`);
@@ -231,35 +251,99 @@
     return out;
   }
 
+  function releasePreviewValue(value) {
+    if (value?.image && typeof value.image.close === 'function') value.image.close();
+  }
+
+  function cachePreview(source, objectId, promise) {
+    if (!source.previewImages) source.previewImages = new Map();
+    const entry = { promise, value: null, released: false };
+    source.previewImages.set(objectId, entry);
+    promise.then(value => {
+      entry.value = value;
+      if (entry.released) releasePreviewValue(value);
+      while (!entry.released && source.previewImages.size > PREVIEW_CACHE_LIMIT) {
+        const oldest = source.previewImages.entries().next().value;
+        if (!oldest) break;
+        const [oldestId, oldestEntry] = oldest;
+        source.previewImages.delete(oldestId);
+        oldestEntry.released = true;
+        if (oldestEntry.value) releasePreviewValue(oldestEntry.value);
+        else oldestEntry.promise.then(releasePreviewValue).catch(() => {});
+      }
+    }).catch(() => {});
+    return promise;
+  }
+
+  function releasePreviewCache(source) {
+    const cache = source?.previewImages;
+    if (!cache) return;
+    for (const entry of cache.values()) {
+      entry.released = true;
+      if (entry.value) releasePreviewValue(entry.value);
+      else entry.promise.then(releasePreviewValue).catch(() => {});
+    }
+    cache.clear();
+  }
+
+  function previewCacheStats(source) {
+    return { size: source?.previewImages?.size || 0, limit: PREVIEW_CACHE_LIMIT };
+  }
+
   async function imageFor(source, objectId) {
     if (!source.previewImages) source.previewImages = new Map();
-    if (source.previewImages.has(objectId)) return source.previewImages.get(objectId);
+    const cached = source.previewImages.get(objectId);
+    if (cached) {
+      source.previewImages.delete(objectId);
+      source.previewImages.set(objectId, cached);
+      return cached.promise;
+    }
     const promise = (async () => {
-      const stream = await decodeStream(source, objectId);
-      const width = Number((stream.dict.match(/\/Width\s+(\d+)/) || [])[1]);
-      const height = Number((stream.dict.match(/\/Height\s+(\d+)/) || [])[1]);
-      if (!width || !height) throw new Error('Ảnh PDF thiếu kích thước.');
-      const previewScale = Math.min(1, 1200 / Math.max(width, height));
+      const rawStream = streamFor(source, objectId);
+      const width = Number((rawStream.dict.match(/\/Width\s+(\d+)/) || [])[1]);
+      const height = Number((rawStream.dict.match(/\/Height\s+(\d+)/) || [])[1]);
+      if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0 ||
+          width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) throw new Error('Ảnh PDF có kích thước preview không hợp lệ.');
+      const filters = streamFilters(rawStream.dict);
+      const previewScale = Math.min(1, PREVIEW_SOURCE_MAX_EDGE / Math.max(width, height));
       const previewWidth = Math.max(1, Math.round(width * previewScale));
       const previewHeight = Math.max(1, Math.round(height * previewScale));
-      const filters = streamFilters(stream.dict);
       if (filters.some(filter => filter === 'DCTDecode' || filter === 'DCT')) {
+        if (width * height > MAX_DECODED_BYTES / 4) throw new Error('Ảnh JPEG PDF vượt giới hạn bộ nhớ preview.');
+        const stream = await decodeStream(source, objectId);
         const blob = new Blob([stream.bytes], { type: 'image/jpeg' });
-        if (typeof createImageBitmap === 'function') {
-          const options = previewScale < 1 ? { resizeWidth: previewWidth, resizeHeight: previewHeight, resizeQuality: 'low' } : undefined;
-          return { kind: 'bitmap', image: await createImageBitmap(blob, options), width: previewWidth, height: previewHeight };
+        let image;
+        let objectUrl = '';
+        try {
+          if (typeof createImageBitmap === 'function') {
+            image = await createImageBitmap(blob, { resizeWidth: previewWidth, resizeHeight: previewHeight, resizeQuality: 'low' });
+            const temp = document.createElement('canvas'); temp.width = previewWidth; temp.height = previewHeight;
+            const context = temp.getContext('2d', { alpha: false }); context.fillStyle = '#fff'; context.fillRect(0, 0, previewWidth, previewHeight); context.drawImage(image, 0, 0, previewWidth, previewHeight);
+            const imageData = context.getImageData(0, 0, previewWidth, previewHeight);
+            image.close(); image = null;
+            return { kind: 'pixels', imageData, width: previewWidth, height: previewHeight };
+          }
+          const element = new Image();
+          objectUrl = URL.createObjectURL(blob); element.src = objectUrl;
+          await new Promise((resolve, reject) => { element.onload = resolve; element.onerror = () => reject(new Error('Không giải mã được ảnh JPEG trong PDF.')); });
+          const temp = document.createElement('canvas'); temp.width = previewWidth; temp.height = previewHeight;
+          const context = temp.getContext('2d', { alpha: false }); context.fillStyle = '#fff'; context.fillRect(0, 0, previewWidth, previewHeight); context.drawImage(element, 0, 0, previewWidth, previewHeight);
+          return { kind: 'pixels', imageData: context.getImageData(0, 0, previewWidth, previewHeight), width: previewWidth, height: previewHeight };
+        } finally {
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+          if (image) image.close();
         }
-        const image = new Image();
-        image.src = URL.createObjectURL(blob);
-        await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('Không giải mã được ảnh JPEG trong PDF.')); });
-        return { kind: 'image', image, width, height };
       }
-      const bits = Number((stream.dict.match(/\/BitsPerComponent\s+(\d+)/) || [])[1] || 8);
+      const bits = Number((rawStream.dict.match(/\/BitsPerComponent\s+(\d+)/) || [])[1] || 8);
       if (bits !== 8) throw new Error('Ảnh PDF chỉ hỗ trợ 8 bits/component.');
-      const colorSpace = stream.dict.match(/\/ColorSpace\s+\/(DeviceRGB|DeviceGray|DeviceCMYK)/)?.[1] || 'DeviceRGB';
+      const colorSpace = rawStream.dict.match(/\/ColorSpace\s+\/(DeviceRGB|DeviceGray|DeviceCMYK)/)?.[1] || 'DeviceRGB';
       const components = colorSpace === 'DeviceGray' ? 1 : colorSpace === 'DeviceCMYK' ? 4 : 3;
-      const predictor = Number((stream.dict.match(/\/Predictor\s+(\d+)/) || [])[1] || 1);
+      const decodedLimit = width * height * components;
+      if (!Number.isSafeInteger(decodedLimit) || decodedLimit <= 0 || decodedLimit > MAX_DECODED_BYTES) throw new Error('Ảnh PDF vượt giới hạn bộ nhớ preview.');
+      const stream = await decodeStream(source, objectId, MAX_DECODED_BYTES);
+      const predictor = Number((rawStream.dict.match(/\/Predictor\s+(\d+)/) || [])[1] || 1);
       const pixels = decodePredictor(stream.bytes, width, components, predictor);
+      if (pixels.length < decodedLimit) throw new Error('Ảnh PDF thiếu dữ liệu pixel.');
       const rgba = new Uint8ClampedArray(previewWidth * previewHeight * 4);
       for (let y = 0; y < previewHeight; y++) {
         const sourceY = Math.min(height - 1, Math.floor(y * height / previewHeight));
@@ -278,8 +362,11 @@
       }
       return { kind: 'pixels', imageData: new ImageData(rgba, previewWidth, previewHeight), width: previewWidth, height: previewHeight };
     })();
-    source.previewImages.set(objectId, promise);
-    try { return await promise; } catch (error) { source.previewImages.delete(objectId); throw error; }
+    return cachePreview(source, objectId, promise).catch(error => {
+      const entry = source.previewImages?.get(objectId);
+      if (entry?.promise === promise) source.previewImages.delete(objectId);
+      throw error;
+    });
   }
   function tokenizeContent(value) {
     const tokens = [];
@@ -351,7 +438,7 @@
     while (graphics.length) { graphics.pop(); ctx.restore(); }
   }
 
-  async function renderThumbnail(ref, canvas, maxEdge = 320) {
+  async function renderThumbnail(ref, canvas, maxEdge = 320, isCurrent = () => true) {
     if (!ref?.source || !canvas?.getContext) throw new Error('Thumbnail PDF không hợp lệ.');
     const info = pageInfo(ref.source, ref.index);
     const scale = Math.min(1, maxEdge / Math.max(info.width, info.height));
@@ -364,9 +451,11 @@
     layerCtx.setTransform(scale, 0, 0, -scale, -info.box[0] * scale, info.box[3] * scale);
     const imageRefs = xObjectRefs(ref.source, info.body);
     for (const objectId of refsAfter(info.body, 'Contents')) {
+      if (!isCurrent()) return { stale: true };
       const stream = await decodeStream(ref.source, objectId);
       await paintContent(ref.source, decoder.decode(stream.bytes), layerCtx, imageRefs);
     }
+    if (!isCurrent()) return { stale: true };
     canvas.width = outputWidth; canvas.height = outputHeight;
     const ctx = canvas.getContext('2d', { alpha: false }); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, outputWidth, outputHeight);
     ctx.save();
@@ -510,5 +599,5 @@
     return copyPageObjects([], [], items);
   }
 
-  window.PartyPdf = { parse, sourceFromBuffer, pageInfo, renderThumbnail, buildPdf, buildMixedPdf };
+  window.PartyPdf = { parse, sourceFromBuffer, pageInfo, renderThumbnail, previewCacheStats, releasePreviewCache, buildPdf, buildMixedPdf };
 })();

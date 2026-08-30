@@ -372,3 +372,13 @@
 - File đã sửa: `party-pdf.js`, `party-mode.js`, `styles.css`, `scripts/acceptance_party_ui.cjs`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/04-current-tasks.md`, `docs/brain/05-testing-and-deploy.md`, `docs/brain/06-ai-working-log.md`.
 - Lý do: Người dùng cần nhận biết nội dung thật, thứ tự và tỷ lệ portrait/landscape trước thao tác Party Mode; không thêm PDF.js/framework/dependency và không gửi PDF ra mạng.
 - Kiểm tra: Chromium headless PASS với synthetic PDF 10 trang có vector content khác nhau, portrait/landscape, back/re-entry, no console error, no horizontal overflow và touch target tại 1792×896, 1366×768, 1024×768, 768×1024, 390×844; node check, Party regression 13/13, static validation và git diff --check PASS.
+
+## [2026-08-30] Party PDF preview lifecycle/resource hardening
+
+- Agent: Codex
+- Baseline: branch `feat/party-document-mode`; accepted thumbnail commit `e4f599a7c89d476e0fee74ded90a09ae250e9aee`. Khi bắt đầu, local checkout đã có sẵn commit tiếp nối `6916531962aae78108818105c1e3f757cf5e844a` chưa push; không reset/amend.
+- Thay đổi: thêm `previewGeneration` invalidation cho async thumbnail jobs; kiểm tra generation + page identity + connected canvas trước mọi state/paint/DOM mutation; cache derivative image LRU giới hạn 16; bounds cho stream length, Flate decoded bytes, image dimensions/components; cleanup pending/resolved preview resources và canvas DOM khi rời mode. Mở rộng browser acceptance với delayed stale job, back/re-entry, 100-page image-heavy synthetic PDF và cache cleanup.
+- Finding thực tế trong acceptance: `deactivate()` trước đây clear state/cache nhưng giữ canvas preview trong DOM ẩn; đã sửa tối thiểu bằng cách clear `#partyDocuments` khi discard Party state.
+- Kiểm tra: `node scripts/acceptance_party_ui.cjs` PASS (Party UI 3 viewports, PDF workflow, lazy 100 pages, stale lifecycle, back/re-entry, 100/100 image derivative probe, cache 16/16, cleanup 0, corrupt/encrypted handling, workspace 5 viewports); Party regression 13/13; export busy 29/29; Service Worker 9/9; Scan ID exit 0; static validation PASS; touch target 145/145; offline PWA acceptance PASS; `git diff --check` PASS.
+- Real-PDF acceptance: NOT_EXECUTED — không có PDF trong checkout và không được lấy dữ liệu production; synthetic acceptance không được trình bày như real-PDF acceptance.
+- Source review sau fix: P1 stale job FIXED; P1 unbounded full-resolution cache FIXED; P2 stream/image allocation bounds FIXED; bitmap/object URL/DOM cleanup FIXED; rare CCITT/JPX/inline full parser DEFERRED và fail-isolated.

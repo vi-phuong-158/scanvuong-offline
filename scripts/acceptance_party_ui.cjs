@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
 const os = require('os');
+const zlib = require('zlib');
 const ROOT = path.resolve(__dirname, '..');
 const PORT = 8777;
 const CDP_PORT = 9223;
@@ -49,6 +50,28 @@ function syntheticPdf(pageCount) {
     objects.push(`${contentId} 0 obj\n<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream\nendobj\n`);
   }
   return Buffer.from(`%PDF-1.4\n${objects.join('')}%%EOF`, 'latin1');
+}
+
+function syntheticImagePdf(pageCount) {
+  const objects = [
+    Buffer.from('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n', 'latin1'),
+    Buffer.from(`2 0 obj\n<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${3 + i * 3} 0 R`).join(' ')}] /Count ${pageCount} >>\nendobj\n`, 'latin1')
+  ];
+  for (let i = 0; i < pageCount; i++) {
+    const pageId = 3 + i * 3;
+    const contentId = pageId + 1;
+    const imageId = pageId + 2;
+    const width = 64, height = 64;
+    const raw = Buffer.alloc(width * height * 3);
+    const red = (160 + i * 17) % 256, green = (80 + i * 29) % 256, blue = (40 + i * 43) % 256;
+    for (let pixel = 0; pixel < raw.length; pixel += 3) { raw[pixel] = red; raw[pixel + 1] = green; raw[pixel + 2] = blue; }
+    const compressed = zlib.deflateSync(raw);
+    const content = `q\n64 0 0 64 0 0 cm\n/Im0 Do\nQ\n`;
+    objects.push(Buffer.from(`${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 ${imageId} 0 R >> >> >> /Contents ${contentId} 0 R >>\nendobj\n`, 'latin1'));
+    objects.push(Buffer.from(`${contentId} 0 obj\n<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream\nendobj\n`, 'latin1'));
+    objects.push(Buffer.concat([Buffer.from(`${imageId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${compressed.length} >>\nstream\n`, 'latin1'), compressed, Buffer.from('\nendstream\nendobj\n', 'latin1')]));
+  }
+  return Buffer.concat([Buffer.from('%PDF-1.4\n', 'latin1'), ...objects, Buffer.from('%%EOF', 'latin1')]);
 }
 
 async function setFileInput(cdp, selector, filePath) {
@@ -114,6 +137,69 @@ async function runLargePdfAcceptance(cdp) {
   const finalShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_100_lazy_last_1366x768.png'), Buffer.from(finalShot.data, 'base64'));
   console.log(`PASS Party 100-page lazy thumbnail acceptance · initial ${initial.ready}/100, after scroll ${final.ready}/100 · screenshots ${SCREENSHOT_DIR}`);
+}
+
+async function installPreviewProbe(cdp, delayedFirst = false) {
+  await cdp.eval(`(() => {
+    const original = window.__partyPreviewBase || window.PartyPdf.renderThumbnail;
+    window.__partyPreviewBase = original;
+    let release;
+    window.__partyPreviewGate = new Promise(resolve => { release = resolve; });
+    window.__partyPreviewRelease = release;
+    window.__partyPreviewCalls = 0;
+    window.__partyPreviewLastSource = null;
+    window.PartyPdf.renderThumbnail = async (...args) => {
+      window.__partyPreviewCalls += 1;
+      window.__partyPreviewLastSource = args[0]?.source || null;
+      if (${delayedFirst ? 'true' : 'false'} && window.__partyPreviewCalls === 1) await window.__partyPreviewGate;
+      return original(...args);
+    };
+  })()`);
+}
+
+async function runPreviewLifecycleAcceptance(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_synthetic_fixture_lifecycle.pdf');
+  const imageFixturePath = path.join(SCREENSHOT_DIR, 'party_ui_synthetic_fixture_images_100.pdf');
+  fs.writeFileSync(fixturePath, syntheticPdf(10));
+  fs.writeFileSync(imageFixturePath, syntheticImagePdf(100));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 500));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await installPreviewProbe(cdp, true);
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 140));
+  const pending = JSON.parse(await cdp.eval("JSON.stringify({calls:window.__partyPreviewCalls, ready:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length})"));
+  if (pending.calls !== 1 || pending.ready !== 0) throw new Error(`Preview delay probe did not hold first render: ${JSON.stringify(pending)}`);
+  await cdp.eval("document.querySelector('.party-page-thumb').click()"); await new Promise(resolve => setTimeout(resolve, 80));
+  await cdp.eval("window.__partyPreviewRelease()"); await new Promise(resolve => setTimeout(resolve, 900));
+  const rerendered = JSON.parse(await cdp.eval("JSON.stringify({calls:window.__partyPreviewCalls, ready:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length, blankReady:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').some(canvas=>{const p=canvas.getContext('2d').getImageData(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1).data;return p[0]>248&&p[1]>248&&p[2]>248}), currentCanvas:[...document.querySelectorAll('.party-pdf-preview')].slice(0,6).map(canvas=>({w:canvas.width,h:canvas.height,status:canvas.parentElement.querySelector('.party-pdf-status')?.textContent}))})"));
+  if (rerendered.calls < 7 || rerendered.ready < 6 || rerendered.blankReady || rerendered.currentCanvas.some(canvas => !canvas.w || !canvas.h || canvas.status !== 'PDF') || cdp.errors.length) throw new Error(`Stale preview lifecycle failed: ${JSON.stringify({ rerendered, errors: cdp.errors })}`);
+
+  await installPreviewProbe(cdp, true);
+  await cdp.eval("window.confirm=()=>true; document.getElementById('switchModeBtn').click()"); await new Promise(resolve => setTimeout(resolve, 120));
+  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 120));
+  await cdp.eval("window.__partyPreviewRelease()"); await new Promise(resolve => setTimeout(resolve, 800));
+  const reentry = JSON.parse(await cdp.eval("JSON.stringify({pages:document.querySelectorAll('.party-page').length, ready:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length, calls:window.__partyPreviewCalls, errors:window.__partyPreviewLastSource ? null : 'missing-source'})"));
+  if (reentry.pages !== 10 || reentry.ready < 6 || reentry.calls < 1 || cdp.errors.length) throw new Error(`Back/re-entry preview lifecycle failed: ${JSON.stringify({ reentry, errors: cdp.errors })}`);
+
+  await cdp.eval("window.PartyPdf.renderThumbnail = window.__partyPreviewBase");
+  await cdp.eval("window.confirm=()=>true; document.getElementById('switchModeBtn').click()"); await new Promise(resolve => setTimeout(resolve, 120));
+  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await installPreviewProbe(cdp, false);
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', imageFixturePath); await new Promise(resolve => setTimeout(resolve, 650));
+  await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=rail.scrollWidth; rail.dispatchEvent(new Event('scroll',{bubbles:true})); })()"); await new Promise(resolve => setTimeout(resolve, 1600));
+  await cdp.send('Runtime.evaluate', { expression: "(async()=>{ const source=window.__partyPreviewLastSource; window.__partyPreviewProbeRendered=0; window.__partyPreviewProbePixel=null; window.__partyPreviewProbeError=null; for(let index=0;index<source.pageCount;index++){ try { const canvas=document.createElement('canvas'); await window.__partyPreviewBase(source.page(index),canvas,160); window.__partyPreviewProbeRendered++; if(index===source.pageCount-1){ const ctx=canvas.getContext('2d'), data=ctx.getImageData(0,0,canvas.width,canvas.height).data; for(let offset=0;offset<data.length;offset+=16){ if(data[offset]<248||data[offset+1]<248||data[offset+2]<248){ window.__partyPreviewProbePixel=[data[offset],data[offset+1],data[offset+2],data[offset+3]]; break; } } } } catch(error) { window.__partyPreviewProbeError={index,message:error?.message||String(error)}; break; } } })()", awaitPromise: true, returnByValue: true });
+  const cache = JSON.parse(await cdp.eval("JSON.stringify({pages:document.querySelectorAll('.party-page').length, lazyReady:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length, probeRendered:window.__partyPreviewProbeRendered, probeError:window.__partyPreviewProbeError, stats:window.__partyPreviewLastSource ? window.PartyPdf.previewCacheStats(window.__partyPreviewLastSource) : null, lastPixel:window.__partyPreviewProbePixel, errors:window.__partyPreviewLastSource ? null : 'missing-source'})"));
+  if (cache.pages !== 100 || cache.lazyReady <= 6 || cache.probeRendered !== 100 || cache.probeError || !cache.stats || cache.stats.size > cache.stats.limit || !cache.lastPixel || cache.lastPixel[0] > 248 && cache.lastPixel[1] > 248 && cache.lastPixel[2] > 248 || cdp.errors.length) throw new Error(`Image-heavy preview cache gate failed: ${JSON.stringify({ cache, errors: cdp.errors })}`);
+  await cdp.eval("window.confirm=()=>true; document.getElementById('switchModeBtn').click()"); await new Promise(resolve => setTimeout(resolve, 180));
+  const released = JSON.parse(await cdp.eval("JSON.stringify({stats:window.__partyPreviewLastSource ? window.PartyPdf.previewCacheStats(window.__partyPreviewLastSource) : null, canvases:document.querySelectorAll('.party-pdf-preview').length})"));
+  if (!released.stats || released.stats.size !== 0 || released.canvases !== 0) throw new Error(`Preview cleanup failed on mode exit: ${JSON.stringify(released)}`);
+  if (cdp.errors.length) throw new Error(`Preview lifecycle emitted console errors: ${cdp.errors.join(',')}`);
+  console.log(`PASS Party preview lifecycle · stale generation, re-entry, image cache ${cache.stats.size}/${cache.stats.limit}, cleanup ${released.stats.size}`);
 }
 async function runPdfErrorAcceptance(cdp) {
   const invalidPath = path.join(SCREENSHOT_DIR, 'party_ui_invalid.pdf');
@@ -193,6 +279,7 @@ server.listen(PORT, async () => {
     }
     await runPdfWorkflow(cdp);
     await runLargePdfAcceptance(cdp);
+    await runPreviewLifecycleAcceptance(cdp);
     await runPdfErrorAcceptance(cdp);
     for (const viewport of [
       { width: 1792, height: 896 }, { width: 1366, height: 768 }, { width: 1024, height: 768 },

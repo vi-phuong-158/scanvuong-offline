@@ -15,7 +15,7 @@
   const state = {
     active: false, busy: false, sources: [], documents: [], selected: null,
     orderConfirmed: false, pendingAction: null, nextDocument: 1,
-    previewObserver: null, previewQueue: new Set(), previewRunning: false
+    previewObserver: null, previewQueue: new Map(), previewRunning: false, previewGeneration: 0
   };
 
   const defaultCorners = [{ x: .045, y: .045 }, { x: .955, y: .045 }, { x: .955, y: .955 }, { x: .045, y: .955 }];
@@ -75,25 +75,31 @@
     state.previewQueue.clear();
   }
 
-  async function renderPdfPreview(canvas) {
+  function isCurrentPreview(canvas, page, generation) {
+    const found = pageById(canvas?.dataset?.pdfPreview);
+    return state.active && generation === state.previewGeneration && canvas?.isConnected && found?.page === page;
+  }
+
+  async function renderPdfPreview(canvas, generation) {
     if (!canvas?.isConnected || canvas.dataset.previewRendered === 'true') return;
     const found = pageById(canvas.dataset.pdfPreview);
     if (!found || found.page.kind !== 'pdf' || found.page.previewState === 'error') return;
     const page = found.page;
+    if (!isCurrentPreview(canvas, page, generation)) return;
     page.previewState = 'rendering';
     try {
-      await PartyPdf.renderThumbnail(page.source.page(page.sourcePage), canvas, 320);
+      const result = await PartyPdf.renderThumbnail(page.source.page(page.sourcePage), canvas, 320, () => isCurrentPreview(canvas, page, generation));
+      if (result?.stale || !isCurrentPreview(canvas, page, generation)) return;
       page.previewState = 'ready';
       canvas.dataset.previewRendered = 'true';
-      if (canvas.isConnected) {
-        canvas.parentElement.classList.remove('is-loading');
-        const status = canvas.parentElement.querySelector('.party-pdf-status');
-        if (status) status.textContent = 'PDF';
-      }
+      canvas.parentElement.classList.remove('is-loading');
+      const status = canvas.parentElement.querySelector('.party-pdf-status');
+      if (status) status.textContent = 'PDF';
     } catch (error) {
+      if (!isCurrentPreview(canvas, page, generation)) return;
       page.previewState = 'error';
       page.previewError = error?.message || 'Không thể dựng preview trang PDF.';
-      if (canvas.isConnected) canvas.parentElement.outerHTML = pagePreview(page, found.doc.pages.indexOf(page));
+      canvas.parentElement.outerHTML = pagePreview(page, found.doc.pages.indexOf(page));
     }
   }
 
@@ -102,9 +108,9 @@
     state.previewRunning = true;
     try {
       while (state.previewQueue.size) {
-        const canvas = state.previewQueue.values().next().value;
+        const [canvas, generation] = state.previewQueue.entries().next().value;
         state.previewQueue.delete(canvas);
-        await renderPdfPreview(canvas);
+        await renderPdfPreview(canvas, generation);
         await frame();
       }
     } finally {
@@ -115,11 +121,12 @@
 
   function queuePdfPreview(canvas) {
     if (!canvas?.isConnected || canvas.dataset.previewRendered === 'true') return;
-    state.previewQueue.add(canvas);
+    state.previewQueue.set(canvas, state.previewGeneration);
     drainPdfPreviewQueue();
   }
 
   function queuePdfPreviews() {
+    state.previewGeneration += 1;
     disconnectPdfPreviewObserver();
     const canvases = [...els.documents.querySelectorAll('[data-pdf-preview]')];
     // Render only a small initial window. The observer brings later pages in as
@@ -346,7 +353,20 @@
   }
 
   function activate() { state.active = true; els.empty.classList.remove('hidden'); render(); }
-  function deactivate() { state.active = false; disconnectPdfPreviewObserver(); [...state.sources, ...state.documents.flatMap(doc => doc.pages)].forEach(page => { if (page.kind === 'image' && page.url) URL.revokeObjectURL(page.url); if (page.kind === 'pdf') page.source.previewImages?.clear(); }); state.sources = []; state.documents = []; state.selected = null; state.orderConfirmed = false; state.pendingAction = null; els.empty.classList.add('hidden'); els.workspace.classList.add('hidden'); }
+  function deactivate() {
+    state.active = false; state.previewGeneration += 1; disconnectPdfPreviewObserver();
+    const releasedSources = new Set();
+    [...state.sources, ...state.documents.flatMap(doc => doc.pages)].forEach(page => {
+      if (page.kind === 'image' && page.url) URL.revokeObjectURL(page.url);
+      if (page.kind === 'pdf' && !releasedSources.has(page.source)) {
+        releasedSources.add(page.source);
+        PartyPdf.releasePreviewCache?.(page.source);
+      }
+    });
+    state.sources = []; state.documents = []; state.selected = null; state.orderConfirmed = false; state.pendingAction = null;
+    els.documents.innerHTML = '';
+    els.empty.classList.add('hidden'); els.workspace.classList.add('hidden');
+  }
   function hasWork() { return state.sources.length > 0; }
 
   els.cameraBtn.addEventListener('click', () => els.cameraInput.click());

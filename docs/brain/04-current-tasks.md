@@ -57,3 +57,10 @@
 - Browser acceptance Party Mode đã kiểm tra synthetic PDF có nội dung khác nhau, portrait/landscape, thứ tự canvas, back/re-entry, overflow và touch target trên 1792×896, 1366×768, 1024×768, 768×1024, 390×844.
 - Gate 100 trang đã xác nhận lazy preview: chỉ preload 6 trang, thumbnail cuối được render khi cuộn; fixture corrupt/encrypted bị từ chối fail-closed. Preview image cache downsample tối đa 1200px, không ảnh hưởng export.
 - Không thay đổi mục backlog Scan ID physical-size hoặc gate manual PWA installability.
+
+## Party PDF preview hardening — completed (2026-08-30)
+
+- Đã khóa stale async preview bằng monotonic generation token; job cũ không được ghi state, paint canvas hoặc cập nhật DOM sau re-render/back/re-entry.
+- Đã giới hạn image derivative cache ở 16 entry, giới hạn stream/decode/image allocation, đóng `ImageBitmap`, revoke object URL và dọn canvas DOM khi discard source.
+- Chromium acceptance synthetic đã PASS lifecycle delayed-render, re-entry, 100-page image-heavy probe (`100/100`, cache `16/16`), corrupt/encrypted fail-closed và responsive workspace 5 viewport; không có console error.
+- Real-PDF acceptance: NOT_EXECUTED — checkout không chứa PDF corpus được phép thử; không dùng dữ liệu production.

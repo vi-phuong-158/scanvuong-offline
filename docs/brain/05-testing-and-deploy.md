@@ -88,3 +88,5 @@ Không nằm trong phạm vi công việc thường xuyên — dự án là stat
     node scripts/acceptance_party_ui.cjs
 
 Regression này xác minh PDF 10 trang tách đúng 2 trang, output giữ content stream/page-object path không có JPEG conversion cho source page, hybrid giữ source page và thêm image page, taxonomy có 104 id duy nhất, tìm kiếm không dấu và filename canonical type 05. Browser acceptance_party_ui.cjs còn kiểm tra thumbnail canvas có pixel nội dung thật, đủ portrait/landscape, đúng thứ tự, back/re-entry, overflow và touch target tại 1792×896, 1366×768, 1024×768, 768×1024, 390×844. Đây vẫn không thay thế nghiệm thu offline PWA thủ công.
+
+Preview hardening acceptance thêm delayed renderer để tạo stale generation có chủ đích, kiểm tra re-render và back/re-entry khi job còn pending, rồi chạy synthetic PDF 100 trang ảnh qua browser để xác nhận 100 derivative renders, cache không vượt `16/16`, và cache/DOM về `0` khi rời Party Mode. Real-PDF acceptance chỉ chạy khi có corpus local được phép; không dùng production input/output.
