@@ -239,3 +239,11 @@
 - **Đánh đổi:** <cái gì bị đánh đổi>
 - **Người quyết định:** <user / Claude / Codex>
 ```
+
+## [2026-08-30] Party Document Mode dùng page-object copier local, không thêm dependency runtime
+
+- Quyết định: Thêm Party Mode bằng các script static party-mode.js, party-pdf.js, party-taxonomy.js và taxonomy JSON local. Không thêm framework, package manager, CDN hay runtime network dependency. PDF page nhập sẵn được giữ dưới dạng page reference và export bằng copier indirect-object local; ảnh mới vẫn tái sử dụng renderPageCanvas()/detector hiện tại.
+- Lý do: Repository đang khóa dependency-free/offline. Chuyển PDF sang canvas/JPEG sẽ làm mất chất lượng và vi phạm yêu cầu page-object preservation. Copier chỉ nhận PDF 1.x object model đọc được; PDF encrypted/corrupt/unsupported báo lỗi rõ và không tạo output giả.
+- Đánh đổi: Không có PDF renderer đầy đủ trong static app hiện tại, nên thumbnail PDF hiển thị placeholder PDF + số trang thay vì rasterize nội dung. Đây là giới hạn được công khai; output vẫn giữ page object. Muốn thumbnail nội dung thật cần vendor PDF.js và phải có quyết định dependency riêng.
+- Taxonomy: Bản local được copy từ vi-phuong-158/hoso-digitization-manager branch main tại commit bfdcbaae55238b06bdf297803789c63002741cc3, xác nhận 104 id duy nhất và filename_base đầy đủ.
+- Palette: Token Party Mode lấy từ app/manager/static/manager.css của cùng commit: #20303b, #6d7d83, #d9e1df, #ffffff, #173f5f, #2f7d72, #b7791f, #a84343.

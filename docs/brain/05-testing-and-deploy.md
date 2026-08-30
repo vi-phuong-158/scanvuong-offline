@@ -78,3 +78,13 @@ Không nằm trong phạm vi công việc thường xuyên — dự án là stat
 - `server.py` tự thử các cổng 8765→8768 nếu cổng trước bị chiếm — luôn đọc URL thật được in ra console thay vì giả định 8765.
 - Chế độ xuất PDF "Cố gắng dưới 2 MB" có thể mất vài chục giây với nhiều trang nội dung phức tạp — đây là hành vi bình thường (nén lại nhiều vòng), không phải app bị treo.
 - Mở trực tiếp `index.html` bằng `file://` sẽ **không** đăng ký được Service Worker — đây là giới hạn của trình duyệt, không phải lỗi app; phải chạy qua `http://localhost` hoặc HTTPS thật để test PWA/offline.
+
+## Party Document Mode validation
+
+    node --check party-pdf.js
+    node --check party-mode.js
+    node --check party-taxonomy.js
+    node scripts/regression_party_mode.cjs
+    node scripts/acceptance_party_ui.cjs
+
+Regression này xác minh PDF 10 trang tách đúng 2 trang, output giữ content stream/page-object path không có JPEG conversion cho source page, hybrid giữ source page và thêm image page, taxonomy có 104 id duy nhất, tìm kiếm không dấu và filename canonical type 05. Chưa coi đây là thay thế cho browser acceptance: cần kiểm tra thêm trên desktop 1366×768, mobile 390×844, landscape và offline PWA với PDF thật.

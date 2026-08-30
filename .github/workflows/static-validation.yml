@@ -26,6 +26,18 @@ jobs:
       - name: node --check document-detector.js
         run: node --check document-detector.js
 
+      - name: node --check party-pdf.js
+        run: node --check party-pdf.js
+
+      - name: node --check party-mode.js
+        run: node --check party-mode.js
+
+      - name: node --check party-taxonomy.js
+        run: node --check party-taxonomy.js
+
+      - name: Regression harness (Party Mode PDF copy / hybrid / taxonomy)
+        run: node scripts/regression_party_mode.cjs
+
       - name: node --check sw.js
         run: node --check sw.js
 
@@ -40,6 +52,9 @@ jobs:
 
       - name: Regression harness (Service Worker update safety)
         run: node scripts/regression_sw_update.cjs
+
+      - name: Chromium Party Mode UI acceptance (mobile + desktop)
+        run: node scripts/acceptance_party_ui.cjs
 
       - name: Mobile touch-target regression (>=44px hit areas across 5 viewports)
         run: node scripts/test_touch_targets.cjs

@@ -48,3 +48,10 @@
 - [2026-08-23] **Tự động nhận diện 4 góc bằng Machine Learning**: Mô hình DocCornerNet Lean (`assets/ml/`) chạy offline qua ONNX Runtime Web WASM kèm Geometry Guard và classical fallback (25/25 ảnh dataset thực tế đạt 100% usable).
 - [2026-08-23] **Scan ID (Căn cước 2 mặt → 1 trang A4)**: Workflow riêng biệt 2 mặt, ghép tự động lên A4 chuẩn đối xứng và khóa an toàn trong suốt quá trình xuất PDF.
 - [2026-08-23] **Auto Enhance ("Tự động")**: Shading correction và contrast tuning thời gian thực cho văn bản.
+
+## Party Document Mode — implementation status (2026-08-30)
+
+- Đã triển khai trên branch feat/party-document-mode: mode thứ ba, page coverage, operator-controlled page operations, local 104-type taxonomy, canonical naming, same-type order confirmation, image/PDF/hybrid export và footer nhận diện.
+- Đã thêm regression scripts/regression_party_mode.cjs cho page copy, hybrid output và taxonomy.
+- Giới hạn còn thật: PDF thumbnail hiện là placeholder số trang vì repo chưa vendor PDF.js; parser fail-closed với PDF encrypted/corrupt/unsupported. Browser offline acceptance cho Party Mode cần chạy bổ sung trên Chromium cài PWA thật.
+- Không thay đổi mục backlog Scan ID physical-size hoặc gate manual PWA installability.

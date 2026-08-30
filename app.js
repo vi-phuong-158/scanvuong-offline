@@ -18,7 +18,7 @@
     progressBar: $('#progressBar'), progressLabel: $('#progressLabel'), exportSummary: $('#exportSummary'),
     exportNotice: $('#exportNotice'), toast: $('#toast'), installBtn: $('#installBtn'), offlineBadge: $('#offlineBadge'),
     // Mode select + Scan ID (front/back → single A4 PDF)
-    modeSelect: $('#modeSelect'), modeDocBtn: $('#modeDocBtn'), modeIdBtn: $('#modeIdBtn'), switchModeBtn: $('#switchModeBtn'),
+    modeSelect: $('#modeSelect'), modeDocBtn: $('#modeDocBtn'), modeIdBtn: $('#modeIdBtn'), modePartyBtn: $('#modePartyBtn'), switchModeBtn: $('#switchModeBtn'),
     idWorkspace: $('#idWorkspace'), idStepBadge: $('#idStepBadge'), idStepHint: $('#idStepHint'),
     idChooseBtn: $('#idChooseBtn'), idCameraBtn: $('#idCameraBtn'), idFileInput: $('#idFileInput'), idCameraInput: $('#idCameraInput'),
     idBackStepBtn: $('#idBackStepBtn'), idConfirmBtn: $('#idConfirmBtn'), idEditorSlot: $('#idEditorSlot'),
@@ -1082,8 +1082,9 @@
 
   function enterMode(mode) {
     state.mode = mode;
-    relocateEditor(mode);
+    if (mode !== 'party') relocateEditor(mode);
     renderModeShell();
+    if (mode === 'party') window.VigilLensParty?.activate();
   }
 
   function updateIdShell() {
@@ -1235,14 +1236,17 @@
   // ---------- Mode select / Scan ID events ----------
   els.modeDocBtn.addEventListener('click', () => { if (state.busy) return; enterMode('document'); });
   els.modeIdBtn.addEventListener('click', () => { if (state.busy) return; enterMode('id'); });
+  if (els.modePartyBtn) els.modePartyBtn.addEventListener('click', () => { if (state.busy) return; enterMode('party'); });
 
   els.switchModeBtn.addEventListener('click', () => {
     if (state.busy) return;
     const hasDocWork = state.mode === 'document' && state.pages.length > 0;
     const hasIdWork = state.mode === 'id' && (state.idScan.front || state.idScan.back);
-    if ((hasDocWork || hasIdWork) && !confirm('Chuyển chế độ sẽ xóa ảnh đang xử lý. Tiếp tục?')) return;
+    const hasPartyWork = state.mode === 'party' && !!window.VigilLensParty?.hasWork();
+    if ((hasDocWork || hasIdWork || hasPartyWork) && !confirm('Chuyển chế độ sẽ xóa ảnh đang xử lý. Tiếp tục?')) return;
     if (state.mode === 'document') { state.pages.forEach(p => URL.revokeObjectURL(p.url)); state.pages = []; state.selectedId = null; }
     if (state.mode === 'id') resetIdScan();
+    if (state.mode === 'party') window.VigilLensParty?.deactivate();
     state.preview.image?.close?.();
     state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
     state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';
@@ -1267,6 +1271,9 @@
   els.idEditBackBtn.addEventListener('click', () => { if (state.busy) return; state.idScan.step = 'back'; renderModeShell(); });
   els.idExportBtn.addEventListener('click', exportIdPdf);
 
+  // Small read-only bridge for Party Document Mode. The existing image
+  // pipeline remains the single implementation for crop/filter/export.
+  window.VigilLensCore = { renderPageCanvas, buildPdf, detectPage, defaultCorners: cloneCorners(DEFAULT_CORNERS) };
   // PWA install + offline state
   window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();state.deferredInstallPrompt=e;els.installBtn.classList.remove('hidden');});
   els.installBtn.addEventListener('click',async()=>{if(!state.deferredInstallPrompt)return;state.deferredInstallPrompt.prompt();await state.deferredInstallPrompt.userChoice;state.deferredInstallPrompt=null;els.installBtn.classList.add('hidden');});

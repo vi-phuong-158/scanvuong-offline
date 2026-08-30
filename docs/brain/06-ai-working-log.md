@@ -356,3 +356,11 @@
 - **File đã tạo:** `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore` (lần đầu, trước khi có bộ brain này).
 - **Lý do:** Yêu cầu ban đầu của người dùng — setup project hoàn chỉnh, tự audit và sửa lỗi trong phạm vi V1, không mở rộng scope.
 - **Kiểm tra:** Bộ rehearsal 5 case tổng hợp (thẳng, xiên mạnh, tương phản thấp, landscape, nhiều trang) chạy trong browser pane, xuất PDF được xác minh lại bằng `pypdf` (parse strict) và `pymupdf` (render từng trang + kiểm tra vị trí marker màu) — xác nhận không trang nào bị lật/mirror/sai thứ tự.
+
+## [2026-08-30] VPH Vigil Lens — Party Document Mode
+- Agent: Codex
+- Thay đổi: Thêm mode Scan tài liệu Đảng; nhập ảnh/PDF local; page coverage; split/merge/reorder/move/add/replace/remove; tìm kiếm taxonomy 104 loại; canonical filename; xác nhận thứ tự tài liệu cùng loại; export PDF source-page copy và hybrid; footer nhận diện.
+- File đã sửa: index.html, styles.css, app.js, sw.js, scripts/validate_static.py, .github/workflows/static-validation.yml, README.md, docs/brain/00-project-overview.md, docs/brain/01-architecture.md, docs/brain/03-decisions.md, docs/brain/04-current-tasks.md, docs/brain/05-testing-and-deploy.md, docs/brain/06-ai-working-log.md, THIRD_PARTY_NOTICES.md.
+- File đã tạo: party-mode.js, party-pdf.js, party-taxonomy.js, assets/party/document_types.json, scripts/regression_party_mode.cjs, scripts/acceptance_party_ui.cjs.
+- Lý do: Cung cấp công cụ scan/tách/ghép/xuất tài liệu Đảng tại chỗ mà không biến Vigil Lens thành hệ thống quản lý hồ sơ; bảo toàn page object PDF gốc và không thêm OCR/AI/backend/storage.
+- Kiểm tra: node --check cho script mới; node scripts/regression_party_mode.cjs 12/12; python scripts/validate_static.py sau khi cập nhật asset; các regression cũ và browser/offline Party acceptance còn phải chạy trước verdict kỹ thuật cuối.

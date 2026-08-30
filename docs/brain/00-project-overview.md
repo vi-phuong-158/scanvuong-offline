@@ -46,3 +46,7 @@ Khác với các app scan phổ biến, Vigil Lens không có backend, không ph
 - **V1 Document mode & Scan ID mode**: Hoàn thành và merge vào `main`.
 - **Tự động nhận diện 4 góc bằng Machine Learning**: Tích hợp mô hình neural network DocCornerNet Lean (`document-detector.js` + `assets/ml/`) chạy offline qua ONNX Runtime Web WASM, bảo vệ bằng Geometry Guard và fallback sang classical CV. Nghiệm thu thực tế trên 25 ảnh dataset thực tế đạt 100% usable (88% Auto-OK, 0% thất bại nặng). Kiểm thử offline trên Chromium headless và Service Worker cache hoàn tất thành công.
 - **Bảo mật & Offline**: 100% tài nguyên đóng gói cục bộ, zero network calls, zero external CDN, zero persistent storage, tuân thủ giấy phép bên thứ ba tại `THIRD_PARTY_NOTICES.md`.
+
+## Party Document Mode (2026-08-30)
+
+Party Mode adds a third, session-only workflow for scanning and assembling Party documents. It keeps the operator in control of page boundaries and taxonomy selection; it does not manage cases, infer document types, OCR content, or report missing document categories. Imported PDF pages remain source page references until export.

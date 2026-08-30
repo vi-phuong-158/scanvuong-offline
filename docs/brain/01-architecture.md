@@ -299,3 +299,11 @@ Không có. Ứng dụng không đọc bất kỳ biến môi trường nào —
   sửa `detectDocument()`/`componentQuad()`/`edgeQuad()`/`orderCorners()`** — đây là nơi duy nhất Scan
   ID "biết" về hình dạng thẻ ID, và nó phải ở dạng review-hint an toàn (thà đánh dấu nhầm một tài
   liệu hợp lệ là "cần kiểm tra" còn hơn tự tin sai) theo đúng nguyên tắc của `detectDocument()`.
+
+## Party Document Mode architecture (2026-08-30)
+
+The third workflow is isolated in party-mode.js and party-pdf.js; party-taxonomy.js is a generated offline mirror of assets/party/document_types.json. Party state remains in the module browser-memory closure and is reset on mode switch or page close.
+
+The source model is sources[] plus documents[].pages[]. An image page references a local object URL and is rendered only through the existing canvas export helper; Party mode does not call OCR, AI, or ML detection. A PDF page references {source, sourcePage} and is never rasterized. PartyPdf.sourceFromBuffer() parses ordinary PDF 1.x indirect objects and page objects; PartyPdf.buildPdf() copies reachable resources/content streams and creates new page wrappers. Hybrid exports preserve the operator-selected order of copied PDF pages and newly encoded scan images. Encrypted, corrupt, unsupported PDFs fail closed.
+
+The UI exposes page operations explicitly (split, merge, reorder, move, add, replace, remove) and reports assigned/total source page coverage. Taxonomy selection is an operator action; search normalizes Vietnamese accents only for matching and uses canonical filename_base for output names. Same-type sequence suffixes are blocked until the operator confirms order.

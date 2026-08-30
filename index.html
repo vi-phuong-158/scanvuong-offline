@@ -133,6 +133,18 @@
               </svg>
             </div>
           </button>
+
+          <button id="modePartyBtn" class="mode-card party-mode-card" type="button">
+            <div class="mode-card-visual">
+              <div class="mode-icon-box party-box" aria-hidden="true">▣</div>
+              <span class="mode-pill">104 loại</span>
+            </div>
+            <div class="mode-card-content">
+              <strong>Scan tài liệu Đảng</strong>
+              <p>Nhập PDF hoặc scan tài liệu · Tách, ghép trang và đặt tên theo danh mục 104 loại</p>
+            </div>
+            <div class="mode-card-arrow" aria-hidden="true">›</div>
+          </button>
         </div>
         <div class="mode-footer-privacy">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -183,6 +195,21 @@
       </div>
     </section>
 
+    <!-- Party Document Mode: local scan/PDF organization only -->
+    <section id="partyEmptyState" class="empty-state-section card hidden">
+      <div class="drop-zone party-drop-zone">
+        <div class="drop-icon party-drop-icon" aria-hidden="true">⇧</div>
+        <span class="party-kicker">PARTY DOCUMENT MODE</span>
+        <h2>Nhập nguồn tài liệu</h2>
+        <p class="drop-subtitle">Scan ảnh hoặc nhập PDF · Bạn chủ động tách, ghép và đặt tên</p>
+        <div class="empty-buttons">
+          <button id="partyCameraBtn" class="btn primary touch-lg" type="button">Chụp ảnh</button>
+          <button id="partyChooseBtn" class="btn secondary touch-lg" type="button">Chọn ảnh</button>
+          <button id="partyPdfBtn" class="btn secondary touch-lg" type="button">Nhập PDF</button>
+        </div>
+        <div class="privacy-note"><span>Không OCR · Không tự phân loại · 100% xử lý trên thiết bị</span></div>
+      </div>
+    </section>
     <!-- 3. Document Workspace -->
     <section id="workspace" class="workspace hidden">
       <!-- Sidebar / Thumbnail list -->
@@ -353,6 +380,38 @@
       </aside>
     </section>
 
+    <section id="partyWorkspace" class="party-workspace hidden" aria-label="Scan tài liệu Đảng">
+      <div class="party-main card">
+        <div class="party-page-head">
+          <div>
+            <span class="party-kicker">PARTY DOCUMENT MODE</span>
+            <h2>Tách và sắp xếp tài liệu</h2>
+            <p class="muted">Mỗi trang chỉ thuộc một tài liệu, trừ khi bạn chủ động tạo bản sao.</p>
+          </div>
+          <div class="party-head-actions">
+            <button id="partyAddBtn" class="btn secondary small" type="button">+ Thêm ảnh</button>
+            <button id="partyAddPdfBtn" class="btn secondary small" type="button">+ Thêm PDF</button>
+            <button id="partyNewDocumentBtn" class="btn primary small" type="button">+ Tài liệu</button>
+          </div>
+        </div>
+        <div class="party-coverage" aria-live="polite">
+          <div><span>Page coverage</span><strong id="partyCoverageText">0/0 trang nguồn đã được phân vào tài liệu</strong></div>
+          <div class="party-progress-track"><span id="partyCoverageBar"></span></div>
+          <p id="partyCoverageWarning" class="party-warning hidden"></p>
+        </div>
+        <div id="partyDocuments" class="party-documents"></div>
+      </div>
+      <aside class="party-side card">
+        <div class="party-side-head">
+          <span class="party-kicker">XUẤT TẠI CHỖ</span>
+          <h2>Đặt tên chuẩn</h2>
+          <p class="muted">Chọn loại do cán bộ xác nhận. Tên file lấy từ taxonomy canonical.</p>
+        </div>
+        <div id="partyOrderPanel" class="party-order-panel"></div>
+        <button id="partyExportAllBtn" class="btn primary full" type="button" disabled>Xuất tất cả tài liệu</button>
+        <p id="partyExportStatus" class="party-export-status" aria-live="polite"></p>
+      </aside>
+    </section>
     <!-- 4. Scan ID Workspace -->
     <section id="idWorkspace" class="workspace id-workspace hidden">
       <aside class="sidebar card id-sidebar">
@@ -452,6 +511,14 @@
   <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
   <input id="idFileInput" type="file" accept="image/jpeg,image/png,image/webp" hidden />
   <input id="idCameraInput" type="file" accept="image/*" capture="environment" hidden />
+  <input id="partyFileInput" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.pdf" multiple hidden />
+  <input id="partyCameraInput" type="file" accept="image/*" capture="environment" hidden />
+  <input id="partyPdfInput" type="file" accept="application/pdf,.pdf" hidden />
+
+  <footer class="app-footer">
+    <span>Vigil Lens by VPH</span><span class="app-footer-separator" aria-hidden="true">·</span>
+    <span>Thiết kế bởi Đại úy Vi Ngọc Phương - Phòng An ninh đối ngoại Công an tỉnh Phú Thọ</span>
+  </footer>
 
   <!-- Toast notification -->
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
@@ -459,5 +526,8 @@
   <!-- Scripts -->
   <script src="document-detector.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="party-taxonomy.js" defer></script>
+  <script src="party-pdf.js" defer></script>
+  <script src="party-mode.js" defer></script>
 </body>
 </html>

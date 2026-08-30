@@ -1,4 +1,4 @@
-﻿# Vigil Lens
+# Vigil Lens
 
 > **See clearly. Capture precisely.**
 
@@ -118,3 +118,13 @@ node scripts/acceptance_offline_pwa.cjs
 - **Tác giả:** VPH
 - **Thương hiệu:** VPH Vigil Lens
 - **Giấy phép mã nguồn:** MIT License (xem chi tiết trong `THIRD_PARTY_NOTICES.md`).
+
+### 3. Scan tài liệu Đảng (Party Document Mode)
+
+- Nhập ảnh hoặc PDF lớn hoàn toàn tại chỗ; PDF được đọc metadata và tách trang bằng page-object copier local.
+- Chủ động tách/ghép, đổi thứ tự, chuyển trang giữa các tài liệu, thêm trang, thay trang và bỏ trang khỏi tài liệu.
+- Theo dõi page coverage của phiên: X/Y trang nguồn đã được phân vào tài liệu; không có checklist hay trạng thái thiếu thành phần hồ sơ.
+- Chọn loại tài liệu từ taxonomy canonical 104 loại, tìm theo mã/tên/không dấu; filename lấy từ filename_base, không hard-code.
+- Nhiều tài liệu cùng loại chỉ nhận hậu tố .1/.2/... sau khi người dùng xác nhận thứ tự.
+- Export từng tài liệu dạng PDF; trang PDF nguồn được copy trực tiếp, ảnh mới chỉ qua canvas crop/filter do cán bộ kiểm soát. Party mode không gọi OCR, AI hoặc ML, không upload và không persistence.
+- Party Mode chỉ là công cụ scan và xuất tài liệu, không phải phần mềm quản lý hồ sơ.

@@ -53,6 +53,18 @@ def _vercel_json():
 check("vercel.json is valid JSON")(_vercel_json)
 
 
+def _party_taxonomy():
+    data = json.loads(read('assets/party/document_types.json'))
+    items = data.get('document_types')
+    ids = [item.get('id') for item in items or []]
+    assert len(items or []) == 104, "party taxonomy must contain exactly 104 document types"
+    assert len(set(ids)) == 104, "party taxonomy contains duplicate type ids"
+    assert all(item.get('filename_base') for item in items), "party taxonomy has an item without filename_base"
+    return "104 canonical document types, unique ids, filename_base present"
+
+
+check("party taxonomy is canonical shape and contains 104 unique types")(_party_taxonomy)
+
 def _server_py_ast():
     ast.parse(read('server.py'), filename='server.py')
 
@@ -78,7 +90,7 @@ check("every sw.js ASSETS entry exists on disk")(_sw_assets_exist)
 # anywhere in these files — including inside a comment — is worth failing CI
 # over, since this project's rule is that none should ever appear here.
 EXTERNAL_URL_RE = re.compile(r"https?://")
-SCANNED_FOR_EXTERNAL_URLS = ['index.html', 'app.js', 'document-detector.js', 'styles.css', 'sw.js', 'manifest.webmanifest']
+SCANNED_FOR_EXTERNAL_URLS = ['index.html', 'app.js', 'party-pdf.js', 'party-mode.js', 'party-taxonomy.js', 'document-detector.js', 'styles.css', 'sw.js', 'manifest.webmanifest']
 
 
 def _no_external_urls():
@@ -109,7 +121,7 @@ PRIVACY_FORBIDDEN_PATTERNS = {
 
 
 def _no_network_or_storage_in_app_js():
-    app_js = read('app.js')
+    app_js = '\\n'.join(read(f) for f in ['app.js', 'party-pdf.js', 'party-mode.js', 'party-taxonomy.js'])
     hits = []
     for label, pattern in PRIVACY_FORBIDDEN_PATTERNS.items():
         for m in re.finditer(pattern, app_js):
@@ -132,7 +144,7 @@ check("sw.js fetch usage stays same-origin (documented guard present)")(_sw_fetc
 
 # UI Emoji Guard: ensure all UI icons use consistent SVG and no emojis linger in app shell
 EMOJI_RE = re.compile(r'[\U0001F300-\U0001F9FF\U00002700-\U000027BF\U00002600-\U000026FF\U0001FA00-\U0001FAFF\U00002B50\U00002B55\U000025FD-\U000025FE\U000026AA-\U000026AB]')
-SCANNED_FOR_EMOJIS = ['index.html', 'styles.css', 'app.js', 'document-detector.js']
+SCANNED_FOR_EMOJIS = ['index.html', 'styles.css', 'app.js', 'party-pdf.js', 'party-mode.js', 'party-taxonomy.js', 'document-detector.js']
 
 
 def _no_ui_emojis():
