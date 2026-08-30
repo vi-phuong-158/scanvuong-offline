@@ -53,5 +53,6 @@
 
 - Đã triển khai trên branch feat/party-document-mode: mode thứ ba, page coverage, operator-controlled page operations, local 104-type taxonomy, canonical naming, same-type order confirmation, image/PDF/hybrid export và footer nhận diện.
 - Đã thêm regression scripts/regression_party_mode.cjs cho page copy, hybrid output và taxonomy.
-- Giới hạn còn thật: PDF thumbnail hiện là placeholder số trang vì repo chưa vendor PDF.js; parser fail-closed với PDF encrypted/corrupt/unsupported. Browser offline acceptance cho Party Mode cần chạy bổ sung trên Chromium cài PWA thật.
+- Đã thay placeholder PDF bằng preview canvas derivative cục bộ theo từng trang; giữ page-object copy nguyên gốc khi export. Renderer hỗ trợ geometry/vector và image filters phổ biến, fail riêng từng preview nếu gặp filter chưa hỗ trợ; parser vẫn fail-closed với PDF encrypted/corrupt/unsupported.
+- Browser acceptance Party Mode đã kiểm tra synthetic PDF có nội dung khác nhau, portrait/landscape, thứ tự canvas, back/re-entry, overflow và touch target trên 1792×896, 1366×768, 1024×768, 768×1024, 390×844.
 - Không thay đổi mục backlog Scan ID physical-size hoặc gate manual PWA installability.

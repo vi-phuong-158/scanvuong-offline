@@ -364,3 +364,11 @@
 - File đã tạo: party-mode.js, party-pdf.js, party-taxonomy.js, assets/party/document_types.json, scripts/regression_party_mode.cjs, scripts/acceptance_party_ui.cjs.
 - Lý do: Cung cấp công cụ scan/tách/ghép/xuất tài liệu Đảng tại chỗ mà không biến Vigil Lens thành hệ thống quản lý hồ sơ; bảo toàn page object PDF gốc và không thêm OCR/AI/backend/storage.
 - Kiểm tra: node --check cho script mới; node scripts/regression_party_mode.cjs 12/12; python scripts/validate_static.py sau khi cập nhật asset; các regression cũ và browser/offline Party acceptance còn phải chạy trước verdict kỹ thuật cuối.
+
+## [2026-08-30] Party Mode — real PDF thumbnail preview follow-up
+
+- Agent: Codex
+- Thay đổi: Thay placeholder số trang bằng canvas preview cục bộ theo từng PDF page; đọc MediaBox/CropBox, vector content và image XObject/stream filters phổ biến; giữ nguyên page model `{source, sourcePage}` và export PDF source-page copy. Thêm trạng thái loading/error riêng từng trang và kiểm tra responsive workspace.
+- File đã sửa: `party-pdf.js`, `party-mode.js`, `styles.css`, `scripts/acceptance_party_ui.cjs`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/04-current-tasks.md`, `docs/brain/05-testing-and-deploy.md`, `docs/brain/06-ai-working-log.md`.
+- Lý do: Người dùng cần nhận biết nội dung thật, thứ tự và tỷ lệ portrait/landscape trước thao tác Party Mode; không thêm PDF.js/framework/dependency và không gửi PDF ra mạng.
+- Kiểm tra: Chromium headless PASS với synthetic PDF 10 trang có vector content khác nhau, portrait/landscape, back/re-entry, no console error, no horizontal overflow và touch target tại 1792×896, 1366×768, 1024×768, 768×1024, 390×844; node check, Party regression 13/13, static validation và git diff --check PASS.

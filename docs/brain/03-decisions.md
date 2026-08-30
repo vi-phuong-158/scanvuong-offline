@@ -94,6 +94,13 @@
 - **Đánh đổi:** Không đáng kể — snapshot chỉ clone các object nhỏ (corners), không clone `File`/Blob bytes (an toàn vì `File` object không tự đổi nội dung).
 - **Người quyết định:** Claude, theo yêu cầu audit race-condition trong export flow.
 
+## [2026-08-30] Party Mode PDF thumbnail preview là derivative local, không sửa export
+
+- **Quyết định:** Party Mode render thumbnail PDF theo từng trang bằng canvas giới hạn kích thước, đọc MediaBox/CropBox, vector content và image XObject phổ biến ngay trong `party-pdf.js`. Page model hiện hữu vẫn giữ `{source, sourcePage}`; `buildMixedPdf()` tiếp tục copy page object/content stream gốc, không rasterize PDF đầu ra vì preview.
+- **Lý do:** Operator cần nhận biết nội dung thật, thứ tự và tỷ lệ portrait/landscape trước khi tách/ghép; placeholder số trang không đủ. Không thêm PDF.js/framework/dependency vì dự án phải offline, dependency-free và PDF nguồn không được upload.
+- **Failure handling:** PDF lỗi toàn bộ vẫn fail closed trước khi tạo page state; lỗi render từng trang chỉ đánh dấu preview trang đó, giữ position/page number và không làm crash Party Mode.
+- **Đánh đổi:** Renderer cố ý giới hạn ở PDF 1.x content stream và image filters phổ biến (FlateDecode, DCTDecode, raw 8-bit RGB/Gray/CMYK); format/filters chưa hỗ trợ hiển thị trạng thái lỗi riêng thay vì đoán hoặc làm mất trang.
+
 ## [2026-08-22] Khoá mọi mutation handler khi `state.busy === true`
 
 - **Quyết định:** Audit toàn bộ event handler có thể thay đổi `state.pages`/corners/filter/rotation/thứ tự trang (thêm ảnh, camera, drag/drop import, reorder thumbnail, move up/down, rotate, delete, clear all, reset crop, detect, auto-detect all, đổi filter, export lần hai) và thêm guard `if (state.busy) return;` trực tiếp trong từng handler — không chỉ dựa vào thuộc tính `disabled` của nút. `setBusy()` cũng disable thêm `clearBtn` và các nút `.filter-chip` (trước đó không nằm trong danh sách disable). Independent review (Codex-style second pass) phát hiện thêm một khoảng hở: `pointerdown` trên `#editorCanvas` guard đúng lúc bắt đầu kéo góc, nhưng `pointermove`/`endCornerDrag` (kết thúc kéo) không tự kiểm tra lại `state.busy` — nếu `busy` chuyển thành `true` giữa lúc đang kéo (ví dụ một thao tác async khác bắt đầu), `pointermove` vẫn ghi tiếp vào `page.corners`. Đã vá bằng cách kiểm tra `state.busy` trong cả `pointermove` (huỷ kéo ngay, đặt lại `dragCorner=-1`) và `endCornerDrag` (không `orderCorners()`/render lại nếu đang busy).

@@ -87,4 +87,4 @@ Không nằm trong phạm vi công việc thường xuyên — dự án là stat
     node scripts/regression_party_mode.cjs
     node scripts/acceptance_party_ui.cjs
 
-Regression này xác minh PDF 10 trang tách đúng 2 trang, output giữ content stream/page-object path không có JPEG conversion cho source page, hybrid giữ source page và thêm image page, taxonomy có 104 id duy nhất, tìm kiếm không dấu và filename canonical type 05. Chưa coi đây là thay thế cho browser acceptance: cần kiểm tra thêm trên desktop 1366×768, mobile 390×844, landscape và offline PWA với PDF thật.
+Regression này xác minh PDF 10 trang tách đúng 2 trang, output giữ content stream/page-object path không có JPEG conversion cho source page, hybrid giữ source page và thêm image page, taxonomy có 104 id duy nhất, tìm kiếm không dấu và filename canonical type 05. Browser acceptance_party_ui.cjs còn kiểm tra thumbnail canvas có pixel nội dung thật, đủ portrait/landscape, đúng thứ tự, back/re-entry, overflow và touch target tại 1792×896, 1366×768, 1024×768, 768×1024, 390×844. Đây vẫn không thay thế nghiệm thu offline PWA thủ công.

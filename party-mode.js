@@ -43,10 +43,14 @@
   }
 
   function createPdfPages(file, source) {
-    return Array.from({ length: source.pageCount }, (_, index) => ({
-      id: uid('pdf-page'), kind: 'pdf', file, name: `${file.name || 'Tài liệu PDF'} · trang ${index + 1}`,
-      url: '', source, sourcePage: index, corners: defaultCorners.map(p => ({ ...p })), rotation: 0, filter: 'original', confidence: 1
-    }));
+    return Array.from({ length: source.pageCount }, (_, index) => {
+      const info = PartyPdf.pageInfo(source, index);
+      return {
+        id: uid('pdf-page'), kind: 'pdf', file, name: `${file.name || 'Tài liệu PDF'} · trang ${index + 1}`,
+        url: '', source, sourcePage: index, previewState: 'pending', previewWidth: info.width, previewHeight: info.height,
+        corners: defaultCorners.map(p => ({ ...p })), rotation: 0, filter: 'original', confidence: 1
+      };
+    });
   }
 
   function currentDocument() { return state.documents.find(doc => doc.id === state.selected?.documentId) || state.documents[0] || null; }
@@ -54,8 +58,39 @@
   function sourcePageKey(page) { return page.kind === 'pdf' ? `${page.source.id}:${page.sourcePage}` : page.id; }
 
   function pagePreview(page, index) {
-    if (page.kind === 'pdf') return `<div class="party-pdf-thumb"><span>PDF</span><b>${index + 1}</b></div>`;
+    if (page.kind === 'pdf') {
+      if (page.previewState === 'error') return `<div class="party-pdf-thumb is-error" role="img" aria-label="Không xem trước được trang ${index + 1}"><strong>Không xem trước</strong><small>${esc(page.previewError || 'Trang PDF không đọc được')}</small></div>`;
+      const ratio = page.previewWidth && page.previewHeight ? ` style="aspect-ratio:${page.previewWidth}/${page.previewHeight}"` : '';
+      return `<div class="party-pdf-thumb is-loading"${ratio}><canvas class="party-pdf-preview" data-pdf-preview="${page.id}" aria-label="Xem trước trang PDF ${index + 1}"></canvas><span class="party-pdf-status">${page.previewState === 'ready' ? 'PDF' : 'Đang dựng…'}</span></div>`;
+    }
     return `<img src="${page.url}" alt="Trang ${index + 1}" loading="lazy" />`;
+  }
+
+  function frame() { return new Promise(resolve => (window.requestAnimationFrame || window.setTimeout)(resolve, 0)); }
+
+  async function renderPdfPreviews() {
+    const canvases = [...els.documents.querySelectorAll('[data-pdf-preview]')];
+    for (const canvas of canvases) {
+      const found = pageById(canvas.dataset.pdfPreview);
+      if (!found || found.page.kind !== 'pdf' || found.page.previewState === 'ready' || found.page.previewState === 'error') continue;
+      const page = found.page; page.previewState = 'rendering';
+      try {
+        await PartyPdf.renderThumbnail(page.source.page(page.sourcePage), canvas, 320);
+        page.previewState = 'ready';
+        canvas.parentElement.classList.remove('is-loading');
+        canvas.parentElement.querySelector('.party-pdf-status').textContent = 'PDF';
+      } catch (error) {
+        page.previewState = 'error';
+        page.previewError = error?.message || 'Không thể dựng preview trang PDF.';
+        if (canvas.isConnected) canvas.parentElement.outerHTML = pagePreview(page, found.doc.pages.indexOf(page));
+      }
+      await frame();
+    }
+  }
+
+  function queuePdfPreviews() {
+    if (state.previewJob) return;
+    state.previewJob = renderPdfPreviews().finally(() => { state.previewJob = null; });
   }
 
   function setAction(action, documentId, pageId) {
@@ -73,6 +108,7 @@
     bindDocumentEvents();
     renderCoverage();
     renderOrderPanel();
+    queuePdfPreviews();
   }
 
   function renderDocument(doc, docIndex) {
