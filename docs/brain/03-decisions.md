@@ -100,6 +100,7 @@
 - **Lý do:** Operator cần nhận biết nội dung thật, thứ tự và tỷ lệ portrait/landscape trước khi tách/ghép; placeholder số trang không đủ. Không thêm PDF.js/framework/dependency vì dự án phải offline, dependency-free và PDF nguồn không được upload.
 - **Failure handling:** PDF lỗi toàn bộ vẫn fail closed trước khi tạo page state; lỗi render từng trang chỉ đánh dấu preview trang đó, giữ position/page number và không làm crash Party Mode.
 - **Đánh đổi:** Renderer cố ý giới hạn ở PDF 1.x content stream và image filters phổ biến (FlateDecode, DCTDecode, raw 8-bit RGB/Gray/CMYK); format/filters chưa hỗ trợ hiển thị trạng thái lỗi riêng thay vì đoán hoặc làm mất trang.
+- **Hiệu năng:** Canvas được nạp theo IntersectionObserver với preload nhỏ và nhường frame giữa các trang; image XObject trong preview được downsample/cache ở tối đa 1200px. Cache derivative bị giải phóng khi rời Party Mode; export không đọc cache này.
 
 ## [2026-08-22] Khoá mọi mutation handler khi `state.busy === true`
 

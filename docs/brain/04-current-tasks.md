@@ -55,4 +55,5 @@
 - Đã thêm regression scripts/regression_party_mode.cjs cho page copy, hybrid output và taxonomy.
 - Đã thay placeholder PDF bằng preview canvas derivative cục bộ theo từng trang; giữ page-object copy nguyên gốc khi export. Renderer hỗ trợ geometry/vector và image filters phổ biến, fail riêng từng preview nếu gặp filter chưa hỗ trợ; parser vẫn fail-closed với PDF encrypted/corrupt/unsupported.
 - Browser acceptance Party Mode đã kiểm tra synthetic PDF có nội dung khác nhau, portrait/landscape, thứ tự canvas, back/re-entry, overflow và touch target trên 1792×896, 1366×768, 1024×768, 768×1024, 390×844.
+- Gate 100 trang đã xác nhận lazy preview: chỉ preload 6 trang, thumbnail cuối được render khi cuộn; fixture corrupt/encrypted bị từ chối fail-closed. Preview image cache downsample tối đa 1200px, không ảnh hưởng export.
 - Không thay đổi mục backlog Scan ID physical-size hoặc gate manual PWA installability.

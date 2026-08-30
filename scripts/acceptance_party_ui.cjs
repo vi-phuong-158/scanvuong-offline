@@ -91,6 +91,53 @@ async function runPdfWorkflow(cdp) {
   if (cdp.errors.length) throw new Error(`PDF export click emitted console errors: ${cdp.errors.join(',')}`);
   console.log(`PASS Party PDF workflow · screenshots ${SCREENSHOT_DIR}`);
 }
+async function runLargePdfAcceptance(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_synthetic_fixture_100.pdf');
+  fs.writeFileSync(fixturePath, syntheticPdf(100));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+  await new Promise(resolve => setTimeout(resolve, 500));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()");
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath);
+  await new Promise(resolve => setTimeout(resolve, 450));
+  const initial = JSON.parse(await cdp.eval("JSON.stringify({pages:document.querySelectorAll('.party-page').length, canvases:document.querySelectorAll('.party-pdf-preview').length, ready:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length, railWidth:document.querySelector('.party-page-rail')?.scrollWidth || 0})"));
+  if (initial.pages !== 100 || initial.canvases !== 100 || initial.ready < 1 || initial.ready >= 100 || cdp.errors.length) throw new Error(`100-page lazy gate failed before scroll: ${JSON.stringify({ initial, errors: cdp.errors })}`);
+  const firstShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+  fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_100_lazy_initial_1366x768.png'), Buffer.from(firstShot.data, 'base64'));
+  await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=rail.scrollWidth; rail.dispatchEvent(new Event('scroll',{bubbles:true})); })()");
+  await new Promise(resolve => setTimeout(resolve, 900));
+  const final = JSON.parse(await cdp.eval("JSON.stringify({ready:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length, last:document.querySelectorAll('.party-pdf-preview')[99]?.dataset.previewRendered === 'true', scrollLeft:document.querySelector('.party-page-rail')?.scrollLeft || 0})"));
+  if (!final.last || final.ready <= initial.ready || cdp.errors.length) throw new Error(`100-page lazy gate failed after scroll: ${JSON.stringify({ initial, final, errors: cdp.errors })}`);
+  const finalShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+  fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_100_lazy_last_1366x768.png'), Buffer.from(finalShot.data, 'base64'));
+  console.log(`PASS Party 100-page lazy thumbnail acceptance · initial ${initial.ready}/100, after scroll ${final.ready}/100 · screenshots ${SCREENSHOT_DIR}`);
+}
+async function runPdfErrorAcceptance(cdp) {
+  const invalidPath = path.join(SCREENSHOT_DIR, 'party_ui_invalid.pdf');
+  const encryptedPath = path.join(SCREENSHOT_DIR, 'party_ui_encrypted.pdf');
+  fs.writeFileSync(invalidPath, Buffer.from('not a pdf', 'latin1'));
+  fs.writeFileSync(encryptedPath, Buffer.concat([syntheticPdf(1), Buffer.from('\n/Encrypt 99 0 R', 'latin1')]));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: 'http://127.0.0.1:' + PORT + '/index.html' });
+  await new Promise(resolve => setTimeout(resolve, 500));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()");
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', invalidPath);
+  await new Promise(resolve => setTimeout(resolve, 250));
+  const invalid = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, pages:document.querySelectorAll('.party-page').length, toast:document.getElementById('toast').textContent})"));
+  if (invalid.docs !== 0 || invalid.pages !== 0 || !invalid.toast.includes('Tệp không phải PDF') || cdp.errors.length) throw new Error('Corrupt PDF handling failed: ' + JSON.stringify({ invalid, errors: cdp.errors }));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', encryptedPath);
+  await new Promise(resolve => setTimeout(resolve, 250));
+  const encrypted = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, pages:document.querySelectorAll('.party-page').length, toast:document.getElementById('toast').textContent})"));
+  if (encrypted.docs !== 0 || encrypted.pages !== 0 || !encrypted.toast.includes('mật khẩu/mã hóa') || cdp.errors.length) throw new Error('Encrypted PDF handling failed: ' + JSON.stringify({ encrypted, errors: cdp.errors }));
+  console.log('PASS Party corrupt/encrypted PDF acceptance');
+}
 async function runWorkspaceViewportSmoke(cdp, viewport) {
   const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_synthetic_fixture.pdf');
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.width < 721 });
@@ -145,6 +192,8 @@ server.listen(PORT, async () => {
       console.log(`PASS Party UI ${viewport.width}x${viewport.height} · screenshots ${SCREENSHOT_DIR}`);
     }
     await runPdfWorkflow(cdp);
+    await runLargePdfAcceptance(cdp);
+    await runPdfErrorAcceptance(cdp);
     for (const viewport of [
       { width: 1792, height: 896 }, { width: 1366, height: 768 }, { width: 1024, height: 768 },
       { width: 768, height: 1024 }, { width: 390, height: 844 }

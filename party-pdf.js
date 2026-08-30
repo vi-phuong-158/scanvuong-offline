@@ -239,10 +239,16 @@
       const width = Number((stream.dict.match(/\/Width\s+(\d+)/) || [])[1]);
       const height = Number((stream.dict.match(/\/Height\s+(\d+)/) || [])[1]);
       if (!width || !height) throw new Error('Ảnh PDF thiếu kích thước.');
+      const previewScale = Math.min(1, 1200 / Math.max(width, height));
+      const previewWidth = Math.max(1, Math.round(width * previewScale));
+      const previewHeight = Math.max(1, Math.round(height * previewScale));
       const filters = streamFilters(stream.dict);
       if (filters.some(filter => filter === 'DCTDecode' || filter === 'DCT')) {
         const blob = new Blob([stream.bytes], { type: 'image/jpeg' });
-        if (typeof createImageBitmap === 'function') return { kind: 'bitmap', image: await createImageBitmap(blob), width, height };
+        if (typeof createImageBitmap === 'function') {
+          const options = previewScale < 1 ? { resizeWidth: previewWidth, resizeHeight: previewHeight, resizeQuality: 'low' } : undefined;
+          return { kind: 'bitmap', image: await createImageBitmap(blob, options), width: previewWidth, height: previewHeight };
+        }
         const image = new Image();
         image.src = URL.createObjectURL(blob);
         await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('Không giải mã được ảnh JPEG trong PDF.')); });
@@ -254,22 +260,27 @@
       const components = colorSpace === 'DeviceGray' ? 1 : colorSpace === 'DeviceCMYK' ? 4 : 3;
       const predictor = Number((stream.dict.match(/\/Predictor\s+(\d+)/) || [])[1] || 1);
       const pixels = decodePredictor(stream.bytes, width, components, predictor);
-      const rgba = new Uint8ClampedArray(width * height * 4);
-      for (let i = 0, p = 0; i < width * height; i++) {
-        let r, g, b;
-        if (components === 1) r = g = b = pixels[p++] ?? 255;
-        else if (components === 4) {
-          const c = (pixels[p++] ?? 0) / 255, m = (pixels[p++] ?? 0) / 255, y = (pixels[p++] ?? 0) / 255, k = (pixels[p++] ?? 0) / 255;
-          r = 255 * (1 - Math.min(1, c + k)); g = 255 * (1 - Math.min(1, m + k)); b = 255 * (1 - Math.min(1, y + k));
-        } else { r = pixels[p++] ?? 255; g = pixels[p++] ?? 255; b = pixels[p++] ?? 255; }
-        const o = i * 4; rgba[o] = r; rgba[o + 1] = g; rgba[o + 2] = b; rgba[o + 3] = 255;
+      const rgba = new Uint8ClampedArray(previewWidth * previewHeight * 4);
+      for (let y = 0; y < previewHeight; y++) {
+        const sourceY = Math.min(height - 1, Math.floor(y * height / previewHeight));
+        for (let x = 0; x < previewWidth; x++) {
+          const sourceX = Math.min(width - 1, Math.floor(x * width / previewWidth));
+          let p = (sourceY * width + sourceX) * components;
+          let r, g, b;
+          if (components === 1) r = g = b = pixels[p++] ?? 255;
+          else if (components === 4) {
+            const c = (pixels[p++] ?? 0) / 255, m = (pixels[p++] ?? 0) / 255, yv = (pixels[p++] ?? 0) / 255, k = (pixels[p++] ?? 0) / 255;
+            r = 255 * (1 - Math.min(1, c + k)); g = 255 * (1 - Math.min(1, m + k)); b = 255 * (1 - Math.min(1, yv + k));
+          } else { r = pixels[p++] ?? 255; g = pixels[p++] ?? 255; b = pixels[p++] ?? 255; }
+          const offset = (y * previewWidth + x) * 4;
+          rgba[offset] = r; rgba[offset + 1] = g; rgba[offset + 2] = b; rgba[offset + 3] = 255;
+        }
       }
-      return { kind: 'pixels', imageData: new ImageData(rgba, width, height), width, height };
+      return { kind: 'pixels', imageData: new ImageData(rgba, previewWidth, previewHeight), width: previewWidth, height: previewHeight };
     })();
     source.previewImages.set(objectId, promise);
     try { return await promise; } catch (error) { source.previewImages.delete(objectId); throw error; }
   }
-
   function tokenizeContent(value) {
     const tokens = [];
     let i = 0;

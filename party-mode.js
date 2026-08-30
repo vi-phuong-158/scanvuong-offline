@@ -14,7 +14,8 @@
 
   const state = {
     active: false, busy: false, sources: [], documents: [], selected: null,
-    orderConfirmed: false, pendingAction: null, nextDocument: 1
+    orderConfirmed: false, pendingAction: null, nextDocument: 1,
+    previewObserver: null, previewQueue: new Set(), previewRunning: false
   };
 
   const defaultCorners = [{ x: .045, y: .045 }, { x: .955, y: .045 }, { x: .955, y: .955 }, { x: .045, y: .955 }];
@@ -68,29 +69,68 @@
 
   function frame() { return new Promise(resolve => (window.requestAnimationFrame || window.setTimeout)(resolve, 0)); }
 
-  async function renderPdfPreviews() {
-    const canvases = [...els.documents.querySelectorAll('[data-pdf-preview]')];
-    for (const canvas of canvases) {
-      const found = pageById(canvas.dataset.pdfPreview);
-      if (!found || found.page.kind !== 'pdf' || found.page.previewState === 'ready' || found.page.previewState === 'error') continue;
-      const page = found.page; page.previewState = 'rendering';
-      try {
-        await PartyPdf.renderThumbnail(page.source.page(page.sourcePage), canvas, 320);
-        page.previewState = 'ready';
+  function disconnectPdfPreviewObserver() {
+    state.previewObserver?.disconnect();
+    state.previewObserver = null;
+    state.previewQueue.clear();
+  }
+
+  async function renderPdfPreview(canvas) {
+    if (!canvas?.isConnected || canvas.dataset.previewRendered === 'true') return;
+    const found = pageById(canvas.dataset.pdfPreview);
+    if (!found || found.page.kind !== 'pdf' || found.page.previewState === 'error') return;
+    const page = found.page;
+    page.previewState = 'rendering';
+    try {
+      await PartyPdf.renderThumbnail(page.source.page(page.sourcePage), canvas, 320);
+      page.previewState = 'ready';
+      canvas.dataset.previewRendered = 'true';
+      if (canvas.isConnected) {
         canvas.parentElement.classList.remove('is-loading');
-        canvas.parentElement.querySelector('.party-pdf-status').textContent = 'PDF';
-      } catch (error) {
-        page.previewState = 'error';
-        page.previewError = error?.message || 'Không thể dựng preview trang PDF.';
-        if (canvas.isConnected) canvas.parentElement.outerHTML = pagePreview(page, found.doc.pages.indexOf(page));
+        const status = canvas.parentElement.querySelector('.party-pdf-status');
+        if (status) status.textContent = 'PDF';
       }
-      await frame();
+    } catch (error) {
+      page.previewState = 'error';
+      page.previewError = error?.message || 'Không thể dựng preview trang PDF.';
+      if (canvas.isConnected) canvas.parentElement.outerHTML = pagePreview(page, found.doc.pages.indexOf(page));
     }
   }
 
+  async function drainPdfPreviewQueue() {
+    if (state.previewRunning) return;
+    state.previewRunning = true;
+    try {
+      while (state.previewQueue.size) {
+        const canvas = state.previewQueue.values().next().value;
+        state.previewQueue.delete(canvas);
+        await renderPdfPreview(canvas);
+        await frame();
+      }
+    } finally {
+      state.previewRunning = false;
+      if (state.previewQueue.size) drainPdfPreviewQueue();
+    }
+  }
+
+  function queuePdfPreview(canvas) {
+    if (!canvas?.isConnected || canvas.dataset.previewRendered === 'true') return;
+    state.previewQueue.add(canvas);
+    drainPdfPreviewQueue();
+  }
+
   function queuePdfPreviews() {
-    if (state.previewJob) return;
-    state.previewJob = renderPdfPreviews().finally(() => { state.previewJob = null; });
+    disconnectPdfPreviewObserver();
+    const canvases = [...els.documents.querySelectorAll('[data-pdf-preview]')];
+    // Render only a small initial window. The observer brings later pages in as
+    // they approach the viewport, so a 100–200 page PDF never renders at once.
+    canvases.slice(0, 6).forEach(queuePdfPreview);
+    if (typeof IntersectionObserver === 'function') {
+      state.previewObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => { if (entry.isIntersecting) queuePdfPreview(entry.target); });
+      }, { root: null, rootMargin: '480px', threshold: 0.01 });
+      canvases.forEach(canvas => state.previewObserver.observe(canvas));
+    }
   }
 
   function setAction(action, documentId, pageId) {
@@ -306,7 +346,7 @@
   }
 
   function activate() { state.active = true; els.empty.classList.remove('hidden'); render(); }
-  function deactivate() { state.active = false; [...state.sources, ...state.documents.flatMap(doc => doc.pages)].forEach(page => { if (page.kind === 'image' && page.url) URL.revokeObjectURL(page.url); }); state.sources = []; state.documents = []; state.selected = null; state.orderConfirmed = false; state.pendingAction = null; els.empty.classList.add('hidden'); els.workspace.classList.add('hidden'); }
+  function deactivate() { state.active = false; disconnectPdfPreviewObserver(); [...state.sources, ...state.documents.flatMap(doc => doc.pages)].forEach(page => { if (page.kind === 'image' && page.url) URL.revokeObjectURL(page.url); if (page.kind === 'pdf') page.source.previewImages?.clear(); }); state.sources = []; state.documents = []; state.selected = null; state.orderConfirmed = false; state.pendingAction = null; els.empty.classList.add('hidden'); els.workspace.classList.add('hidden'); }
   function hasWork() { return state.sources.length > 0; }
 
   els.cameraBtn.addEventListener('click', () => els.cameraInput.click());
