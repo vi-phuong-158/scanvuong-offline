@@ -76,6 +76,7 @@
   }
 
   function renderDocument(doc, docIndex) {
+    const docs = state.documents;
     const type = taxonomy().find(item => item.id === doc.typeId);
     return `<article class="party-document ${state.selected?.documentId === doc.id ? 'is-selected' : ''}" data-document-id="${doc.id}">
       <header class="party-document-head"><div><span class="party-doc-number">TÀI LIỆU ${docIndex + 1}</span><h3>${esc(type?.name_vi || 'Chưa chọn loại tài liệu')}</h3><p>${doc.pages.length} trang · ${type ? esc(type.filename_base) + '.pdf' : 'Chọn loại để sinh tên file'}</p></div>
