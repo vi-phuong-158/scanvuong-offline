@@ -28,8 +28,7 @@ class CDP {
 function browserPath() {
   const configured = [process.env.CHROME_PATH, process.env.GOOGLE_CHROME_BIN, process.env.BROWSER_PATH, process.env.CHROMIUM_PATH].find(Boolean);
   if (configured && fs.existsSync(configured)) return configured;
-  const unixPaths = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
-  for (const candidate of unixPaths) { try { if (fs.statSync(candidate).isFile()) return candidate; } catch (_) {} }
+
   const winPaths = [
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
@@ -37,12 +36,42 @@ function browserPath() {
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
   ];
   for (const candidate of winPaths) { try { if (fs.statSync(candidate).isFile()) return candidate; } catch (_) {} }
+
+  const unixPaths = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium'];
+  for (const candidate of unixPaths) { try { if (fs.statSync(candidate).isFile()) return candidate; } catch (_) {} }
+
   const names = process.platform === 'win32' ? ['google-chrome', 'chromium', 'chromium-browser', 'msedge'] : ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome', 'microsoft-edge'];
   const locator = process.platform === 'win32' ? 'where' : 'which';
-  for (const name of names) { try { const found = execFileSync(locator, [name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split(/\r?\n/).find(Boolean); if (found && fs.existsSync(found)) return found; } catch (_) {} }
+  for (const name of names) {
+    try {
+      const found = execFileSync(locator, [name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split(/\r?\n/).find(Boolean);
+      if (found && fs.existsSync(found)) return found;
+    } catch (_) {}
+  }
   throw new Error('Không tìm thấy Chromium/Chrome/Edge.');
 }
-async function cdpUrl() { for (let i = 0; i < 60; i++) { try { const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`); const tabs = await response.json(); const tab = tabs.find(item => item.type === 'page'); if (tab?.webSocketDebuggerUrl) return tab.webSocketDebuggerUrl; const newRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new`, { method: 'PUT' }); const newTab = await newRes.json(); if (newTab?.webSocketDebuggerUrl) return newTab.webSocketDebuggerUrl; } catch (_) {} await new Promise(resolve => setTimeout(resolve, 150)); } throw new Error('Không kết nối được Chrome CDP.'); }
+
+async function cdpUrl() {
+  for (let i = 0; i < 120; i++) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
+      if (response.ok) {
+        const tabs = await response.json();
+        const tab = tabs.find(item => item.type === 'page');
+        if (tab?.webSocketDebuggerUrl) return tab.webSocketDebuggerUrl;
+      }
+    } catch (_) {}
+    try {
+      const newRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new`, { method: 'PUT' });
+      if (newRes.ok) {
+        const newTab = await newRes.json();
+        if (newTab?.webSocketDebuggerUrl) return newTab.webSocketDebuggerUrl;
+      }
+    } catch (_) {}
+    await new Promise(resolve => setTimeout(resolve, 150));
+  }
+  throw new Error('Không kết nối được Chrome CDP.');
+}
 
 function syntheticPdf(pageCount, lineEnding = '\n') {
   let offset = 0;
@@ -648,11 +677,14 @@ server.listen(PORT, async () => {
     chrome = spawn(browserPath(), [
       '--headless=new',
       '--no-sandbox',
+      '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--no-first-run',
+      '--no-default-browser-check',
       `--user-data-dir=${chromeProfile}`,
       `--remote-debugging-port=${CDP_PORT}`,
+      '--remote-debugging-address=127.0.0.1',
       'about:blank'
     ]);
     const WebSocketClient = globalThis.WebSocket || require('undici').WebSocket;
