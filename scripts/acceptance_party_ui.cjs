@@ -136,6 +136,54 @@ function syntheticImagePdf(pageCount) {
   return Buffer.concat(parts);
 }
 
+function syntheticBlankAndInkPdf() {
+  let offset = 0;
+  const header = '%PDF-1.4\n';
+  const offsets = [];
+  const parts = [Buffer.from(header, 'latin1')];
+  offset += header.length;
+
+  function addObj(num, bodyBuffer) {
+    offsets[num] = offset;
+    const prefix = Buffer.from(`${num} 0 obj\n`, 'latin1');
+    const suffix = Buffer.from('\nendobj\n', 'latin1');
+    parts.push(prefix, bodyBuffer, suffix);
+    offset += prefix.length + bodyBuffer.length + suffix.length;
+  }
+
+  addObj(1, Buffer.from('<< /Type /Catalog /Pages 2 0 R >>', 'latin1'));
+  addObj(2, Buffer.from('<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>', 'latin1'));
+
+  // Page 1: 100% white image XObject (all pixels 255)
+  const width = 64, height = 64;
+  const rawWhite = Buffer.alloc(width * height * 3, 255);
+  const compressedWhite = zlib.deflateSync(rawWhite);
+  const content1 = `q\n595 0 0 842 0 0 cm\n/Im0 Do\nQ\n`;
+  addObj(3, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>`, 'latin1'));
+  addObj(4, Buffer.from(`<< /Length ${Buffer.byteLength(content1, 'latin1')} >>\nstream\n${content1}endstream`, 'latin1'));
+  addObj(5, Buffer.concat([
+    Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${compressedWhite.length} >>\nstream\n`, 'latin1'),
+    compressedWhite,
+    Buffer.from('\nendstream', 'latin1')
+  ]));
+
+  // Page 2: Dark ink content
+  const content2 = `q\n0.1 0.1 0.1 rg\n50 50 495 742 re\nf\nQ\n`;
+  addObj(6, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 7 0 R >>`, 'latin1'));
+  addObj(7, Buffer.from(`<< /Length ${Buffer.byteLength(content2, 'latin1')} >>\nstream\n${content2}endstream`, 'latin1'));
+
+  const startxref = offset;
+  const totalObjs = 8;
+  let xref = `xref\n0 ${totalObjs}\n0000000000 65535 f \n`;
+  for (let num = 1; num < totalObjs; num++) {
+    const offStr = String(offsets[num] || 0).padStart(10, '0');
+    xref += `${offStr} 00000 n \n`;
+  }
+  const trailer = `trailer\n<< /Size ${totalObjs} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF`;
+  parts.push(Buffer.from(xref + trailer, 'latin1'));
+  return Buffer.concat(parts);
+}
+
 async function setFileInput(cdp, selector, filePath) {
   const expression = `document.querySelector(${JSON.stringify(selector)})`;
   const evaluated = await cdp.send('Runtime.evaluate', { expression, objectGroup: 'party-file-input' });
@@ -233,14 +281,164 @@ async function runMultiSplitAcceptance(cdp) {
   if (splitResult.docs !== 4 || splitResult.docCounts.join(',') !== '3,3,3,3' || !splitResult.coverage.includes('12/12')) {
     throw new Error(`Multi-split execution mismatch: ${JSON.stringify(splitResult)}`);
   }
-  if (splitResult.docSources[0].join(';') !== 'Nguồn: trang 1/12;Nguồn: trang 2/12;Nguồn: trang 3/12' ||
-      splitResult.docSources[1].join(';') !== 'Nguồn: trang 4/12;Nguồn: trang 5/12;Nguồn: trang 6/12' ||
-      splitResult.docSources[2].join(';') !== 'Nguồn: trang 7/12;Nguồn: trang 8/12;Nguồn: trang 9/12' ||
-      splitResult.docSources[3].join(';') !== 'Nguồn: trang 10/12;Nguồn: trang 11/12;Nguồn: trang 12/12') {
-    throw new Error(`Multi-split source preservation mismatch: ${JSON.stringify(splitResult.docSources)}`);
+
+  // Merge doc 2 into doc 1
+  await cdp.eval("document.querySelectorAll('.party-document')[1].querySelector('[data-doc-action=merge-prev]').click()");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const mergedResult = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, docCounts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), coverage:document.getElementById('partyCoverageText').textContent})"));
+  if (mergedResult.docs !== 3 || mergedResult.docCounts.join(',') !== '6,3,3' || !mergedResult.coverage.includes('12/12')) {
+    throw new Error(`Merge after multi-split failed: ${JSON.stringify(mergedResult)}`);
   }
 
-  console.log('PASS Party multi-split UX (toggle, clear, apply 3 points -> 4 docs, source preservation)');
+  // Move page 6 from doc 1 to doc 2
+  await cdp.eval("document.querySelectorAll('.party-document')[0].querySelectorAll('.party-page-thumb')[5].click()");
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await cdp.eval("(() => { const docs=[...document.querySelectorAll('.party-document')]; const select=docs[0].querySelector('.party-move-select'); select.value=docs[1].dataset.documentId; select.dispatchEvent(new Event('change',{bubbles:true})); })()");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const movedResult = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, docCounts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), docSources:[...document.querySelectorAll('.party-document')].map(doc=>[...doc.querySelectorAll('.party-page-source')].map(s=>s.textContent.trim())), coverage:document.getElementById('partyCoverageText').textContent})"));
+  if (movedResult.docs !== 3 || movedResult.docCounts.join(',') !== '5,4,3' || !movedResult.coverage.includes('12/12')) {
+    throw new Error(`Move page after multi-split failed: ${JSON.stringify(movedResult)}`);
+  }
+  if (movedResult.docSources[0].join(';') !== 'Nguồn: trang 1/12;Nguồn: trang 2/12;Nguồn: trang 3/12;Nguồn: trang 4/12;Nguồn: trang 5/12' ||
+      movedResult.docSources[1].join(';') !== 'Nguồn: trang 7/12;Nguồn: trang 8/12;Nguồn: trang 9/12;Nguồn: trang 6/12' ||
+      movedResult.docSources[2].join(';') !== 'Nguồn: trang 10/12;Nguồn: trang 11/12;Nguồn: trang 12/12') {
+    throw new Error(`Source page preservation after move mismatch: ${JSON.stringify(movedResult.docSources)}`);
+  }
+
+  // Assign taxonomies and export all 3 docs
+  await cdp.eval("['05','07','38'].forEach((type,index)=>{const input=document.querySelectorAll('[data-type-input]')[index]; input.value=type; input.dispatchEvent(new Event('change',{bubbles:true}));});");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  await preparePrivateDownloadCapture(cdp);
+  await cdp.eval("document.getElementById('partyExportAllBtn').click()");
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  const exported = await readPrivateExportPageCounts(cdp);
+  if (exported.join(',') !== '5,4,3' || cdp.errors.length) {
+    throw new Error(`Multi-split and modified workflow export failed: ${JSON.stringify({ expected: '5,4,3', exported, errors: cdp.errors })}`);
+  }
+
+  console.log('PASS Party multi-split UX (toggle, clear, apply 3 points -> 4 docs, merge, move, source preservation & export)');
+}
+
+async function runEventListenerAcceptance(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_events_fixture.pdf');
+  fs.writeFileSync(fixturePath, syntheticPdf(2));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 400));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 600));
+
+  // Trigger rapid re-renders
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[0].click()");
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[1].click()");
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[0].click()");
+
+  // Rotate button single-execution (+90 deg)
+  const beforeRotate = JSON.parse(await cdp.eval("JSON.stringify((() => { const c=document.querySelector('.party-pdf-preview'); return {w:c.width,h:c.height}; })())"));
+  await cdp.eval("document.querySelector('[data-page-action=rotate]').click()");
+  await new Promise(resolve => setTimeout(resolve, 400));
+  const afterRotate = JSON.parse(await cdp.eval("JSON.stringify((() => { const c=document.querySelector('.party-pdf-preview'); return {w:c.width,h:c.height}; })())"));
+  if (beforeRotate.w !== afterRotate.h || beforeRotate.h !== afterRotate.w) {
+    throw new Error(`Rotate event listener duplicated: before=${JSON.stringify(beforeRotate)}, after=${JSON.stringify(afterRotate)}`);
+  }
+
+  // Split toggle button single-execution (exactly 1 click -> marked = true)
+  await cdp.eval("document.querySelector('[data-split-toggle]').click()");
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const markedState = JSON.parse(await cdp.eval("JSON.stringify({markedCount:document.querySelectorAll('.party-split-btn.is-marked').length})"));
+  if (markedState.markedCount !== 1) {
+    throw new Error(`Split toggle event listener duplicated: markedCount=${markedState.markedCount}`);
+  }
+
+  console.log('PASS Party event listener delegation & non-duplication acceptance');
+}
+
+async function runTrueBlankPageAcceptance(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_blank_and_ink.pdf');
+  fs.writeFileSync(fixturePath, syntheticBlankAndInkPdf());
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 400));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 800));
+
+  const result = JSON.parse(await cdp.eval("JSON.stringify((() => { const canvases=[...document.querySelectorAll('.party-pdf-preview')]; return {pages:document.querySelectorAll('.party-page').length, ready:canvases.filter(c=>c.dataset.previewRendered==='true').length, errors:document.querySelectorAll('.party-pdf-thumb.is-error').length, p1Status:canvases[0]?.parentElement.querySelector('.party-pdf-status')?.textContent, p2Status:canvases[1]?.parentElement.querySelector('.party-pdf-status')?.textContent}; })())"));
+  if (result.pages !== 2 || result.ready !== 2 || result.errors !== 0 || !result.p1Status.startsWith('PDF') || !result.p2Status.startsWith('PDF') || cdp.errors.length) {
+    throw new Error(`True blank page acceptance failed: ${JSON.stringify({ result, errors: cdp.errors })}`);
+  }
+  console.log('PASS Party true blank page vs valid ink preview acceptance');
+}
+
+async function runRapidInteractionRerenderReproduction(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_rapid_interact_12.pdf');
+  fs.writeFileSync(fixturePath, syntheticPdf(12));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 400));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath);
+  
+  // Rapid user clicks while queue is starting
+  await new Promise(resolve => setTimeout(resolve, 40));
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[0]?.click()");
+  await new Promise(resolve => setTimeout(resolve, 40));
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[1]?.click()");
+  await new Promise(resolve => setTimeout(resolve, 40));
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[2]?.click()");
+  await new Promise(resolve => setTimeout(resolve, 1200));
+
+  const result = JSON.parse(await cdp.eval("JSON.stringify((() => { const canvases=[...document.querySelectorAll('.party-pdf-preview')]; return {canvasesCount:canvases.length, readyCount:canvases.filter(c=>c.dataset.previewRendered==='true').length, blankCanvases:canvases.filter(c=>c.dataset.previewRendered==='true').some(c=>{const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data; let nonWhite=0; for(let i=0;i<d.length;i+=16){if(d[i]<245||d[i+1]<245||d[i+2]<245)nonWhite++;} return nonWhite===0;})}; })())"));
+  if (result.readyCount < 6 || result.blankCanvases || cdp.errors.length) {
+    throw new Error(`Rapid interaction reproduction failed on hotfix: ${JSON.stringify({ result, errors: cdp.errors })}`);
+  }
+  console.log(`PASS Party rapid interaction & synchronous DOM restoration (${result.readyCount} ready, 0 blank)`);
+}
+
+async function runLargePdfAcceptance(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_synthetic_fixture_100.pdf');
+  fs.writeFileSync(fixturePath, syntheticPdf(100));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+  await new Promise(resolve => setTimeout(resolve, 500));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()");
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath);
+  await new Promise(resolve => setTimeout(resolve, 450));
+  const initial = JSON.parse(await cdp.eval("JSON.stringify({pages:document.querySelectorAll('.party-page').length, canvases:document.querySelectorAll('.party-pdf-preview').length, ready:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length, railWidth:document.querySelector('.party-page-rail')?.scrollWidth || 0})"));
+  if (initial.pages !== 100 || initial.canvases !== 100 || initial.ready < 1 || initial.ready > 10 || cdp.errors.length) {
+    throw new Error(`100-page lazy gate failed before scroll: ${JSON.stringify({ initial, errors: cdp.errors })}`);
+  }
+  const firstShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+  fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_100_lazy_initial_1366x768.png'), Buffer.from(firstShot.data, 'base64'));
+
+  // Scroll to the end of rail
+  await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=rail.scrollWidth; })()");
+  for (let i = 0; i < 25; i++) {
+    const isDone = await cdp.eval("document.querySelectorAll('.party-pdf-preview')[99]?.dataset.previewRendered === 'true'");
+    if (isDone) break;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  const final = JSON.parse(await cdp.eval("JSON.stringify({ready:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length, last:document.querySelectorAll('.party-pdf-preview')[99]?.dataset.previewRendered === 'true', scrollLeft:document.querySelector('.party-page-rail')?.scrollLeft || 0})"));
+  if (!final.last || final.ready > 25 || cdp.errors.length) {
+    throw new Error(`100-page lazy gate failed after scroll: ${JSON.stringify({ initial, final, errors: cdp.errors })}`);
+  }
+  const finalShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+  fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_100_lazy_last_1366x768.png'), Buffer.from(finalShot.data, 'base64'));
+
+  // Scroll back to the beginning
+  await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=0; })()");
+  await new Promise(resolve => setTimeout(resolve, 300));
+  const restored = JSON.parse(await cdp.eval("JSON.stringify({p0Ready:document.querySelectorAll('.party-pdf-preview')[0]?.dataset.previewRendered === 'true'})"));
+  if (!restored.p0Ready || cdp.errors.length) {
+    throw new Error(`100-page restore at start failed: ${JSON.stringify({ restored, errors: cdp.errors })}`);
+  }
+
+  console.log(`PASS Party 100-page lazy thumbnail acceptance · initial ${initial.ready}/100, after scroll ${final.ready}/100, bounded < 25 · screenshots ${SCREENSHOT_DIR}`);
 }
 
 async function runPrivateRealPdfAcceptance(cdp, fixturePath, expectedPages) {
@@ -249,8 +447,10 @@ async function runPrivateRealPdfAcceptance(cdp, fixturePath, expectedPages) {
   await cdp.eval("document.getElementById('modePartyBtn').click(); document.getElementById('partyPdfBtn').click()"); await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, expectedPages === 2 ? 1800 : 2500));
   if (expectedPages > 6) {
     // Scroll smoothly through rail to trigger all thumbnail renders
-    await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); for (let pos=0; pos<=rail.scrollWidth; pos+=300) { rail.scrollLeft=pos; rail.dispatchEvent(new Event('scroll',{bubbles:true})); } rail.scrollLeft=rail.scrollWidth; rail.dispatchEvent(new Event('scroll',{bubbles:true})); })()");
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=Math.floor(rail.scrollWidth / 2); })()");
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=rail.scrollWidth; })()");
+    await new Promise(resolve => setTimeout(resolve, 1800));
   }
   const imported = JSON.parse(await cdp.eval("JSON.stringify((() => { const ink=canvas=>{const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data; for(let i=0;i<data.length;i+=64) if(data[i]<244||data[i+1]<244||data[i+2]<244)return true; return false;}; const canvases=[...document.querySelectorAll('.party-pdf-preview')]; return {pages:document.querySelectorAll('.party-page').length,coverage:document.getElementById('partyCoverageText').textContent,ready:canvases.filter(canvas=>canvas.dataset.previewRendered==='true').length,ink:canvases.map(canvas=>canvas.dataset.previewRendered==='true'&&ink(canvas)),errors:document.querySelectorAll('.party-pdf-thumb.is-error').length,messages:[...document.querySelectorAll('.party-pdf-thumb.is-error small')].map(node=>node.textContent),sources:[...document.querySelectorAll('.party-page-source')].map(s=>s.textContent.trim())};})())"));
   if (imported.pages !== expectedPages || !imported.coverage.includes(`${expectedPages}/${expectedPages}`) || imported.errors || imported.ink.some(value => !value) || cdp.errors.length) {
@@ -496,6 +696,9 @@ server.listen(PORT, async () => {
     await runHelpUxAcceptance(cdp);
     await runPdfWorkflow(cdp);
     await runMultiSplitAcceptance(cdp);
+    await runEventListenerAcceptance(cdp);
+    await runTrueBlankPageAcceptance(cdp);
+    await runRapidInteractionRerenderReproduction(cdp);
     await runLargePdfAcceptance(cdp);
     await runPreviewLifecycleAcceptance(cdp);
     await runPdfErrorAcceptance(cdp);

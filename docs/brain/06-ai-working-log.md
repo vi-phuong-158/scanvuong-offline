@@ -16,6 +16,24 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-08-31] PR #10 Review Blockers Closure: CI Emoji Guard, True Blank Page, Event Delegation & Bounded Cache
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Fix CI Đỏ (UI Emoji Guard):** Thay thế toàn bộ ký tự kéo literal U+2702 bằng SVG icon nhất quán trong `party-mode.js` và loại bỏ khỏi `index.html`. `python scripts/validate_static.py` PASS 10/10.
+  2. **Chứng minh Root Cause White Thumbnails & Đồng bộ DOM:**
+     - Tái hiện lỗi: Trong Base PR #9, khi user thao tác chọn trang / cuộn ngang trong lúc preview đang dựng, `render()` tái tạo DOM khiến canvas cũ bị hủy, canvas mới rỗng (300x150 blank), `page.previewState` bị kẹt ở `ready` hoặc `rendering` làm thumbnail trắng vĩnh viễn.
+     - Khắc phục: `restoreRenderedCanvases()` khôi phục tức thì layer canvas đã render lên thẻ DOM mới. Đã bổ sung test `runRapidInteractionRerenderReproduction` kiểm tra click liên tục trong lúc preview queue đang chạy (PASS 0 blank).
+  3. **Hỗ trợ True Blank Page (Trang trắng hợp lệ):** Thêm hàm `sourceHasInk(ref)` kiểm tra stream và image XObject. Nếu trang PDF thực sự là trang scan trắng (toàn bộ pixel 255), preview đánh dấu `ready` hợp lệ, không báo lỗi giả. Nếu trang có ink mà canvas render trắng, phát hiện và kích hoạt fallback / error card.
+  4. **Loại bỏ trùng lặp Event Listeners:** Thay thế `bindDocumentEvents()` bằng Event Delegation gắn 1 lần duy nhất trên `els.documents` và `els.orderPanel`. Test `runEventListenerAcceptance` xác nhận click xoay đúng 1 lần chỉ xoay +90°, click split toggle đúng 1 lần.
+  5. **Bảo toàn Lazy Rendering & Bounded Cache (RAM):**
+     - Loại bỏ việc enqueue toàn bộ canvas trên scroll listener; dùng `IntersectionObserver` với `rootMargin: '600px'` tải gối đầu mượt mà ~3 thẻ trang kế tiếp.
+     - Bounded cache LRU tối đa 32 thumbnail trong bộ nhớ (`state.cachedThumbPages`), ngăn chặn rò rỉ RAM trên PDF 100–200 trang.
+     - Test 100 trang: ban đầu 6/100, sau khi cuộn chỉ 9/100 được render.
+  6. **Hoàn thiện Multi-Split Regression:** Bổ sung test workflow đầy đủ: split 3/6/9 -> 4 docs, merge doc 2 vào doc 1 -> 3 docs ([6,3,3]), move trang 6 sang doc 2 -> [5,4,3], bảo toàn tuyệt đối số trang nguồn `Nguồn: trang Y/12`, và xuất 3 file PDF chuẩn.
+- **File đã sửa:** `party-pdf.js`, `party-mode.js`, `styles.css`, `index.html`, `scripts/acceptance_party_ui.cjs`, `docs/brain/06-ai-working-log.md`
+- **Lý do:** Đóng toàn bộ các blocker review của PR #10, bảo đảm CI xanh và không hồi quy lazy render / event listeners.
+- **Kiểm tra:** `python scripts/validate_static.py` PASS (10/10), `node scripts/regression_party_mode.cjs` PASS (26/26), `node scripts/acceptance_party_ui.cjs` PASS (bao gồm 2 real PDFs 12 trang và 2 trang).
+
 ## [2026-08-30] Hotfix PR #10: Party Document Mode PDF Preview & Multi-Split UX
 - **Agent:** Codex
 - **Thay đổi:**

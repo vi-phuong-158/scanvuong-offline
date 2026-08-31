@@ -16,7 +16,8 @@
   const state = {
     active: false, busy: false, sources: [], documents: [], selected: null,
     orderConfirmed: false, pendingAction: null, nextDocument: 1, markedSplits: new Set(),
-    previewObserver: null, previewQueue: new Map(), previewRunning: false, previewGeneration: 0
+    previewObserver: null, previewQueue: new Map(), previewRunning: false, previewGeneration: 0,
+    cachedThumbPages: []
   };
 
   const defaultCorners = [{ x: .045, y: .045 }, { x: .955, y: .045 }, { x: .955, y: .955 }, { x: .045, y: .955 }];
@@ -136,6 +137,14 @@
         copy.getContext('2d', { alpha: false })?.drawImage(canvas, 0, 0);
         page.previewThumbCanvas = copy;
       }
+      state.cachedThumbPages = state.cachedThumbPages.filter(p => p !== page);
+      state.cachedThumbPages.push(page);
+      if (state.cachedThumbPages.length > 32) {
+        const evicted = state.cachedThumbPages.shift();
+        if (evicted) {
+          evicted.previewThumbCanvas = null;
+        }
+      }
       canvas.dataset.previewRendered = 'true';
       canvas.parentElement?.classList.remove('is-loading');
       const status = canvas.parentElement?.querySelector('.party-pdf-status');
@@ -148,10 +157,10 @@
       page.previewState = 'error';
       page.previewError = error?.message || 'Không thể hiển thị xem trước trang PDF.';
       page.previewThumbCanvas = null;
+      state.cachedThumbPages = state.cachedThumbPages.filter(p => p !== page);
       const parent = canvas.parentElement;
       if (parent) {
         parent.outerHTML = pagePreview(page, found.doc.pages.indexOf(page));
-        bindDocumentEvents();
       }
     }
   }
@@ -183,19 +192,18 @@
     disconnectPdfPreviewObserver();
     restoreRenderedCanvases();
     const canvases = [...els.documents.querySelectorAll('[data-pdf-preview]:not([data-preview-rendered="true"])')];
-    canvases.slice(0, 8).forEach(queuePdfPreview);
-    if (typeof IntersectionObserver === 'function') {
+    canvases.slice(0, 6).forEach(queuePdfPreview);
+    if (typeof IntersectionObserver === 'function' && canvases.length > 6) {
       state.previewObserver = new IntersectionObserver(entries => {
-        entries.forEach(entry => { if (entry.isIntersecting) queuePdfPreview(entry.target); });
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            queuePdfPreview(entry.target);
+            state.previewObserver?.unobserve(entry.target);
+          }
+        });
       }, { root: null, rootMargin: '600px', threshold: 0.01 });
-      canvases.forEach(canvas => state.previewObserver.observe(canvas));
+      canvases.slice(6).forEach(canvas => state.previewObserver.observe(canvas));
     }
-    els.documents.querySelectorAll('.party-page-rail').forEach(rail => {
-      rail.addEventListener('scroll', () => {
-        const unrendered = [...rail.querySelectorAll('[data-pdf-preview]:not([data-preview-rendered="true"])')];
-        unrendered.forEach(queuePdfPreview);
-      }, { passive: true });
-    });
   }
 
   function setAction(action, documentId, pageId) {
@@ -210,7 +218,6 @@
     els.empty.classList.toggle('hidden', state.sources.length > 0);
     els.workspace.classList.toggle('hidden', state.sources.length === 0);
     els.documents.innerHTML = docs.length ? docs.map((doc, docIndex) => renderDocument(doc, docIndex)).join('') : '<div class="party-empty-doc">Chưa có tài liệu. Hãy thêm nguồn hoặc tạo tài liệu mới.</div>';
-    bindDocumentEvents();
     renderCoverage();
     renderOrderPanel();
     queuePdfPreviews();
@@ -263,7 +270,7 @@
       const splitDividerHtml = index < doc.pages.length - 1 ? `
         <div class="party-split-divider">
           <button class="party-split-btn ${isSplitMarked ? 'is-marked' : ''}" data-split-toggle="${page.id}" data-document-id="${doc.id}" type="button" aria-pressed="${isSplitMarked}" title="${isSplitMarked ? 'Bỏ điểm tách' : 'Đánh dấu tách tại đây'}">
-            <span class="party-split-icon">✂</span>
+            <svg class="party-split-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
             <span class="party-split-label">${isSplitMarked ? 'Đã đánh dấu tách' : 'Tách tại đây'}</span>
           </button>
         </div>` : '';
@@ -330,9 +337,6 @@
     const docIndex = state.documents.indexOf(doc);
     state.documents.splice(docIndex + 1, 0, ...newDocs);
 
-    markedIndices.forEach(idx => {
-      // Clear split marks for this doc
-    });
     state.markedSplits.clear();
     state.orderConfirmed = false;
     render();
@@ -345,28 +349,10 @@
     found.page.previewState = 'pending';
     found.page.previewError = null;
     found.page.previewThumbCanvas = null;
+    state.cachedThumbPages = state.cachedThumbPages.filter(p => p !== found.page);
     render();
     const canvas = els.documents.querySelector(`[data-pdf-preview="${pageId}"]`);
     if (canvas) queuePdfPreview(canvas);
-  }
-
-  function bindDocumentEvents() {
-    els.documents.querySelectorAll('.party-page-thumb').forEach(button => button.addEventListener('click', () => { const found = pageById(button.dataset.pageId); if (found) { state.selected = { documentId: found.doc.id, pageId: found.page.id }; render(); } }));
-    els.documents.querySelectorAll('.party-remove-document').forEach(button => button.addEventListener('click', () => removeDocument(button.dataset.documentId)));
-    els.documents.querySelectorAll('[data-doc-action]').forEach(button => button.addEventListener('click', () => handleDocumentAction(button.dataset.docAction, button.dataset.documentId)));
-    els.documents.querySelectorAll('[data-page-action]').forEach(button => button.addEventListener('click', () => handlePageAction(button.dataset.pageAction, button.dataset.pageId)));
-    els.documents.querySelectorAll('[data-split-toggle]').forEach(button => button.addEventListener('click', () => toggleSplitMark(button.dataset.splitToggle)));
-    els.documents.querySelectorAll('[data-page-retry]').forEach(button => button.addEventListener('click', () => retryPreview(button.dataset.pageRetry)));
-    els.documents.querySelectorAll('.party-move-select').forEach(select => select.addEventListener('change', () => { if (select.value && state.selected?.pageId) movePage(state.selected.pageId, select.value); }));
-    els.documents.querySelectorAll('[data-type-input]').forEach(input => {
-      input.addEventListener('input', () => showTypeResults(input));
-      input.addEventListener('change', () => assignType(input.dataset.typeInput, input.value));
-    });
-    els.documents.querySelectorAll('[data-type-result]').forEach(button => button.addEventListener('click', () => {
-      const input = els.documents.querySelector(`[data-type-input="${button.dataset.documentId}"]`);
-      if (input) { input.value = `${button.dataset.typeId} — ${button.dataset.typeName}`; assignType(button.dataset.documentId, input.value); }
-    }));
-    els.documents.querySelectorAll('.party-page').forEach(card => { card.addEventListener('dragstart', event => { event.dataTransfer.setData('text/plain', card.dataset.pageId); }); card.addEventListener('dragover', event => event.preventDefault()); card.addEventListener('drop', event => { event.preventDefault(); reorderPage(event.dataTransfer.getData('text/plain'), card.dataset.pageId); }); });
   }
 
   function renderCoverage() {
@@ -389,10 +375,11 @@
 
   function renderOrderPanel() {
     const groups = sameTypeGroups();
-    if (!groups.length) { state.orderConfirmed = false; els.orderPanel.innerHTML = '<p class="party-order-empty">Mỗi loại hiện chỉ có một tài liệu. Thứ tự sẽ lấy theo danh sách tài liệu.</p>'; } else {
+    if (!groups.length) {
+      state.orderConfirmed = false;
+      els.orderPanel.innerHTML = '<p class="party-order-empty">Mỗi loại hiện chỉ có một tài liệu. Thứ tự sẽ lấy theo danh sách tài liệu.</p>';
+    } else {
       els.orderPanel.innerHTML = groups.map(([typeId, docs]) => `<div class="party-order-group"><strong>${typeId} · ${esc(taxonomy().find(item => item.id === typeId)?.name_vi)}</strong><p>Kéo hoặc dùng nút để xác nhận thứ tự .1/.2/.3</p><ol>${docs.map((doc, index) => `<li><span>Tài liệu ${state.documents.indexOf(doc) + 1}</span><button aria-label="Đưa tài liệu lên" data-order="up" data-doc-id="${doc.id}" type="button">↑</button><button aria-label="Đưa tài liệu xuống" data-order="down" data-doc-id="${doc.id}" type="button">↓</button><small>${index + 1}</small></li>`).join('')}</ol></div>`).join('') + `<button id="partyConfirmOrderBtn" class="btn secondary full" type="button">${state.orderConfirmed ? 'Đã xác nhận thứ tự' : 'Xác nhận thứ tự tài liệu'}</button>`;
-      els.orderPanel.querySelectorAll('[data-order]').forEach(button => button.addEventListener('click', () => reorderDocuments(button.dataset.docId, button.dataset.order)));
-      $('partyConfirmOrderBtn').addEventListener('click', () => { state.orderConfirmed = true; renderOrderPanel(); updateExportState(); });
     }
     updateExportState();
   }
@@ -573,6 +560,7 @@
   function deactivate() {
     state.active = false; state.previewGeneration += 1; disconnectPdfPreviewObserver();
     state.markedSplits.clear();
+    state.cachedThumbPages = [];
     const releasedSources = new Set();
     [...state.sources, ...state.documents.flatMap(doc => doc.pages)].forEach(page => {
       if (page.kind === 'image' && page.url) URL.revokeObjectURL(page.url);
@@ -589,6 +577,102 @@
     els.empty.classList.add('hidden'); els.workspace.classList.add('hidden');
   }
   function hasWork() { return state.sources.length > 0; }
+
+  els.documents.addEventListener('click', event => {
+    const thumbBtn = event.target.closest('.party-page-thumb');
+    if (thumbBtn) {
+      const found = pageById(thumbBtn.dataset.pageId);
+      if (found) { state.selected = { documentId: found.doc.id, pageId: found.page.id }; render(); }
+      return;
+    }
+    const retryBtn = event.target.closest('[data-page-retry]');
+    if (retryBtn) {
+      retryPreview(retryBtn.dataset.pageRetry);
+      return;
+    }
+    const splitBtn = event.target.closest('[data-split-toggle]');
+    if (splitBtn) {
+      toggleSplitMark(splitBtn.dataset.splitToggle);
+      return;
+    }
+    const pageActionBtn = event.target.closest('[data-page-action]');
+    if (pageActionBtn) {
+      handlePageAction(pageActionBtn.dataset.pageAction, pageActionBtn.dataset.pageId);
+      return;
+    }
+    const docActionBtn = event.target.closest('[data-doc-action]');
+    if (docActionBtn) {
+      handleDocumentAction(docActionBtn.dataset.docAction, docActionBtn.dataset.documentId);
+      return;
+    }
+    const removeDocBtn = event.target.closest('.party-remove-document');
+    if (removeDocBtn) {
+      removeDocument(removeDocBtn.dataset.documentId);
+      return;
+    }
+    const typeResultBtn = event.target.closest('[data-type-result]');
+    if (typeResultBtn) {
+      const input = els.documents.querySelector(`[data-type-input="${typeResultBtn.dataset.documentId}"]`);
+      if (input) {
+        input.value = `${typeResultBtn.dataset.typeId} — ${typeResultBtn.dataset.typeName}`;
+        assignType(typeResultBtn.dataset.documentId, input.value);
+      }
+      return;
+    }
+  });
+
+  els.documents.addEventListener('change', event => {
+    const moveSelect = event.target.closest('.party-move-select');
+    if (moveSelect && moveSelect.value && state.selected?.pageId) {
+      movePage(state.selected.pageId, moveSelect.value);
+      return;
+    }
+    const typeInput = event.target.closest('[data-type-input]');
+    if (typeInput) {
+      assignType(typeInput.dataset.typeInput, typeInput.value);
+      return;
+    }
+  });
+
+  els.documents.addEventListener('input', event => {
+    const typeInput = event.target.closest('[data-type-input]');
+    if (typeInput) {
+      showTypeResults(typeInput);
+    }
+  });
+
+  els.documents.addEventListener('dragstart', event => {
+    const card = event.target.closest('.party-page');
+    if (card && card.dataset.pageId) {
+      event.dataTransfer.setData('text/plain', card.dataset.pageId);
+    }
+  });
+  els.documents.addEventListener('dragover', event => {
+    if (event.target.closest('.party-page')) {
+      event.preventDefault();
+    }
+  });
+  els.documents.addEventListener('drop', event => {
+    const card = event.target.closest('.party-page');
+    if (card && card.dataset.pageId) {
+      event.preventDefault();
+      const fromId = event.dataTransfer.getData('text/plain');
+      if (fromId) reorderPage(fromId, card.dataset.pageId);
+    }
+  });
+
+  els.orderPanel.addEventListener('click', event => {
+    const orderBtn = event.target.closest('[data-order]');
+    if (orderBtn) {
+      reorderDocuments(orderBtn.dataset.docId, orderBtn.dataset.order);
+      return;
+    }
+    if (event.target.id === 'partyConfirmOrderBtn' || event.target.closest('#partyConfirmOrderBtn')) {
+      state.orderConfirmed = true;
+      renderOrderPanel();
+      updateExportState();
+    }
+  });
 
   els.cameraBtn.addEventListener('click', () => els.cameraInput.click());
   els.chooseBtn.addEventListener('click', () => els.fileInput.click());

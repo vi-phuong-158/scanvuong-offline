@@ -558,6 +558,49 @@
     return (nonWhite / totalSamples) > 0.0005;
   }
 
+  async function sourceHasInk(ref) {
+    try {
+      const info = pageInfo(ref.source, ref.index);
+      const xobjs = xObjectRefs(ref.source, info.body);
+      if (!xobjs.size) {
+        for (const objectId of refsAfter(info.body, 'Contents')) {
+          const stream = await decodeStream(ref.source, objectId);
+          const text = decoder.decode(stream.bytes);
+          if (/\b0\s+0\s+0\s+(rg|RG|k|K)\b|\b[0-9.]+\s+[0-9.]+\s+[0-9.]+\s+(rg|RG)\b/.test(text)) {
+            return true;
+          }
+        }
+        return false;
+      }
+      for (const [, id] of xobjs) {
+        const stream = await decodeStream(ref.source, id);
+        const dict = parseDict(stream.dict || '');
+        const filter = String(dict.Filter || '');
+        if (filter.includes('DCTDecode')) {
+          const blob = new Blob([stream.bytes], { type: 'image/jpeg' });
+          const img = await createImageBitmap(blob);
+          const c = document.createElement('canvas');
+          c.width = Math.min(img.width, 120);
+          c.height = Math.min(img.height, 120);
+          const cx = c.getContext('2d');
+          cx.drawImage(img, 0, 0, c.width, c.height);
+          if (hasContentPixels(c)) return true;
+        } else if (filter.includes('FlateDecode') || !filter) {
+          const bytes = stream.bytes;
+          let nonWhite = 0;
+          const total = Math.floor(bytes.length / 16);
+          for (let i = 0; i < bytes.length; i += 16) {
+            if (bytes[i] < 245) nonWhite++;
+          }
+          if (nonWhite / Math.max(1, total) > 0.0005) return true;
+        }
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function renderPdfJsThumbnail(ref, canvas, maxEdge, isCurrent, extraRotation) {
     const documentProxy = await pdfJsDocument(ref.source);
     if (!isCurrent()) return { stale: true };
@@ -581,11 +624,9 @@
 
     const hasContent = hasContentPixels(layer);
     if (!hasContent) {
-      const info = pageInfo(ref.source, ref.index);
-      const contents = refsAfter(info.body, 'Contents');
-      const xobjs = xObjectRefs(ref.source, info.body);
-      if (contents.length > 0 || xobjs.size > 0) {
-        throw new Error(`PDF.js dựng canvas trắng bất thường (${contents.length} stream, ${xobjs.size} xobject).`);
+      const hasSourceInk = await sourceHasInk(ref);
+      if (hasSourceInk) {
+        throw new Error('PDF.js dựng canvas trắng bất thường khi tài liệu nguồn có nội dung.');
       }
     }
 
@@ -593,7 +634,7 @@
     const output = canvas.getContext('2d', { alpha: false });
     output.fillStyle = '#fff'; output.fillRect(0, 0, width, height);
     output.drawImage(layer, 0, 0);
-    return { width, height, rotation, renderer: 'pdfjs', layer };
+    return { width, height, rotation, renderer: 'pdfjs', layer, isBlank: !hasContent };
   }
 
   async function renderThumbnailFallback(ref, canvas, maxEdge = 320, isCurrent = () => true, extraRotation = 0) {
@@ -628,15 +669,17 @@
     targetCtx.restore();
 
     const hasContent = hasContentPixels(targetLayer);
-    const contents = refsAfter(info.body, 'Contents');
-    if (!hasContent && (contents.length > 0 || imageRefs.size > 0)) {
-      throw new Error(`Fallback dựng canvas trắng bất thường (${contents.length} stream, ${imageRefs.size} xobject).`);
+    if (!hasContent) {
+      const hasSourceInk = await sourceHasInk(ref);
+      if (hasSourceInk) {
+        throw new Error('Fallback dựng canvas trắng bất thường khi tài liệu nguồn có nội dung.');
+      }
     }
 
     canvas.width = outputWidth; canvas.height = outputHeight;
     const ctx = canvas.getContext('2d', { alpha: false }); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, outputWidth, outputHeight);
     ctx.drawImage(targetLayer, 0, 0);
-    return { width: outputWidth, height: outputHeight, rotation, renderer: 'fallback', layer: targetLayer };
+    return { width: outputWidth, height: outputHeight, rotation, renderer: 'fallback', layer: targetLayer, isBlank: !hasContent };
   }
 
   async function renderThumbnail(ref, canvas, maxEdge = 320, isCurrent = () => true, extraRotation = 0) {
