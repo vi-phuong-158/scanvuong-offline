@@ -6,7 +6,7 @@
 
 ## Đang làm
  
-- **PR #10 Hotfix: Party Document Mode PDF Preview Hardening & Multi-Split UX**: Khắc phục hiện tượng thumbnail trắng, bổ sung blank-canvas pixel validation, in-memory canvas restoration, UI báo lỗi kèm nút "Thử lại", multi-split đánh dấu nhiều điểm và hiển thị rõ số trang nguồn `Nguồn: trang Y/Z`. (Đã hoàn thành toàn bộ unit tests, integration tests và pilot trên real PDF).
+- **PR #10 Hotfix: Party Document Mode PDF Preview Hardening & Multi-Split UX**: Khắc phục hiện tượng thumbnail trắng, bổ sung blank-canvas pixel validation, in-memory canvas restoration, UI báo lỗi kèm nút "Thử lại", multi-split đánh dấu nhiều điểm và hiển thị rõ số trang nguồn `Nguồn: trang Y/Z`. (Synthetic regression/browser acceptance đã có; final review yêu cầu base→hotfix reproduction độc lập và private real-PDF pilot phải được báo riêng. Không coi CI synthetic là real-PDF evidence.)
  
 ---
 

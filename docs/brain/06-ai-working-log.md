@@ -16,6 +16,12 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-08-31] PR #10 Final Review Evidence Gates
+- **Agent:** Codex
+- **Thay đổi:** Thêm `scripts/reproduce_party_preview_race.cjs`, một browser harness độc lập nhận `--root <checkout>` để chạy cùng fixture PDF tổng hợp 12 trang trên cả base/candidate; khi preview queue đang chạy, harness chọn trang liên tục, chờ ổn định, kiểm tra coverage, canvas ready/visible và pixel trắng. Mở rộng `runMultiSplitAcceptance()` với split 3/6/9 → reorder hai trang trong tài liệu đầu tiên, kiểm tra `data-page-id` đi theo đúng `sourcePage`, coverage 12/12, không duplicate/missing, rồi giữ nguyên merge/move/export assertion có sẵn.
+- **File đã sửa:** `scripts/reproduce_party_preview_race.cjs`, `scripts/acceptance_party_ui.cjs`, `docs/brain/04-current-tasks.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Đóng evidence gates PR #10 mà không sửa production hoặc đưa PDF hồ sơ thật lên GitHub.
+- **Kiểm tra:** Harness cùng logic chạy trên base `2331fc08c0722ce63414515aceaeb36c9e6b9770` và candidate `74dd066a49c44f7048692ae69b7074b64f64ce79`; cả hai đều ghi nhận 0 canvas ready trắng, vì vậy kết luận đúng là `ROOT_CAUSE_REPRODUCTION_NOT_PROVEN`, không phải base FAIL → hotfix PASS. `node scripts/regression_party_mode.cjs` PASS 26/26; browser acceptance multi-split/reorder/merge/move/export PASS. Hai PDF private được yêu cầu không có trong checkout/workspace/user profile đã quét theo đúng tên nên local pilot chưa chạy; không coi kết quả synthetic là real-PDF pilot.
 ## [2026-08-31] PR #10 Review Blockers Closure: CI Emoji Guard, True Blank Page, Event Delegation & Bounded Cache
 - **Agent:** Codex
 - **Thay đổi:**

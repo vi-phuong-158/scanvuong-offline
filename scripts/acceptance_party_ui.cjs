@@ -311,6 +311,19 @@ async function runMultiSplitAcceptance(cdp) {
     throw new Error(`Multi-split execution mismatch: ${JSON.stringify(splitResult)}`);
   }
 
+
+  // Reorder two source pages inside the first split document. The card/page
+  // identity must travel with its source reference; coverage stays one-to-one.
+  const beforeReorder = JSON.parse(await cdp.eval("JSON.stringify((() => { const doc=document.querySelectorAll('.party-document')[0]; return [...doc.querySelectorAll('.party-page')].map(page=>({id:page.dataset.pageId,source:page.querySelector('.party-page-source').textContent.trim()})); })())"));
+  await cdp.eval("document.querySelectorAll('.party-document')[0].querySelector('.party-page [data-page-action=down]').click()");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const reorderedResult = JSON.parse(await cdp.eval("JSON.stringify((() => { const docs=[...document.querySelectorAll('.party-document')], all=[...document.querySelectorAll('.party-page')]; return {first:[...docs[0].querySelectorAll('.party-page')].map(page=>({id:page.dataset.pageId,source:page.querySelector('.party-page-source').textContent.trim()})),coverage:document.getElementById('partyCoverageText').textContent,total:all.length,sourcePages:all.map(page=>page.querySelector('.party-page-source').textContent.trim())}; })())"));
+  const expectedReorderSources = ['Nguồn: trang 2/12', 'Nguồn: trang 1/12', 'Nguồn: trang 3/12'];
+  const expectedReorderIds = [beforeReorder[1]?.id, beforeReorder[0]?.id, beforeReorder[2]?.id];
+  const expectedAllSources = Array.from({ length: 12 }, (_, index) => `Nguồn: trang ${index + 1}/12`).sort().join(';');
+  if (reorderedResult.first.map(page => page.source).join(';') !== expectedReorderSources.join(';') || reorderedResult.first.map(page => page.id).join(';') !== expectedReorderIds.join(';') || reorderedResult.total !== 12 || reorderedResult.sourcePages.slice().sort().join(';') !== expectedAllSources || !reorderedResult.coverage.includes('12/12')) {
+    throw new Error(`Reorder after multi-split failed: ${JSON.stringify({ beforeReorder, reorderedResult })}`);
+  }
   // Merge doc 2 into doc 1
   await cdp.eval("document.querySelectorAll('.party-document')[1].querySelector('[data-doc-action=merge-prev]').click()");
   await new Promise(resolve => setTimeout(resolve, 150));
@@ -328,7 +341,7 @@ async function runMultiSplitAcceptance(cdp) {
   if (movedResult.docs !== 3 || movedResult.docCounts.join(',') !== '5,4,3' || !movedResult.coverage.includes('12/12')) {
     throw new Error(`Move page after multi-split failed: ${JSON.stringify(movedResult)}`);
   }
-  if (movedResult.docSources[0].join(';') !== 'Nguồn: trang 1/12;Nguồn: trang 2/12;Nguồn: trang 3/12;Nguồn: trang 4/12;Nguồn: trang 5/12' ||
+  if (movedResult.docSources[0].join(';') !== 'Nguồn: trang 2/12;Nguồn: trang 1/12;Nguồn: trang 3/12;Nguồn: trang 4/12;Nguồn: trang 5/12' ||
       movedResult.docSources[1].join(';') !== 'Nguồn: trang 7/12;Nguồn: trang 8/12;Nguồn: trang 9/12;Nguồn: trang 6/12' ||
       movedResult.docSources[2].join(';') !== 'Nguồn: trang 10/12;Nguồn: trang 11/12;Nguồn: trang 12/12') {
     throw new Error(`Source page preservation after move mismatch: ${JSON.stringify(movedResult.docSources)}`);
@@ -345,7 +358,7 @@ async function runMultiSplitAcceptance(cdp) {
     throw new Error(`Multi-split and modified workflow export failed: ${JSON.stringify({ expected: '5,4,3', exported, errors: cdp.errors })}`);
   }
 
-  console.log('PASS Party multi-split UX (toggle, clear, apply 3 points -> 4 docs, merge, move, source preservation & export)');
+  console.log('PASS Party multi-split UX (toggle, clear, apply 3 points -> 4 docs, reorder identity/source/coverage, merge, move, source preservation & export)');
 }
 
 async function runEventListenerAcceptance(cdp) {
