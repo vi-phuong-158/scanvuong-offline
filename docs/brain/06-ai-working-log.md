@@ -453,3 +453,10 @@
   - Static validation: `python scripts/validate_static.py` (10/10 PASS).
   - Touch target audit: `node scripts/test_touch_targets.cjs` (145/145 PASS).
   - Syntax check: `node --check app.js sw.js party-mode.js party-pdf.js scripts/acceptance_party_ui.cjs` PASS.
+
+## [2026-08-31] Party PDF parser null-byte object-header compatibility
+- **Agent:** Codex
+- **Thay đổi:** Sửa scanner object boundary trong `party-pdf.js` để chấp nhận indirect-object header sau PDF whitespace `0x00`, xác định object end qua stream boundary/Length và chỉ nhận diện `/Type /Page` trong dictionary; thêm focused regression cho boundary, stream false-positive, Page/Pages và malformed fail-closed.
+- **File đã sửa:** `party-pdf.js`, `scripts/regression_party_mode.cjs`.
+- **Lý do:** PDF thực `Scan2026-08-19_155638.pdf` có 12 page objects sau byte `0x00`; parser cũ bỏ sót và báo không có trang đọc được dù PDF.js/Poppler đọc đủ.
+- **Kiểm tra:** Baseline exact `ca8c8ea0068e125087bd27bac5659820283c3198` tái hiện fail; parser sau fix đọc 12/12; focused Party regression 31/31; isolated Chromium real-PDF acceptance 12/12 preview, coverage, split và export PASS; không sửa renderer/PDF nguồn.
