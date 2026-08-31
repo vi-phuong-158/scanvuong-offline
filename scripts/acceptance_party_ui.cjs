@@ -28,8 +28,7 @@ class CDP {
 function browserPath() {
   const configured = [process.env.CHROME_PATH, process.env.GOOGLE_CHROME_BIN, process.env.BROWSER_PATH, process.env.CHROMIUM_PATH].find(Boolean);
   if (configured && fs.existsSync(configured)) return configured;
-  const unixPaths = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
-  for (const candidate of unixPaths) { try { if (fs.statSync(candidate).isFile()) return candidate; } catch (_) {} }
+
   const winPaths = [
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
@@ -37,18 +36,60 @@ function browserPath() {
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
   ];
   for (const candidate of winPaths) { try { if (fs.statSync(candidate).isFile()) return candidate; } catch (_) {} }
+
+  const unixPaths = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium'];
+  for (const candidate of unixPaths) { try { if (fs.statSync(candidate).isFile()) return candidate; } catch (_) {} }
+
   const names = process.platform === 'win32' ? ['google-chrome', 'chromium', 'chromium-browser', 'msedge'] : ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome', 'microsoft-edge'];
   const locator = process.platform === 'win32' ? 'where' : 'which';
-  for (const name of names) { try { const found = execFileSync(locator, [name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split(/\r?\n/).find(Boolean); if (found && fs.existsSync(found)) return found; } catch (_) {} }
+  for (const name of names) {
+    try {
+      const found = execFileSync(locator, [name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split(/\r?\n/).find(Boolean);
+      if (found && fs.existsSync(found)) return found;
+    } catch (_) {}
+  }
   throw new Error('Không tìm thấy Chromium/Chrome/Edge.');
 }
-async function cdpUrl() { for (let i = 0; i < 60; i++) { try { const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`); const tabs = await response.json(); const tab = tabs.find(item => item.type === 'page'); if (tab?.webSocketDebuggerUrl) return tab.webSocketDebuggerUrl; const newRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new`, { method: 'PUT' }); const newTab = await newRes.json(); if (newTab?.webSocketDebuggerUrl) return newTab.webSocketDebuggerUrl; } catch (_) {} await new Promise(resolve => setTimeout(resolve, 150)); } throw new Error('Không kết nối được Chrome CDP.'); }
+
+async function cdpUrl() {
+  for (let i = 0; i < 120; i++) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
+      if (response.ok) {
+        const tabs = await response.json();
+        const tab = tabs.find(item => item.type === 'page');
+        if (tab?.webSocketDebuggerUrl) return tab.webSocketDebuggerUrl;
+      }
+    } catch (_) {}
+    try {
+      const newRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new`, { method: 'PUT' });
+      if (newRes.ok) {
+        const newTab = await newRes.json();
+        if (newTab?.webSocketDebuggerUrl) return newTab.webSocketDebuggerUrl;
+      }
+    } catch (_) {}
+    await new Promise(resolve => setTimeout(resolve, 150));
+  }
+  throw new Error('Không kết nối được Chrome CDP.');
+}
 
 function syntheticPdf(pageCount, lineEnding = '\n') {
-  const objects = [
-    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
-    `2 0 obj\n<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${3 + i * 2} 0 R`).join(' ')}] /Count ${pageCount} >>\nendobj\n`
-  ];
+  let offset = 0;
+  const header = '%PDF-1.4\n';
+  const offsets = [];
+  const parts = [header];
+  offset += Buffer.byteLength(header, 'latin1');
+
+  function addObj(num, body) {
+    offsets[num] = offset;
+    const str = `${num} 0 obj\n${body}\nendobj\n`;
+    parts.push(str);
+    offset += Buffer.byteLength(str, 'latin1');
+  }
+
+  addObj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  addObj(2, `<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${3 + i * 2} 0 R`).join(' ')}] /Count ${pageCount} >>`);
+
   for (let i = 0; i < pageCount; i++) {
     const pageId = 3 + i * 2;
     const contentId = pageId + 1;
@@ -58,18 +99,41 @@ function syntheticPdf(pageCount, lineEnding = '\n') {
     const green = ((i * 61) % 100 + 100) / 255;
     const blue = ((i * 23) % 100 + 80) / 255;
     const content = `q\n${red.toFixed(3)} ${green.toFixed(3)} ${blue.toFixed(3)} rg\n40 40 ${width - 80} ${height - 80} re\nf\n0 0 0 RG\n8 w\n60 60 ${width - 120} ${height - 120} re\nS\nQ\n`;
-    objects.push(`${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Contents ${contentId} 0 R >>\nendobj\n`);
-    objects.push(`${contentId} 0 obj\n<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream\nendobj\n`);
+    addObj(pageId, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Contents ${contentId} 0 R >>`);
+    addObj(contentId, `<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream`);
   }
-  const pdf = `%PDF-1.4\n${objects.join('')}%%EOF`;
+
+  const startxref = offset;
+  const totalObjs = 2 + pageCount * 2 + 1;
+  let xref = `xref\n0 ${totalObjs}\n0000000000 65535 f \n`;
+  for (let num = 1; num < totalObjs; num++) {
+    const offStr = String(offsets[num] || 0).padStart(10, '0');
+    xref += `${offStr} 00000 n \n`;
+  }
+  const trailer = `trailer\n<< /Size ${totalObjs} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF`;
+  parts.push(xref, trailer);
+  const pdf = parts.join('');
   return Buffer.from(lineEnding === '\n' ? pdf : pdf.replace(/\n/g, lineEnding), 'latin1');
 }
 
 function syntheticImagePdf(pageCount) {
-  const objects = [
-    Buffer.from('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n', 'latin1'),
-    Buffer.from(`2 0 obj\n<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${3 + i * 3} 0 R`).join(' ')}] /Count ${pageCount} >>\nendobj\n`, 'latin1')
-  ];
+  let offset = 0;
+  const header = '%PDF-1.4\n';
+  const offsets = [];
+  const parts = [Buffer.from(header, 'latin1')];
+  offset += header.length;
+
+  function addObj(num, bodyBuffer) {
+    offsets[num] = offset;
+    const prefix = Buffer.from(`${num} 0 obj\n`, 'latin1');
+    const suffix = Buffer.from('\nendobj\n', 'latin1');
+    parts.push(prefix, bodyBuffer, suffix);
+    offset += prefix.length + bodyBuffer.length + suffix.length;
+  }
+
+  addObj(1, Buffer.from('<< /Type /Catalog /Pages 2 0 R >>', 'latin1'));
+  addObj(2, Buffer.from(`<< /Type /Pages /Kids [${Array.from({ length: pageCount }, (_, i) => `${3 + i * 3} 0 R`).join(' ')}] /Count ${pageCount} >>`, 'latin1'));
+
   for (let i = 0; i < pageCount; i++) {
     const pageId = 3 + i * 3;
     const contentId = pageId + 1;
@@ -80,11 +144,73 @@ function syntheticImagePdf(pageCount) {
     for (let pixel = 0; pixel < raw.length; pixel += 3) { raw[pixel] = red; raw[pixel + 1] = green; raw[pixel + 2] = blue; }
     const compressed = zlib.deflateSync(raw);
     const content = `q\n595 0 0 842 0 0 cm\n/Im0 Do\nQ\n`;
-    objects.push(Buffer.from(`${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>\nendobj\n`, 'latin1'));
-    objects.push(Buffer.from(`${contentId} 0 obj\n<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream\nendobj\n`, 'latin1'));
-    objects.push(Buffer.concat([Buffer.from(`${imageId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${compressed.length} >>\nstream\n`, 'latin1'), compressed, Buffer.from('\nendstream\nendobj\n', 'latin1')]));
+    addObj(pageId, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`, 'latin1'));
+    addObj(contentId, Buffer.from(`<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream`, 'latin1'));
+    addObj(imageId, Buffer.concat([
+      Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${compressed.length} >>\nstream\n`, 'latin1'),
+      compressed,
+      Buffer.from('\nendstream', 'latin1')
+    ]));
   }
-  return Buffer.concat([Buffer.from('%PDF-1.4\n', 'latin1'), ...objects, Buffer.from('%%EOF', 'latin1')]);
+
+  const startxref = offset;
+  const totalObjs = 2 + pageCount * 3 + 1;
+  let xref = `xref\n0 ${totalObjs}\n0000000000 65535 f \n`;
+  for (let num = 1; num < totalObjs; num++) {
+    const offStr = String(offsets[num] || 0).padStart(10, '0');
+    xref += `${offStr} 00000 n \n`;
+  }
+  const trailer = `trailer\n<< /Size ${totalObjs} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF`;
+  parts.push(Buffer.from(xref + trailer, 'latin1'));
+  return Buffer.concat(parts);
+}
+
+function syntheticBlankAndInkPdf() {
+  let offset = 0;
+  const header = '%PDF-1.4\n';
+  const offsets = [];
+  const parts = [Buffer.from(header, 'latin1')];
+  offset += header.length;
+
+  function addObj(num, bodyBuffer) {
+    offsets[num] = offset;
+    const prefix = Buffer.from(`${num} 0 obj\n`, 'latin1');
+    const suffix = Buffer.from('\nendobj\n', 'latin1');
+    parts.push(prefix, bodyBuffer, suffix);
+    offset += prefix.length + bodyBuffer.length + suffix.length;
+  }
+
+  addObj(1, Buffer.from('<< /Type /Catalog /Pages 2 0 R >>', 'latin1'));
+  addObj(2, Buffer.from('<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>', 'latin1'));
+
+  // Page 1: 100% white image XObject (all pixels 255)
+  const width = 64, height = 64;
+  const rawWhite = Buffer.alloc(width * height * 3, 255);
+  const compressedWhite = zlib.deflateSync(rawWhite);
+  const content1 = `q\n595 0 0 842 0 0 cm\n/Im0 Do\nQ\n`;
+  addObj(3, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>`, 'latin1'));
+  addObj(4, Buffer.from(`<< /Length ${Buffer.byteLength(content1, 'latin1')} >>\nstream\n${content1}endstream`, 'latin1'));
+  addObj(5, Buffer.concat([
+    Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${compressedWhite.length} >>\nstream\n`, 'latin1'),
+    compressedWhite,
+    Buffer.from('\nendstream', 'latin1')
+  ]));
+
+  // Page 2: Dark ink content
+  const content2 = `q\n0.1 0.1 0.1 rg\n50 50 495 742 re\nf\nQ\n`;
+  addObj(6, Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 7 0 R >>`, 'latin1'));
+  addObj(7, Buffer.from(`<< /Length ${Buffer.byteLength(content2, 'latin1')} >>\nstream\n${content2}endstream`, 'latin1'));
+
+  const startxref = offset;
+  const totalObjs = 8;
+  let xref = `xref\n0 ${totalObjs}\n0000000000 65535 f \n`;
+  for (let num = 1; num < totalObjs; num++) {
+    const offStr = String(offsets[num] || 0).padStart(10, '0');
+    xref += `${offStr} 00000 n \n`;
+  }
+  const trailer = `trailer\n<< /Size ${totalObjs} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF`;
+  parts.push(Buffer.from(xref + trailer, 'latin1'));
+  return Buffer.concat(parts);
 }
 
 async function setFileInput(cdp, selector, filePath) {
@@ -112,7 +238,8 @@ async function runHelpUxAcceptance(cdp) {
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 360)); cdp.errors.length = 0;
   await cdp.eval("document.getElementById('modePartyBtn').click(); document.querySelector('[data-party-help]').click()"); await new Promise(resolve => setTimeout(resolve, 120));
   const help = JSON.parse(await cdp.eval("JSON.stringify({open:document.getElementById('partyHelpDialog').open,sections:document.querySelectorAll('#partyHelpDialog section').length,text:document.getElementById('partyHelpDialog').textContent})"));
-  if (!help.open || help.sections < 8 || !['Nhập tài liệu','Tách tài liệu','Ghép tài liệu','Sắp xếp trang','Thiếu một mặt hoặc một trang','Đặt tên','Nhiều tài liệu cùng loại','Kiểm tra số trang'].every(label => help.text.includes(label)) || cdp.errors.length) throw new Error(`Party help content failed: ${JSON.stringify({ open: help.open, sections: help.sections })}`);
+  const requiredTopics = ['Tài liệu là gì?','Trang nguồn là gì?','Tách tại đây là gì?','Cách chia 1 PDF thành nhiều tài liệu','Ghép với trước','Ghép với sau','Chuyển trang','Xoay trang','Thay trang','Thêm trang','Xóa trang','Chọn loại tài liệu','Xuất tất cả'];
+  if (!help.open || help.sections < 13 || !requiredTopics.every(label => help.text.includes(label)) || cdp.errors.length) throw new Error(`Party help content failed: ${JSON.stringify({ open: help.open, sections: help.sections })}`);
   await cdp.eval("document.getElementById('partyHelpClose').click()");
   const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_help_controls.pdf'); fs.writeFileSync(fixturePath, syntheticPdf(2)); await cdp.eval("document.getElementById('partyPdfBtn').click()"); await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 520));
   const desktop = JSON.parse(await cdp.eval("JSON.stringify((() => { const page=document.querySelector('.party-page'); const labels=[...page.querySelectorAll('.party-page-actions > button')].map(button=>button.textContent.trim()); const canvas=page.querySelector('.party-pdf-preview'); const before=[canvas.width,canvas.height]; page.querySelector('[data-page-action=rotate]').click(); return {labels,before}; })())")); await new Promise(resolve => setTimeout(resolve, 480));
@@ -132,13 +259,245 @@ async function preparePrivateDownloadCapture(cdp) {
   await cdp.eval("window.__partyDownloads=[]; HTMLAnchorElement.prototype.click=function(){if(this.download&&String(this.href).startsWith('blob:'))window.__partyDownloads.push({href:this.href});};");
 }
 
+async function runMultiSplitAcceptance(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_multisplit_fixture.pdf');
+  fs.writeFileSync(fixturePath, syntheticPdf(12));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 400));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 600));
+
+  // Check source page numbering format
+  const sourceCheck = JSON.parse(await cdp.eval("JSON.stringify({sources:[...document.querySelectorAll('.party-page-source')].map(el=>el.textContent.trim())})"));
+  if (sourceCheck.sources.length !== 12 || sourceCheck.sources[0] !== 'Nguồn: trang 1/12' || sourceCheck.sources[11] !== 'Nguồn: trang 12/12') {
+    throw new Error(`Source page number format mismatch: ${JSON.stringify(sourceCheck)}`);
+  }
+
+  // Toggle split marks at page 3 (index 2), page 6 (index 5), page 9 (index 8)
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[2].click()");
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[5].click()");
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[8].click()");
+  await new Promise(resolve => setTimeout(resolve, 120));
+
+  const markedState = JSON.parse(await cdp.eval("JSON.stringify({markedButtons:document.querySelectorAll('.party-split-btn.is-marked').length, applyBtnText:document.querySelector('.party-apply-splits')?.textContent.trim()})"));
+  if (markedState.markedButtons !== 3 || markedState.applyBtnText !== 'Áp dụng 3 điểm tách') {
+    throw new Error(`Marked split state mismatch: ${JSON.stringify(markedState)}`);
+  }
+
+  // Test clear marked splits
+  await cdp.eval("document.querySelector('.party-clear-splits').click()");
+  await new Promise(resolve => setTimeout(resolve, 120));
+  const clearedState = JSON.parse(await cdp.eval("JSON.stringify({markedButtons:document.querySelectorAll('.party-split-btn.is-marked').length, hasMultiSplitBar:!!document.querySelector('.party-multisplit-bar')})"));
+  if (clearedState.markedButtons !== 0 || clearedState.hasMultiSplitBar) {
+    throw new Error(`Clear marked splits failed: ${JSON.stringify(clearedState)}`);
+  }
+
+  // Re-mark at 3, 6, 9 and apply
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[2].click()");
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[5].click()");
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[8].click()");
+  await new Promise(resolve => setTimeout(resolve, 120));
+  await cdp.eval("document.querySelector('.party-apply-splits').click()");
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  const splitResult = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, docCounts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), docSources:[...document.querySelectorAll('.party-document')].map(doc=>[...doc.querySelectorAll('.party-page-source')].map(s=>s.textContent.trim())), coverage:document.getElementById('partyCoverageText').textContent})"));
+  if (splitResult.docs !== 4 || splitResult.docCounts.join(',') !== '3,3,3,3' || !splitResult.coverage.includes('12/12')) {
+    throw new Error(`Multi-split execution mismatch: ${JSON.stringify(splitResult)}`);
+  }
+
+
+  // Reorder two source pages inside the first split document. The card/page
+  // identity must travel with its source reference; coverage stays one-to-one.
+  const beforeReorder = JSON.parse(await cdp.eval("JSON.stringify((() => { const doc=document.querySelectorAll('.party-document')[0]; return [...doc.querySelectorAll('.party-page')].map(page=>({id:page.dataset.pageId,source:page.querySelector('.party-page-source').textContent.trim()})); })())"));
+  await cdp.eval("document.querySelectorAll('.party-document')[0].querySelector('.party-page [data-page-action=down]').click()");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const reorderedResult = JSON.parse(await cdp.eval("JSON.stringify((() => { const docs=[...document.querySelectorAll('.party-document')], all=[...document.querySelectorAll('.party-page')]; return {first:[...docs[0].querySelectorAll('.party-page')].map(page=>({id:page.dataset.pageId,source:page.querySelector('.party-page-source').textContent.trim()})),coverage:document.getElementById('partyCoverageText').textContent,total:all.length,sourcePages:all.map(page=>page.querySelector('.party-page-source').textContent.trim())}; })())"));
+  const expectedReorderSources = ['Nguồn: trang 2/12', 'Nguồn: trang 1/12', 'Nguồn: trang 3/12'];
+  const expectedReorderIds = [beforeReorder[1]?.id, beforeReorder[0]?.id, beforeReorder[2]?.id];
+  const expectedAllSources = Array.from({ length: 12 }, (_, index) => `Nguồn: trang ${index + 1}/12`).sort().join(';');
+  if (reorderedResult.first.map(page => page.source).join(';') !== expectedReorderSources.join(';') || reorderedResult.first.map(page => page.id).join(';') !== expectedReorderIds.join(';') || reorderedResult.total !== 12 || reorderedResult.sourcePages.slice().sort().join(';') !== expectedAllSources || !reorderedResult.coverage.includes('12/12')) {
+    throw new Error(`Reorder after multi-split failed: ${JSON.stringify({ beforeReorder, reorderedResult })}`);
+  }
+  // Merge doc 2 into doc 1
+  await cdp.eval("document.querySelectorAll('.party-document')[1].querySelector('[data-doc-action=merge-prev]').click()");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const mergedResult = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, docCounts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), coverage:document.getElementById('partyCoverageText').textContent})"));
+  if (mergedResult.docs !== 3 || mergedResult.docCounts.join(',') !== '6,3,3' || !mergedResult.coverage.includes('12/12')) {
+    throw new Error(`Merge after multi-split failed: ${JSON.stringify(mergedResult)}`);
+  }
+
+  // Move page 6 from doc 1 to doc 2
+  await cdp.eval("document.querySelectorAll('.party-document')[0].querySelectorAll('.party-page-thumb')[5].click()");
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await cdp.eval("(() => { const docs=[...document.querySelectorAll('.party-document')]; const select=docs[0].querySelector('.party-move-select'); select.value=docs[1].dataset.documentId; select.dispatchEvent(new Event('change',{bubbles:true})); })()");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const movedResult = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, docCounts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), docSources:[...document.querySelectorAll('.party-document')].map(doc=>[...doc.querySelectorAll('.party-page-source')].map(s=>s.textContent.trim())), coverage:document.getElementById('partyCoverageText').textContent})"));
+  if (movedResult.docs !== 3 || movedResult.docCounts.join(',') !== '5,4,3' || !movedResult.coverage.includes('12/12')) {
+    throw new Error(`Move page after multi-split failed: ${JSON.stringify(movedResult)}`);
+  }
+  if (movedResult.docSources[0].join(';') !== 'Nguồn: trang 2/12;Nguồn: trang 1/12;Nguồn: trang 3/12;Nguồn: trang 4/12;Nguồn: trang 5/12' ||
+      movedResult.docSources[1].join(';') !== 'Nguồn: trang 7/12;Nguồn: trang 8/12;Nguồn: trang 9/12;Nguồn: trang 6/12' ||
+      movedResult.docSources[2].join(';') !== 'Nguồn: trang 10/12;Nguồn: trang 11/12;Nguồn: trang 12/12') {
+    throw new Error(`Source page preservation after move mismatch: ${JSON.stringify(movedResult.docSources)}`);
+  }
+
+  // Assign taxonomies and export all 3 docs
+  await cdp.eval("['05','07','38'].forEach((type,index)=>{const input=document.querySelectorAll('[data-type-input]')[index]; input.value=type; input.dispatchEvent(new Event('change',{bubbles:true}));});");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  await preparePrivateDownloadCapture(cdp);
+  await cdp.eval("document.getElementById('partyExportAllBtn').click()");
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  const exported = await readPrivateExportPageCounts(cdp);
+  if (exported.join(',') !== '5,4,3' || cdp.errors.length) {
+    throw new Error(`Multi-split and modified workflow export failed: ${JSON.stringify({ expected: '5,4,3', exported, errors: cdp.errors })}`);
+  }
+
+  console.log('PASS Party multi-split UX (toggle, clear, apply 3 points -> 4 docs, reorder identity/source/coverage, merge, move, source preservation & export)');
+}
+
+async function runEventListenerAcceptance(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_events_fixture.pdf');
+  fs.writeFileSync(fixturePath, syntheticPdf(2));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 400));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 600));
+
+  // Trigger rapid re-renders
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[0].click()");
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[1].click()");
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[0].click()");
+
+  // Rotate button single-execution (+90 deg)
+  const beforeRotate = JSON.parse(await cdp.eval("JSON.stringify((() => { const c=document.querySelector('.party-pdf-preview'); return {w:c.width,h:c.height}; })())"));
+  await cdp.eval("document.querySelector('[data-page-action=rotate]').click()");
+  await new Promise(resolve => setTimeout(resolve, 400));
+  const afterRotate = JSON.parse(await cdp.eval("JSON.stringify((() => { const c=document.querySelector('.party-pdf-preview'); return {w:c.width,h:c.height}; })())"));
+  if (beforeRotate.w !== afterRotate.h || beforeRotate.h !== afterRotate.w) {
+    throw new Error(`Rotate event listener duplicated: before=${JSON.stringify(beforeRotate)}, after=${JSON.stringify(afterRotate)}`);
+  }
+
+  // Split toggle button single-execution (exactly 1 click -> marked = true)
+  await cdp.eval("document.querySelector('[data-split-toggle]').click()");
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const markedState = JSON.parse(await cdp.eval("JSON.stringify({markedCount:document.querySelectorAll('.party-split-btn.is-marked').length})"));
+  if (markedState.markedCount !== 1) {
+    throw new Error(`Split toggle event listener duplicated: markedCount=${markedState.markedCount}`);
+  }
+
+  console.log('PASS Party event listener delegation & non-duplication acceptance');
+}
+
+async function runTrueBlankPageAcceptance(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_blank_and_ink.pdf');
+  fs.writeFileSync(fixturePath, syntheticBlankAndInkPdf());
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 400));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 800));
+
+  const result = JSON.parse(await cdp.eval("JSON.stringify((() => { const canvases=[...document.querySelectorAll('.party-pdf-preview')]; return {pages:document.querySelectorAll('.party-page').length, ready:canvases.filter(c=>c.dataset.previewRendered==='true').length, errors:document.querySelectorAll('.party-pdf-thumb.is-error').length, p1Status:canvases[0]?.parentElement.querySelector('.party-pdf-status')?.textContent, p2Status:canvases[1]?.parentElement.querySelector('.party-pdf-status')?.textContent}; })())"));
+  if (result.pages !== 2 || result.ready !== 2 || result.errors !== 0 || !result.p1Status.startsWith('PDF') || !result.p2Status.startsWith('PDF') || cdp.errors.length) {
+    throw new Error(`True blank page acceptance failed: ${JSON.stringify({ result, errors: cdp.errors })}`);
+  }
+  console.log('PASS Party true blank page vs valid ink preview acceptance');
+}
+
+async function runRapidInteractionRerenderReproduction(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_rapid_interact_12.pdf');
+  fs.writeFileSync(fixturePath, syntheticPdf(12));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 400));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath);
+  
+  // Rapid user clicks while queue is starting
+  await new Promise(resolve => setTimeout(resolve, 40));
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[0]?.click()");
+  await new Promise(resolve => setTimeout(resolve, 40));
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[1]?.click()");
+  await new Promise(resolve => setTimeout(resolve, 40));
+  await cdp.eval("document.querySelectorAll('.party-page-thumb')[2]?.click()");
+  await new Promise(resolve => setTimeout(resolve, 1200));
+
+  const result = JSON.parse(await cdp.eval("JSON.stringify((() => { const canvases=[...document.querySelectorAll('.party-pdf-preview')]; return {canvasesCount:canvases.length, readyCount:canvases.filter(c=>c.dataset.previewRendered==='true').length, blankCanvases:canvases.filter(c=>c.dataset.previewRendered==='true').some(c=>{const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data; let nonWhite=0; for(let i=0;i<d.length;i+=16){if(d[i]<245||d[i+1]<245||d[i+2]<245)nonWhite++;} return nonWhite===0;})}; })())"));
+  if (result.readyCount < 6 || result.blankCanvases || cdp.errors.length) {
+    throw new Error(`Rapid interaction reproduction failed on hotfix: ${JSON.stringify({ result, errors: cdp.errors })}`);
+  }
+  console.log(`PASS Party rapid interaction & synchronous DOM restoration (${result.readyCount} ready, 0 blank)`);
+}
+
+async function runLargePdfAcceptance(cdp) {
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_synthetic_fixture_100.pdf');
+  fs.writeFileSync(fixturePath, syntheticPdf(100));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+  await new Promise(resolve => setTimeout(resolve, 500));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click()");
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath);
+  await new Promise(resolve => setTimeout(resolve, 450));
+  const initial = JSON.parse(await cdp.eval("JSON.stringify({pages:document.querySelectorAll('.party-page').length, canvases:document.querySelectorAll('.party-pdf-preview').length, ready:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length, railWidth:document.querySelector('.party-page-rail')?.scrollWidth || 0})"));
+  if (initial.pages !== 100 || initial.canvases !== 100 || initial.ready < 1 || initial.ready > 10 || cdp.errors.length) {
+    throw new Error(`100-page lazy gate failed before scroll: ${JSON.stringify({ initial, errors: cdp.errors })}`);
+  }
+  const firstShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+  fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_100_lazy_initial_1366x768.png'), Buffer.from(firstShot.data, 'base64'));
+
+  // Scroll to the end of rail
+  await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=rail.scrollWidth; })()");
+  for (let i = 0; i < 25; i++) {
+    const isDone = await cdp.eval("document.querySelectorAll('.party-pdf-preview')[99]?.dataset.previewRendered === 'true'");
+    if (isDone) break;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  const final = JSON.parse(await cdp.eval("JSON.stringify({ready:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length, last:document.querySelectorAll('.party-pdf-preview')[99]?.dataset.previewRendered === 'true', scrollLeft:document.querySelector('.party-page-rail')?.scrollLeft || 0})"));
+  if (!final.last || final.ready > 25 || cdp.errors.length) {
+    throw new Error(`100-page lazy gate failed after scroll: ${JSON.stringify({ initial, final, errors: cdp.errors })}`);
+  }
+  const finalShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+  fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_100_lazy_last_1366x768.png'), Buffer.from(finalShot.data, 'base64'));
+
+  // Scroll back to the beginning
+  await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=0; })()");
+  await new Promise(resolve => setTimeout(resolve, 300));
+  const restored = JSON.parse(await cdp.eval("JSON.stringify({p0Ready:document.querySelectorAll('.party-pdf-preview')[0]?.dataset.previewRendered === 'true'})"));
+  if (!restored.p0Ready || cdp.errors.length) {
+    throw new Error(`100-page restore at start failed: ${JSON.stringify({ restored, errors: cdp.errors })}`);
+  }
+
+  console.log(`PASS Party 100-page lazy thumbnail acceptance · initial ${initial.ready}/100, after scroll ${final.ready}/100, bounded < 25 · screenshots ${SCREENSHOT_DIR}`);
+}
+
 async function runPrivateRealPdfAcceptance(cdp, fixturePath, expectedPages) {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 420)); cdp.errors.length = 0;
-  await cdp.eval("document.getElementById('modePartyBtn').click(); document.getElementById('partyPdfBtn').click()"); await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, expectedPages === 2 ? 1800 : 2400));
-  if (expectedPages > 6) { await cdp.eval("const last=document.querySelectorAll('.party-page-thumb')[document.querySelectorAll('.party-page-thumb').length-1]; last.scrollIntoView({block:'nearest',inline:'center'}); window.dispatchEvent(new Event('scroll'));"); await new Promise(resolve => setTimeout(resolve, 1400)); }
-  const imported = JSON.parse(await cdp.eval("JSON.stringify((() => { const ink=canvas=>{const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data; for(let i=0;i<data.length;i+=64) if(data[i]<244||data[i+1]<244||data[i+2]<244)return true; return false;}; const canvases=[...document.querySelectorAll('.party-pdf-preview')]; return {pages:document.querySelectorAll('.party-page').length,coverage:document.getElementById('partyCoverageText').textContent,ready:canvases.filter(canvas=>canvas.dataset.previewRendered==='true').length,ink:canvases.map(canvas=>canvas.dataset.previewRendered==='true'&&ink(canvas)),errors:document.querySelectorAll('.party-pdf-thumb.is-error').length,messages:[...document.querySelectorAll('.party-pdf-thumb.is-error small')].map(node=>node.textContent)};})())"));
-  if (imported.pages !== expectedPages || !imported.coverage.includes(`${expectedPages}/${expectedPages}`) || imported.errors || imported.ink.slice(0, Math.min(expectedPages, 6)).some(value => !value) || (expectedPages > 6 && !imported.ink[expectedPages - 1]) || cdp.errors.length) throw new Error(`Private real PDF preview failed: ${JSON.stringify({ expectedPages, imported, errors: cdp.errors })}`);
+  await cdp.eval("document.getElementById('modePartyBtn').click(); document.getElementById('partyPdfBtn').click()"); await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, expectedPages === 2 ? 1800 : 2500));
+  if (expectedPages > 6) {
+    // Scroll smoothly through rail to trigger all thumbnail renders
+    await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=Math.floor(rail.scrollWidth / 2); })()");
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=rail.scrollWidth; })()");
+    await new Promise(resolve => setTimeout(resolve, 1800));
+  }
+  const imported = JSON.parse(await cdp.eval("JSON.stringify((() => { const ink=canvas=>{const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data; for(let i=0;i<data.length;i+=64) if(data[i]<244||data[i+1]<244||data[i+2]<244)return true; return false;}; const canvases=[...document.querySelectorAll('.party-pdf-preview')]; return {pages:document.querySelectorAll('.party-page').length,coverage:document.getElementById('partyCoverageText').textContent,ready:canvases.filter(canvas=>canvas.dataset.previewRendered==='true').length,ink:canvases.map(canvas=>canvas.dataset.previewRendered==='true'&&ink(canvas)),errors:document.querySelectorAll('.party-pdf-thumb.is-error').length,messages:[...document.querySelectorAll('.party-pdf-thumb.is-error small')].map(node=>node.textContent),sources:[...document.querySelectorAll('.party-page-source')].map(s=>s.textContent.trim())};})())"));
+  if (imported.pages !== expectedPages || !imported.coverage.includes(`${expectedPages}/${expectedPages}`) || imported.errors || imported.ink.some(value => !value) || cdp.errors.length) {
+    throw new Error(`Private real PDF preview failed: ${JSON.stringify({ expectedPages, imported, errors: cdp.errors })}`);
+  }
   if (expectedPages === 2) {
     await cdp.eval("const page=document.querySelector('.party-page'); page.querySelector('[data-page-action=down]').click(); document.querySelector('.party-page').querySelector('[data-page-action=rotate]').click()"); await new Promise(resolve => setTimeout(resolve, 520));
     await cdp.eval("document.querySelector('.party-page-thumb').click(); document.querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 180));
@@ -146,20 +505,23 @@ async function runPrivateRealPdfAcceptance(cdp, fixturePath, expectedPages) {
     if (split.docs !== 2 || !split.coverage.includes('2/2')) throw new Error(`Private real 2-page split failed: ${JSON.stringify(split)}`);
     await cdp.eval("document.querySelectorAll('.party-document')[1].querySelector('[data-doc-action=merge-prev]').click(); const input=document.querySelector('[data-type-input]'); input.value='05'; input.dispatchEvent(new Event('change',{bubbles:true}));"); await new Promise(resolve => setTimeout(resolve, 180));
   } else {
-    await cdp.eval("document.querySelectorAll('.party-document')[0].querySelectorAll('.party-page-thumb')[5].click()"); await new Promise(resolve => setTimeout(resolve, 100));
-    await cdp.eval("document.querySelectorAll('.party-document')[0].querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 180));
-    await cdp.eval("document.querySelectorAll('.party-document')[1].querySelectorAll('.party-page-thumb')[2].click()"); await new Promise(resolve => setTimeout(resolve, 100));
-    await cdp.eval("document.querySelectorAll('.party-document')[1].querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 180));
-    await cdp.eval("document.querySelectorAll('.party-document')[2].querySelectorAll('.party-page-thumb')[0].click()"); await new Promise(resolve => setTimeout(resolve, 100));
-    await cdp.eval("document.querySelectorAll('.party-document')[2].querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 200));
+    // Multi-split after page 6 (index 5), page 9 (index 8), page 10 (index 9)
+    await cdp.eval("document.querySelectorAll('[data-split-toggle]')[5].click()");
+    await new Promise(resolve => setTimeout(resolve, 80));
+    await cdp.eval("document.querySelectorAll('[data-split-toggle]')[8].click()");
+    await new Promise(resolve => setTimeout(resolve, 80));
+    await cdp.eval("document.querySelectorAll('[data-split-toggle]')[9].click()");
+    await new Promise(resolve => setTimeout(resolve, 120));
+    await cdp.eval("document.querySelector('.party-apply-splits').click()");
+    await new Promise(resolve => setTimeout(resolve, 250));
     const split = JSON.parse(await cdp.eval("JSON.stringify({counts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length),coverage:document.getElementById('partyCoverageText').textContent})"));
-    if (split.counts.join(',') !== '6,3,1,2' || !split.coverage.includes('12/12')) throw new Error(`Private real 12-page split failed: ${JSON.stringify(split)}`);
+    if (split.counts.join(',') !== '6,3,1,2' || !split.coverage.includes('12/12')) throw new Error(`Private real 12-page multi-split failed: ${JSON.stringify(split)}`);
     await cdp.eval("['05','07','38','37'].forEach((type,index)=>{const input=document.querySelectorAll('[data-type-input]')[index]; input.value=type; input.dispatchEvent(new Event('change',{bubbles:true}));});"); await new Promise(resolve => setTimeout(resolve, 200));
   }
   await preparePrivateDownloadCapture(cdp); await cdp.eval("document.getElementById('partyExportAllBtn').click()"); await new Promise(resolve => setTimeout(resolve, expectedPages === 2 ? 800 : 1300));
   const exported = await readPrivateExportPageCounts(cdp); const expected = expectedPages === 2 ? '2' : '6,3,1,2';
   if (exported.join(',') !== expected || cdp.errors.length) throw new Error(`Private real PDF export failed: ${JSON.stringify({ expected, exported, errors: cdp.errors })}`);
-  console.log(`PASS Party private real ${expectedPages}-page PDF preview, coverage, operation and export acceptance`);
+  console.log(`PASS Party private real ${expectedPages}-page PDF preview, coverage, multi-split and export acceptance`);
 }
 async function runPdfWorkflow(cdp) {
   const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_synthetic_fixture.pdf');
@@ -210,7 +572,11 @@ async function runLargePdfAcceptance(cdp) {
   const firstShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_100_lazy_initial_1366x768.png'), Buffer.from(firstShot.data, 'base64'));
   await cdp.eval("(() => { const rail=document.querySelector('.party-page-rail'); rail.scrollLeft=rail.scrollWidth; rail.dispatchEvent(new Event('scroll',{bubbles:true})); })()");
-  await new Promise(resolve => setTimeout(resolve, 900));
+  for (let i = 0; i < 30; i++) {
+    const isDone = await cdp.eval("document.querySelectorAll('.party-pdf-preview')[99]?.dataset.previewRendered === 'true'");
+    if (isDone) break;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
   const final = JSON.parse(await cdp.eval("JSON.stringify({ready:[...document.querySelectorAll('.party-pdf-preview')].filter(canvas=>canvas.dataset.previewRendered==='true').length, last:document.querySelectorAll('.party-pdf-preview')[99]?.dataset.previewRendered === 'true', scrollLeft:document.querySelector('.party-page-rail')?.scrollLeft || 0})"));
   if (!final.last || final.ready <= initial.ready || cdp.errors.length) throw new Error(`100-page lazy gate failed after scroll: ${JSON.stringify({ initial, final, errors: cdp.errors })}`);
   const finalShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
@@ -324,11 +690,14 @@ server.listen(PORT, async () => {
     chrome = spawn(browserPath(), [
       '--headless=new',
       '--no-sandbox',
+      '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--no-first-run',
+      '--no-default-browser-check',
       `--user-data-dir=${chromeProfile}`,
       `--remote-debugging-port=${CDP_PORT}`,
+      '--remote-debugging-address=127.0.0.1',
       'about:blank'
     ]);
     const WebSocketClient = globalThis.WebSocket || require('undici').WebSocket;
@@ -371,6 +740,10 @@ server.listen(PORT, async () => {
     await runLineEndingAcceptance(cdp);
     await runHelpUxAcceptance(cdp);
     await runPdfWorkflow(cdp);
+    await runMultiSplitAcceptance(cdp);
+    await runEventListenerAcceptance(cdp);
+    await runTrueBlankPageAcceptance(cdp);
+    await runRapidInteractionRerenderReproduction(cdp);
     await runLargePdfAcceptance(cdp);
     await runPreviewLifecycleAcceptance(cdp);
     await runPdfErrorAcceptance(cdp);

@@ -544,6 +544,63 @@
     return source.previewPdfDocument;
   }
 
+  function hasContentPixels(canvas) {
+    if (!canvas || !canvas.width || !canvas.height) return false;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let nonWhite = 0;
+    const totalSamples = Math.floor(d.length / 16);
+    for (let i = 0; i < d.length; i += 16) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (r < 245 || g < 245 || b < 245) nonWhite++;
+    }
+    return (nonWhite / totalSamples) > 0.0005;
+  }
+
+  async function sourceHasInk(ref) {
+    try {
+      const info = pageInfo(ref.source, ref.index);
+      const xobjs = xObjectRefs(ref.source, info.body);
+      if (!xobjs.size) {
+        for (const objectId of refsAfter(info.body, 'Contents')) {
+          const stream = await decodeStream(ref.source, objectId);
+          const text = decoder.decode(stream.bytes);
+          if (/\b0\s+0\s+0\s+(rg|RG|k|K)\b|\b[0-9.]+\s+[0-9.]+\s+[0-9.]+\s+(rg|RG)\b/.test(text)) {
+            return true;
+          }
+        }
+        return false;
+      }
+      for (const [, id] of xobjs) {
+        const stream = await decodeStream(ref.source, id);
+        const dict = parseDict(stream.dict || '');
+        const filter = String(dict.Filter || '');
+        if (filter.includes('DCTDecode')) {
+          const blob = new Blob([stream.bytes], { type: 'image/jpeg' });
+          const img = await createImageBitmap(blob);
+          const c = document.createElement('canvas');
+          c.width = Math.min(img.width, 120);
+          c.height = Math.min(img.height, 120);
+          const cx = c.getContext('2d');
+          cx.drawImage(img, 0, 0, c.width, c.height);
+          if (hasContentPixels(c)) return true;
+        } else if (filter.includes('FlateDecode') || !filter) {
+          const bytes = stream.bytes;
+          let nonWhite = 0;
+          const total = Math.floor(bytes.length / 16);
+          for (let i = 0; i < bytes.length; i += 16) {
+            if (bytes[i] < 245) nonWhite++;
+          }
+          if (nonWhite / Math.max(1, total) > 0.0005) return true;
+        }
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function renderPdfJsThumbnail(ref, canvas, maxEdge, isCurrent, extraRotation) {
     const documentProxy = await pdfJsDocument(ref.source);
     if (!isCurrent()) return { stale: true };
@@ -564,11 +621,20 @@
       page.cleanup();
     }
     if (!isCurrent()) return { stale: true };
+
+    const hasContent = hasContentPixels(layer);
+    if (!hasContent) {
+      const hasSourceInk = await sourceHasInk(ref);
+      if (hasSourceInk) {
+        throw new Error('PDF.js dựng canvas trắng bất thường khi tài liệu nguồn có nội dung.');
+      }
+    }
+
     canvas.width = width; canvas.height = height;
     const output = canvas.getContext('2d', { alpha: false });
     output.fillStyle = '#fff'; output.fillRect(0, 0, width, height);
     output.drawImage(layer, 0, 0);
-    return { width, height, rotation };
+    return { width, height, rotation, renderer: 'pdfjs', layer, isBlank: !hasContent };
   }
 
   async function renderThumbnailFallback(ref, canvas, maxEdge = 320, isCurrent = () => true, extraRotation = 0) {
@@ -590,29 +656,63 @@
       await paintContent(ref.source, decoder.decode(stream.bytes), layerCtx, imageRefs);
     }
     if (!isCurrent()) return { stale: true };
+
+    const targetLayer = document.createElement('canvas');
+    targetLayer.width = outputWidth; targetLayer.height = outputHeight;
+    const targetCtx = targetLayer.getContext('2d', { alpha: false });
+    targetCtx.fillStyle = '#fff'; targetCtx.fillRect(0, 0, outputWidth, outputHeight);
+    targetCtx.save();
+    if (rotation === 90) { targetCtx.translate(outputWidth, 0); targetCtx.rotate(Math.PI / 2); targetCtx.drawImage(layer, 0, 0, outputHeight, outputWidth); }
+    else if (rotation === 180) { targetCtx.translate(outputWidth, outputHeight); targetCtx.rotate(Math.PI); targetCtx.drawImage(layer, 0, 0, outputWidth, outputHeight); }
+    else if (rotation === 270) { targetCtx.translate(0, outputHeight); targetCtx.rotate(-Math.PI / 2); targetCtx.drawImage(layer, 0, 0, outputHeight, outputWidth); }
+    else targetCtx.drawImage(layer, 0, 0, outputWidth, outputHeight);
+    targetCtx.restore();
+
+    const hasContent = hasContentPixels(targetLayer);
+    if (!hasContent) {
+      const hasSourceInk = await sourceHasInk(ref);
+      if (hasSourceInk) {
+        throw new Error('Fallback dựng canvas trắng bất thường khi tài liệu nguồn có nội dung.');
+      }
+    }
+
     canvas.width = outputWidth; canvas.height = outputHeight;
     const ctx = canvas.getContext('2d', { alpha: false }); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, outputWidth, outputHeight);
-    ctx.save();
-    if (rotation === 90) { ctx.translate(outputWidth, 0); ctx.rotate(Math.PI / 2); ctx.drawImage(layer, 0, 0, outputHeight, outputWidth); }
-    else if (rotation === 180) { ctx.translate(outputWidth, outputHeight); ctx.rotate(Math.PI); ctx.drawImage(layer, 0, 0, outputWidth, outputHeight); }
-    else if (rotation === 270) { ctx.translate(0, outputHeight); ctx.rotate(-Math.PI / 2); ctx.drawImage(layer, 0, 0, outputHeight, outputWidth); }
-    else ctx.drawImage(layer, 0, 0, outputWidth, outputHeight);
-    ctx.restore();
-    return { width: outputWidth, height: outputHeight, rotation };
+    ctx.drawImage(targetLayer, 0, 0);
+    return { width: outputWidth, height: outputHeight, rotation, renderer: 'fallback', layer: targetLayer, isBlank: !hasContent };
   }
 
   async function renderThumbnail(ref, canvas, maxEdge = 320, isCurrent = () => true, extraRotation = 0) {
     if (!ref?.source || !canvas?.getContext) throw new Error('Thumbnail PDF không hợp lệ.');
+    let pdfJsError = null;
     try {
       return await renderPdfJsThumbnail(ref, canvas, maxEdge, isCurrent, extraRotation);
-    } catch (pdfJsError) {
+    } catch (err) {
+      pdfJsError = err;
       if (!isCurrent()) return { stale: true };
-      try {
-        return await renderThumbnailFallback(ref, canvas, maxEdge, isCurrent, extraRotation);
-      } catch (fallbackError) {
-        throw new Error(`${fallbackError.message} (PDF.js: ${pdfJsError.message || 'render failed'})`);
-      }
+      console.warn(`[PartyPdf] PDF.js không dựng được trang ${ref.index + 1} (${ref.source.name || 'PDF'}): ${err?.message || err}. Thử fallback renderer.`);
     }
+
+    let fallbackError = null;
+    try {
+      const result = await renderThumbnailFallback(ref, canvas, maxEdge, isCurrent, extraRotation);
+      if (result && !result.stale) {
+        console.info(`[PartyPdf] Fallback renderer dựng thành công trang ${ref.index + 1} (${ref.source.name || 'PDF'}).`);
+      }
+      return result;
+    } catch (err) {
+      fallbackError = err;
+    }
+
+    const finalError = new Error(`Không thể hiển thị xem trước trang ${ref.index + 1} (PDF.js: ${pdfJsError?.message || 'lỗi dựng hình'}, Fallback: ${fallbackError?.message || 'không hỗ trợ'})`);
+    console.error('[PartyPdf Preview Failure]', {
+      sourceFile: ref.source.name,
+      sourcePage: ref.index + 1,
+      renderer: 'error',
+      pdfJsError: pdfJsError?.message || String(pdfJsError),
+      fallbackError: fallbackError?.message || String(fallbackError)
+    });
+    throw finalError;
   }
 
   function rewriteRefs(text, map) {

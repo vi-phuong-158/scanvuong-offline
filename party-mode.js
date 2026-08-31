@@ -15,8 +15,9 @@
 
   const state = {
     active: false, busy: false, sources: [], documents: [], selected: null,
-    orderConfirmed: false, pendingAction: null, nextDocument: 1,
-    previewObserver: null, previewQueue: new Map(), previewRunning: false, previewGeneration: 0
+    orderConfirmed: false, pendingAction: null, nextDocument: 1, markedSplits: new Set(),
+    previewObserver: null, previewQueue: new Map(), previewRunning: false, previewGeneration: 0,
+    cachedThumbPages: []
   };
 
   const defaultCorners = [{ x: .045, y: .045 }, { x: .955, y: .045 }, { x: .955, y: .955 }, { x: .045, y: .955 }];
@@ -51,7 +52,9 @@
       const info = PartyPdf.pageInfo(source, index);
       return {
         id: uid('pdf-page'), kind: 'pdf', file, name: `${file.name || 'Tài liệu PDF'} · trang ${index + 1}`,
-        url: '', source, sourcePage: index, previewState: 'pending', previewWidth: info.width, previewHeight: info.height,
+        url: '', source, sourcePage: index, sourceTotalPages: source.pageCount,
+        previewState: 'pending', previewWidth: info.width, previewHeight: info.height,
+        previewThumbCanvas: null, previewRenderer: null, previewError: null,
         corners: defaultCorners.map(p => ({ ...p })), rotation: 0, filter: 'original', confidence: 1
       };
     });
@@ -63,9 +66,17 @@
 
   function pagePreview(page, index) {
     if (page.kind === 'pdf') {
-      if (page.previewState === 'error') return `<div class="party-pdf-thumb is-error" role="img" aria-label="Không xem trước được trang ${index + 1}"><strong>Không xem trước</strong><small>${esc(page.previewError || 'Trang PDF không đọc được')}</small></div>`;
+      if (page.previewState === 'error') {
+        return `<div class="party-pdf-thumb is-error" role="img" aria-label="Không thể hiển thị xem trước trang ${index + 1}">
+          <strong>Không thể hiển thị xem trước</strong>
+          <small>Trang vẫn được giữ nguyên khi xuất PDF</small>
+          <button class="btn secondary small party-retry-preview" data-page-retry="${page.id}" type="button">Thử lại</button>
+        </div>`;
+      }
       const ratio = page.previewWidth && page.previewHeight ? ` style="aspect-ratio:${page.previewWidth}/${page.previewHeight}"` : '';
-      return `<div class="party-pdf-thumb is-loading"${ratio}><canvas class="party-pdf-preview" data-pdf-preview="${page.id}" aria-label="Xem trước trang PDF ${index + 1}"></canvas><span class="party-pdf-status">${page.previewState === 'ready' ? 'PDF' : 'Đang dựng…'}</span></div>`;
+      const isReady = page.previewState === 'ready' && !!page.previewThumbCanvas;
+      const statusText = page.previewRenderer === 'fallback' ? 'PDF (fallback)' : 'PDF';
+      return `<div class="party-pdf-thumb ${isReady ? '' : 'is-loading'}"${ratio}><canvas class="party-pdf-preview" data-pdf-preview="${page.id}" aria-label="Xem trước trang PDF ${index + 1}"></canvas><span class="party-pdf-status">${isReady ? statusText : 'Đang dựng…'}</span></div>`;
     }
     return `<img src="${page.url}" alt="Trang ${index + 1}" loading="lazy" />`;
   }
@@ -83,6 +94,26 @@
     return state.active && generation === state.previewGeneration && canvas?.isConnected && found?.page === page;
   }
 
+  function restoreRenderedCanvases() {
+    const canvases = [...els.documents.querySelectorAll('[data-pdf-preview]')];
+    canvases.forEach(canvas => {
+      const found = pageById(canvas.dataset.pdfPreview);
+      if (found && found.page.previewThumbCanvas && found.page.previewState === 'ready') {
+        const thumb = found.page.previewThumbCanvas;
+        canvas.width = thumb.width;
+        canvas.height = thumb.height;
+        const ctx = canvas.getContext('2d', { alpha: false });
+        if (ctx) {
+          ctx.drawImage(thumb, 0, 0);
+          canvas.dataset.previewRendered = 'true';
+          canvas.parentElement?.classList.remove('is-loading');
+          const status = canvas.parentElement?.querySelector('.party-pdf-status');
+          if (status) status.textContent = found.page.previewRenderer === 'fallback' ? 'PDF (fallback)' : 'PDF';
+        }
+      }
+    });
+  }
+
   async function renderPdfPreview(canvas, generation) {
     if (!canvas?.isConnected || canvas.dataset.previewRendered === 'true') return;
     const found = pageById(canvas.dataset.pdfPreview);
@@ -92,17 +123,45 @@
     page.previewState = 'rendering';
     try {
       const result = await PartyPdf.renderThumbnail(page.source.page(page.sourcePage), canvas, 320, () => isCurrentPreview(canvas, page, generation), page.rotation);
-      if (result?.stale || !isCurrentPreview(canvas, page, generation)) return;
+      if (result?.stale || !isCurrentPreview(canvas, page, generation)) {
+        if (page.previewState === 'rendering') page.previewState = 'pending';
+        return;
+      }
       page.previewState = 'ready';
+      page.previewRenderer = result.renderer || 'pdfjs';
+      if (result.layer) {
+        page.previewThumbCanvas = result.layer;
+      } else {
+        const copy = document.createElement('canvas');
+        copy.width = canvas.width; copy.height = canvas.height;
+        copy.getContext('2d', { alpha: false })?.drawImage(canvas, 0, 0);
+        page.previewThumbCanvas = copy;
+      }
+      state.cachedThumbPages = state.cachedThumbPages.filter(p => p !== page);
+      state.cachedThumbPages.push(page);
+      if (state.cachedThumbPages.length > 32) {
+        const evicted = state.cachedThumbPages.shift();
+        if (evicted) {
+          evicted.previewThumbCanvas = null;
+        }
+      }
       canvas.dataset.previewRendered = 'true';
-      canvas.parentElement.classList.remove('is-loading');
-      const status = canvas.parentElement.querySelector('.party-pdf-status');
-      if (status) status.textContent = 'PDF';
+      canvas.parentElement?.classList.remove('is-loading');
+      const status = canvas.parentElement?.querySelector('.party-pdf-status');
+      if (status) status.textContent = page.previewRenderer === 'fallback' ? 'PDF (fallback)' : 'PDF';
     } catch (error) {
-      if (!isCurrentPreview(canvas, page, generation)) return;
+      if (!isCurrentPreview(canvas, page, generation)) {
+        if (page.previewState === 'rendering') page.previewState = 'pending';
+        return;
+      }
       page.previewState = 'error';
-      page.previewError = error?.message || 'Không thể dựng preview trang PDF.';
-      canvas.parentElement.outerHTML = pagePreview(page, found.doc.pages.indexOf(page));
+      page.previewError = error?.message || 'Không thể hiển thị xem trước trang PDF.';
+      page.previewThumbCanvas = null;
+      state.cachedThumbPages = state.cachedThumbPages.filter(p => p !== page);
+      const parent = canvas.parentElement;
+      if (parent) {
+        parent.outerHTML = pagePreview(page, found.doc.pages.indexOf(page));
+      }
     }
   }
 
@@ -131,15 +190,19 @@
   function queuePdfPreviews() {
     state.previewGeneration += 1;
     disconnectPdfPreviewObserver();
-    const canvases = [...els.documents.querySelectorAll('[data-pdf-preview]')];
-    // Render only a small initial window. The observer brings later pages in as
-    // they approach the viewport, so a 100–200 page PDF never renders at once.
+    restoreRenderedCanvases();
+    const canvases = [...els.documents.querySelectorAll('[data-pdf-preview]:not([data-preview-rendered="true"])')];
     canvases.slice(0, 6).forEach(queuePdfPreview);
-    if (typeof IntersectionObserver === 'function') {
+    if (typeof IntersectionObserver === 'function' && canvases.length > 6) {
       state.previewObserver = new IntersectionObserver(entries => {
-        entries.forEach(entry => { if (entry.isIntersecting) queuePdfPreview(entry.target); });
-      }, { root: null, rootMargin: '480px', threshold: 0.01 });
-      canvases.forEach(canvas => state.previewObserver.observe(canvas));
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            queuePdfPreview(entry.target);
+            state.previewObserver?.unobserve(entry.target);
+          }
+        });
+      }, { root: null, rootMargin: '600px', threshold: 0.01 });
+      canvases.slice(6).forEach(canvas => state.previewObserver.observe(canvas));
     }
   }
 
@@ -155,39 +218,141 @@
     els.empty.classList.toggle('hidden', state.sources.length > 0);
     els.workspace.classList.toggle('hidden', state.sources.length === 0);
     els.documents.innerHTML = docs.length ? docs.map((doc, docIndex) => renderDocument(doc, docIndex)).join('') : '<div class="party-empty-doc">Chưa có tài liệu. Hãy thêm nguồn hoặc tạo tài liệu mới.</div>';
-    bindDocumentEvents();
     renderCoverage();
     renderOrderPanel();
     queuePdfPreviews();
   }
 
+  function renderPageCard(page, index, doc) {
+    const isSelected = state.selected?.pageId === page.id;
+    const sourceInfo = page.kind === 'pdf'
+      ? `Nguồn: trang ${page.sourcePage + 1}/${page.source?.pageCount || page.sourceTotalPages || '?'}`
+      : 'Ảnh scan mới';
+    const fileName = page.file?.name || page.source?.name || page.name;
+
+    return `<div class="party-page ${isSelected ? 'is-selected' : ''}" data-page-id="${page.id}" draggable="true">
+      <button class="party-page-thumb" data-page-id="${page.id}" type="button">
+        ${pagePreview(page, index)}
+        <span>${index + 1}</span>
+      </button>
+      <div class="party-page-meta">
+        <strong>Trang ${index + 1}</strong>
+        <small class="party-page-source">${esc(sourceInfo)}</small>
+        <small class="party-page-filename" title="${esc(fileName)}">${esc(fileName)}</small>
+      </div>
+      <div class="party-page-actions">
+        <button title="Đưa trang về trước" aria-label="Đưa trang về trước" data-page-action="up" data-page-id="${page.id}" type="button">← Trước</button>
+        <button title="Đưa trang về sau" aria-label="Đưa trang về sau" data-page-action="down" data-page-id="${page.id}" type="button">Sau →</button>
+        <button title="Xoay trang" aria-label="Xoay trang" data-page-action="rotate" data-page-id="${page.id}" type="button">↻ Xoay</button>
+        <button class="party-page-action-optional" title="Thay trang" aria-label="Thay trang" data-page-action="replace" data-page-id="${page.id}" type="button">↺ Thay trang</button>
+        <button class="party-page-action-optional" title="Thêm trang sau" aria-label="Thêm trang sau" data-page-action="insert" data-page-id="${page.id}" type="button">+ Thêm sau</button>
+        <button class="party-page-action-optional" title="Xóa khỏi tài liệu" aria-label="Xóa trang khỏi tài liệu" data-page-action="remove" data-page-id="${page.id}" type="button">Xóa</button>
+        <details class="party-page-more">
+          <summary aria-label="Thêm thao tác cho trang này">••• Thêm</summary>
+          <div>
+            <button title="Thay trang" aria-label="Thay trang" data-page-action="replace" data-page-id="${page.id}" type="button">↺ Thay trang</button>
+            <button title="Thêm trang sau" aria-label="Thêm trang sau" data-page-action="insert" data-page-id="${page.id}" type="button">+ Thêm sau</button>
+            <button title="Xóa khỏi tài liệu" aria-label="Xóa trang khỏi tài liệu" data-page-action="remove" data-page-id="${page.id}" type="button">Xóa khỏi tài liệu</button>
+          </div>
+        </details>
+      </div>
+    </div>`;
+  }
+
   function renderDocument(doc, docIndex) {
     const docs = state.documents;
     const type = taxonomy().find(item => item.id === doc.typeId);
+    const docMarkedCount = doc.pages.filter(p => state.markedSplits.has(p.id)).length;
+
+    const pageItemsHtml = doc.pages.map((page, index) => {
+      const cardHtml = renderPageCard(page, index, doc);
+      const isSplitMarked = state.markedSplits.has(page.id);
+      const splitDividerHtml = index < doc.pages.length - 1 ? `
+        <div class="party-split-divider">
+          <button class="party-split-btn ${isSplitMarked ? 'is-marked' : ''}" data-split-toggle="${page.id}" data-document-id="${doc.id}" type="button" aria-pressed="${isSplitMarked}" title="${isSplitMarked ? 'Bỏ điểm tách' : 'Đánh dấu tách tại đây'}">
+            <svg class="party-split-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+            <span class="party-split-label">${isSplitMarked ? 'Đã đánh dấu tách' : 'Tách tại đây'}</span>
+          </button>
+        </div>` : '';
+      return cardHtml + splitDividerHtml;
+    }).join('');
+
+    const multiSplitActionHtml = docMarkedCount > 0 ? `
+      <div class="party-multisplit-bar">
+        <button class="btn primary small party-apply-splits" data-doc-action="apply-splits" data-document-id="${doc.id}" type="button">Áp dụng ${docMarkedCount} điểm tách</button>
+        <button class="btn ghost small party-clear-splits" data-doc-action="clear-splits" data-document-id="${doc.id}" type="button">Bỏ các điểm tách</button>
+      </div>` : '';
+
     return `<article class="party-document ${state.selected?.documentId === doc.id ? 'is-selected' : ''}" data-document-id="${doc.id}">
       <header class="party-document-head"><div><span class="party-doc-number">TÀI LIỆU ${docIndex + 1}</span><h3>${esc(type?.name_vi || 'Chưa chọn loại tài liệu')}</h3><p>${doc.pages.length} trang · ${type ? esc(type.filename_base) + '.pdf' : 'Chọn loại để sinh tên file'}</p></div>
       <button class="btn ghost small party-remove-document" data-document-id="${doc.id}" type="button">Xóa tài liệu</button></header>
-      <div class="party-page-rail" data-document-id="${doc.id}">${doc.pages.map((page, index) => `<div class="party-page ${state.selected?.pageId === page.id ? 'is-selected' : ''}" data-page-id="${page.id}" draggable="true"><button class="party-page-thumb" data-page-id="${page.id}" type="button">${pagePreview(page, index)}<span>${index + 1}</span></button><div class="party-page-meta"><strong>Trang ${index + 1}</strong><small>${esc(page.name)}</small></div><div class="party-page-actions"><button title="Đưa trang về trước" aria-label="Đưa trang về trước" data-page-action="up" data-page-id="${page.id}" type="button">← Trước</button><button title="Đưa trang về sau" aria-label="Đưa trang về sau" data-page-action="down" data-page-id="${page.id}" type="button">Sau →</button><button title="Xoay trang" aria-label="Xoay trang" data-page-action="rotate" data-page-id="${page.id}" type="button">↻ Xoay</button><button class="party-page-action-optional" title="Thay trang" aria-label="Thay trang" data-page-action="replace" data-page-id="${page.id}" type="button">↺ Thay trang</button><button class="party-page-action-optional" title="Thêm trang sau" aria-label="Thêm trang sau" data-page-action="insert" data-page-id="${page.id}" type="button">+ Thêm sau</button><button class="party-page-action-optional" title="Xóa khỏi tài liệu" aria-label="Xóa trang khỏi tài liệu" data-page-action="remove" data-page-id="${page.id}" type="button">Xóa</button><details class="party-page-more"><summary aria-label="Thêm thao tác cho trang này">••• Thêm</summary><div><button title="Thay trang" aria-label="Thay trang" data-page-action="replace" data-page-id="${page.id}" type="button">↺ Thay trang</button><button title="Thêm trang sau" aria-label="Thêm trang sau" data-page-action="insert" data-page-id="${page.id}" type="button">+ Thêm sau</button><button title="Xóa khỏi tài liệu" aria-label="Xóa trang khỏi tài liệu" data-page-action="remove" data-page-id="${page.id}" type="button">Xóa khỏi tài liệu</button></div></details></div></div>`).join('')}</div>
-      <div class="party-document-actions"><button class="btn secondary small" data-doc-action="split" data-document-id="${doc.id}" type="button">Tách sau trang đang chọn</button><button class="btn secondary small" data-doc-action="merge-prev" data-document-id="${doc.id}" type="button">Ghép với trước</button><button class="btn secondary small" data-doc-action="merge-next" data-document-id="${doc.id}" type="button">Ghép với sau</button><button class="btn secondary small" data-doc-action="add" data-document-id="${doc.id}" type="button">+ Thêm trang</button><select class="party-move-select" aria-label="Chuyển trang sang tài liệu khác" data-document-id="${doc.id}"><option value="">Chuyển trang…</option>${docs.filter(other => other.id !== doc.id).map(other => `<option value="${other.id}">→ Tài liệu ${docs.indexOf(other) + 1}</option>`).join('')}</select></div>
+      ${multiSplitActionHtml}
+      <div class="party-page-rail" data-document-id="${doc.id}">${pageItemsHtml}</div>
+      <div class="party-document-actions">
+        <button class="btn secondary small" data-doc-action="split" data-document-id="${doc.id}" type="button">Tách sau trang đang chọn</button>
+        <button class="btn secondary small" data-doc-action="merge-prev" data-document-id="${doc.id}" type="button">Ghép với trước</button>
+        <button class="btn secondary small" data-doc-action="merge-next" data-document-id="${doc.id}" type="button">Ghép với sau</button>
+        <button class="btn secondary small" data-doc-action="add" data-document-id="${doc.id}" type="button">+ Thêm trang</button>
+        <select class="party-move-select" aria-label="Chuyển trang sang tài liệu khác" data-document-id="${doc.id}"><option value="">Chuyển trang…</option>${docs.filter(other => other.id !== doc.id).map(other => `<option value="${other.id}">→ Tài liệu ${docs.indexOf(other) + 1}</option>`).join('')}</select>
+      </div>
       <div class="party-taxonomy-field"><label for="party-type-${doc.id}">Loại tài liệu do cán bộ chọn</label><input id="party-type-${doc.id}" list="party-types-${doc.id}" value="${type ? `${type.id} — ${esc(type.name_vi)}` : ''}" placeholder="Tìm theo mã, tên hoặc không dấu…" data-type-input="${doc.id}" autocomplete="off"><div class="party-type-results" data-type-results="${doc.id}"></div><datalist id="party-types-${doc.id}">${taxonomy().map(item => `<option value="${item.id} — ${esc(item.name_vi)}"></option>`).join('')}</datalist><small>${type ? `Tên chuẩn: ${esc(type.filename_base)}.pdf` : 'Chưa gán taxonomy — chưa thể xuất'}</small></div>
     </article>`;
   }
 
-  function bindDocumentEvents() {
-    els.documents.querySelectorAll('.party-page-thumb').forEach(button => button.addEventListener('click', () => { const found = pageById(button.dataset.pageId); if (found) { state.selected = { documentId: found.doc.id, pageId: found.page.id }; render(); } }));
-    els.documents.querySelectorAll('.party-remove-document').forEach(button => button.addEventListener('click', () => removeDocument(button.dataset.documentId)));
-    els.documents.querySelectorAll('[data-doc-action]').forEach(button => button.addEventListener('click', () => handleDocumentAction(button.dataset.docAction, button.dataset.documentId)));
-    els.documents.querySelectorAll('[data-page-action]').forEach(button => button.addEventListener('click', () => handlePageAction(button.dataset.pageAction, button.dataset.pageId)));
-    els.documents.querySelectorAll('.party-move-select').forEach(select => select.addEventListener('change', () => { if (select.value && state.selected?.pageId) movePage(state.selected.pageId, select.value); }));
-    els.documents.querySelectorAll('[data-type-input]').forEach(input => {
-      input.addEventListener('input', () => showTypeResults(input));
-      input.addEventListener('change', () => assignType(input.dataset.typeInput, input.value));
+  function toggleSplitMark(pageId) {
+    if (state.markedSplits.has(pageId)) {
+      state.markedSplits.delete(pageId);
+    } else {
+      state.markedSplits.add(pageId);
+    }
+    render();
+  }
+
+  function applyDocumentSplits(documentId) {
+    const doc = state.documents.find(item => item.id === documentId);
+    if (!doc) return;
+    const markedIndices = [];
+    doc.pages.forEach((page, idx) => {
+      if (state.markedSplits.has(page.id) && idx < doc.pages.length - 1) {
+        markedIndices.push(idx);
+      }
     });
-    els.documents.querySelectorAll('[data-type-result]').forEach(button => button.addEventListener('click', () => {
-      const input = els.documents.querySelector(`[data-type-input="${button.dataset.documentId}"]`);
-      if (input) { input.value = `${button.dataset.typeId} — ${button.dataset.typeName}`; assignType(button.dataset.documentId, input.value); }
+    if (!markedIndices.length) return toast('Chưa có điểm tách nào được đánh dấu.');
+
+    const chunks = [];
+    let start = 0;
+    for (const splitIdx of markedIndices) {
+      chunks.push(doc.pages.slice(start, splitIdx + 1));
+      start = splitIdx + 1;
+    }
+    chunks.push(doc.pages.slice(start));
+
+    doc.pages = chunks[0];
+    const newDocs = chunks.slice(1).map(chunk => ({
+      id: uid('doc'),
+      pages: chunk,
+      typeId: null
     }));
-    els.documents.querySelectorAll('.party-page').forEach(card => { card.addEventListener('dragstart', event => { event.dataTransfer.setData('text/plain', card.dataset.pageId); }); card.addEventListener('dragover', event => event.preventDefault()); card.addEventListener('drop', event => { event.preventDefault(); reorderPage(event.dataTransfer.getData('text/plain'), card.dataset.pageId); }); });
+
+    const docIndex = state.documents.indexOf(doc);
+    state.documents.splice(docIndex + 1, 0, ...newDocs);
+
+    state.markedSplits.clear();
+    state.orderConfirmed = false;
+    render();
+    toast(`Đã chia thành ${chunks.length} tài liệu (${markedIndices.length} điểm tách).`);
+  }
+
+  function retryPreview(pageId) {
+    const found = pageById(pageId);
+    if (!found || found.page.kind !== 'pdf') return;
+    found.page.previewState = 'pending';
+    found.page.previewError = null;
+    found.page.previewThumbCanvas = null;
+    state.cachedThumbPages = state.cachedThumbPages.filter(p => p !== found.page);
+    render();
+    const canvas = els.documents.querySelector(`[data-pdf-preview="${pageId}"]`);
+    if (canvas) queuePdfPreview(canvas);
   }
 
   function renderCoverage() {
@@ -210,10 +375,11 @@
 
   function renderOrderPanel() {
     const groups = sameTypeGroups();
-    if (!groups.length) { state.orderConfirmed = false; els.orderPanel.innerHTML = '<p class="party-order-empty">Mỗi loại hiện chỉ có một tài liệu. Thứ tự sẽ lấy theo danh sách tài liệu.</p>'; } else {
+    if (!groups.length) {
+      state.orderConfirmed = false;
+      els.orderPanel.innerHTML = '<p class="party-order-empty">Mỗi loại hiện chỉ có một tài liệu. Thứ tự sẽ lấy theo danh sách tài liệu.</p>';
+    } else {
       els.orderPanel.innerHTML = groups.map(([typeId, docs]) => `<div class="party-order-group"><strong>${typeId} · ${esc(taxonomy().find(item => item.id === typeId)?.name_vi)}</strong><p>Kéo hoặc dùng nút để xác nhận thứ tự .1/.2/.3</p><ol>${docs.map((doc, index) => `<li><span>Tài liệu ${state.documents.indexOf(doc) + 1}</span><button aria-label="Đưa tài liệu lên" data-order="up" data-doc-id="${doc.id}" type="button">↑</button><button aria-label="Đưa tài liệu xuống" data-order="down" data-doc-id="${doc.id}" type="button">↓</button><small>${index + 1}</small></li>`).join('')}</ol></div>`).join('') + `<button id="partyConfirmOrderBtn" class="btn secondary full" type="button">${state.orderConfirmed ? 'Đã xác nhận thứ tự' : 'Xác nhận thứ tự tài liệu'}</button>`;
-      els.orderPanel.querySelectorAll('[data-order]').forEach(button => button.addEventListener('click', () => reorderDocuments(button.dataset.docId, button.dataset.order)));
-      $('partyConfirmOrderBtn').addEventListener('click', () => { state.orderConfirmed = true; renderOrderPanel(); updateExportState(); });
     }
     updateExportState();
   }
@@ -249,13 +415,26 @@
 
   function removeDocument(documentId) {
     const index = state.documents.findIndex(doc => doc.id === documentId); if (index < 0) return;
-    const [doc] = state.documents.splice(index, 1); const fallback = ensureDocument(); fallback.pages.push(...doc.pages); state.orderConfirmed = false; render();
+    const [doc] = state.documents.splice(index, 1);
+    doc.pages.forEach(p => state.markedSplits.delete(p.id));
+    const fallback = ensureDocument(); fallback.pages.push(...doc.pages); state.orderConfirmed = false; render();
   }
 
   function handleDocumentAction(action, documentId) {
     const doc = state.documents.find(item => item.id === documentId); if (!doc) return;
     if (action === 'add') { state.pendingAction = { action: 'append', documentId }; els.fileInput.click(); return; }
-    if (action === 'split') { const index = doc.pages.findIndex(page => page.id === state.selected?.pageId); if (index < 0 || index === doc.pages.length - 1) return toast('Chọn một trang ở giữa tài liệu để tách.'); const next = { id: uid('doc'), pages: doc.pages.splice(index + 1), typeId: null }; state.documents.splice(state.documents.indexOf(doc) + 1, 0, next); state.orderConfirmed = false; render(); return; }
+    if (action === 'apply-splits') { applyDocumentSplits(documentId); return; }
+    if (action === 'clear-splits') { doc.pages.forEach(p => state.markedSplits.delete(p.id)); render(); return; }
+    if (action === 'split') {
+      const index = doc.pages.findIndex(page => page.id === state.selected?.pageId);
+      if (index < 0 || index === doc.pages.length - 1) return toast('Chọn một trang ở giữa tài liệu để tách.');
+      const next = { id: uid('doc'), pages: doc.pages.splice(index + 1), typeId: null };
+      state.documents.splice(state.documents.indexOf(doc) + 1, 0, next);
+      state.markedSplits.delete(doc.pages[index]?.id);
+      state.orderConfirmed = false;
+      render();
+      return;
+    }
     const index = state.documents.indexOf(doc);
     if (action === 'merge-prev' && index > 0) { state.documents[index - 1].pages.push(...doc.pages); state.documents.splice(index, 1); state.orderConfirmed = false; render(); }
     if (action === 'merge-next' && index < state.documents.length - 1) { state.documents[index].pages.push(...state.documents[index + 1].pages); state.documents.splice(index + 1, 1); state.orderConfirmed = false; render(); }
@@ -265,12 +444,33 @@
     const found = pageById(pageId); if (!found) return;
     state.selected = { documentId: found.doc.id, pageId };
     if (action === 'up' || action === 'down') { const index = found.doc.pages.indexOf(found.page), target = action === 'up' ? index - 1 : index + 1; if (target >= 0 && target < found.doc.pages.length) [found.doc.pages[index], found.doc.pages[target]] = [found.doc.pages[target], found.doc.pages[index]]; render(); }
-    if (action === 'rotate') { found.page.rotation = (found.page.rotation + 90) % 360; if (found.page.kind === 'pdf') { [found.page.previewWidth, found.page.previewHeight] = [found.page.previewHeight, found.page.previewWidth]; found.page.previewState = 'pending'; } render(); }
-    if (action === 'remove') { found.doc.pages.splice(found.doc.pages.indexOf(found.page), 1); render(); }
+    if (action === 'rotate') {
+      found.page.rotation = (found.page.rotation + 90) % 360;
+      if (found.page.kind === 'pdf') {
+        [found.page.previewWidth, found.page.previewHeight] = [found.page.previewHeight, found.page.previewWidth];
+        found.page.previewState = 'pending';
+        found.page.previewThumbCanvas = null;
+      }
+      render();
+    }
+    if (action === 'remove') {
+      state.markedSplits.delete(pageId);
+      found.doc.pages.splice(found.doc.pages.indexOf(found.page), 1);
+      render();
+    }
     if (action === 'replace' || action === 'insert') { setAction(action, found.doc.id, pageId); }
   }
 
-  function movePage(pageId, documentId) { const found = pageById(pageId), target = state.documents.find(doc => doc.id === documentId); if (!found || !target || found.doc === target) return; found.doc.pages.splice(found.doc.pages.indexOf(found.page), 1); target.pages.push(found.page); state.selected = { documentId: target.id, pageId }; state.orderConfirmed = false; render(); }
+  function movePage(pageId, documentId) {
+    const found = pageById(pageId), target = state.documents.find(doc => doc.id === documentId);
+    if (!found || !target || found.doc === target) return;
+    state.markedSplits.delete(pageId);
+    found.doc.pages.splice(found.doc.pages.indexOf(found.page), 1);
+    target.pages.push(found.page);
+    state.selected = { documentId: target.id, pageId };
+    state.orderConfirmed = false;
+    render();
+  }
   function reorderPage(fromId, toId) { const from = pageById(fromId), to = pageById(toId); if (!from || !to || from.doc !== to.doc || fromId === toId) return; const list = from.doc.pages, a = list.indexOf(from.page), b = list.indexOf(to.page); list.splice(a, 1); list.splice(b, 0, from.page); state.selected = { documentId: from.doc.id, pageId: fromId }; render(); }
   function reorderDocuments(documentId, direction) { const index = state.documents.findIndex(doc => doc.id === documentId), target = direction === 'up' ? index - 1 : index + 1; if (index < 0 || target < 0 || target >= state.documents.length) return; [state.documents[index], state.documents[target]] = [state.documents[target], state.documents[index]]; state.orderConfirmed = false; render(); }
 
@@ -359,12 +559,17 @@
   function activate() { state.active = true; els.empty.classList.remove('hidden'); render(); }
   function deactivate() {
     state.active = false; state.previewGeneration += 1; disconnectPdfPreviewObserver();
+    state.markedSplits.clear();
+    state.cachedThumbPages = [];
     const releasedSources = new Set();
     [...state.sources, ...state.documents.flatMap(doc => doc.pages)].forEach(page => {
       if (page.kind === 'image' && page.url) URL.revokeObjectURL(page.url);
-      if (page.kind === 'pdf' && !releasedSources.has(page.source)) {
-        releasedSources.add(page.source);
-        PartyPdf.releasePreviewCache?.(page.source);
+      if (page.kind === 'pdf') {
+        page.previewThumbCanvas = null;
+        if (!releasedSources.has(page.source)) {
+          releasedSources.add(page.source);
+          PartyPdf.releasePreviewCache?.(page.source);
+        }
       }
     });
     state.sources = []; state.documents = []; state.selected = null; state.orderConfirmed = false; state.pendingAction = null;
@@ -372,6 +577,102 @@
     els.empty.classList.add('hidden'); els.workspace.classList.add('hidden');
   }
   function hasWork() { return state.sources.length > 0; }
+
+  els.documents.addEventListener('click', event => {
+    const thumbBtn = event.target.closest('.party-page-thumb');
+    if (thumbBtn) {
+      const found = pageById(thumbBtn.dataset.pageId);
+      if (found) { state.selected = { documentId: found.doc.id, pageId: found.page.id }; render(); }
+      return;
+    }
+    const retryBtn = event.target.closest('[data-page-retry]');
+    if (retryBtn) {
+      retryPreview(retryBtn.dataset.pageRetry);
+      return;
+    }
+    const splitBtn = event.target.closest('[data-split-toggle]');
+    if (splitBtn) {
+      toggleSplitMark(splitBtn.dataset.splitToggle);
+      return;
+    }
+    const pageActionBtn = event.target.closest('[data-page-action]');
+    if (pageActionBtn) {
+      handlePageAction(pageActionBtn.dataset.pageAction, pageActionBtn.dataset.pageId);
+      return;
+    }
+    const docActionBtn = event.target.closest('[data-doc-action]');
+    if (docActionBtn) {
+      handleDocumentAction(docActionBtn.dataset.docAction, docActionBtn.dataset.documentId);
+      return;
+    }
+    const removeDocBtn = event.target.closest('.party-remove-document');
+    if (removeDocBtn) {
+      removeDocument(removeDocBtn.dataset.documentId);
+      return;
+    }
+    const typeResultBtn = event.target.closest('[data-type-result]');
+    if (typeResultBtn) {
+      const input = els.documents.querySelector(`[data-type-input="${typeResultBtn.dataset.documentId}"]`);
+      if (input) {
+        input.value = `${typeResultBtn.dataset.typeId} — ${typeResultBtn.dataset.typeName}`;
+        assignType(typeResultBtn.dataset.documentId, input.value);
+      }
+      return;
+    }
+  });
+
+  els.documents.addEventListener('change', event => {
+    const moveSelect = event.target.closest('.party-move-select');
+    if (moveSelect && moveSelect.value && state.selected?.pageId) {
+      movePage(state.selected.pageId, moveSelect.value);
+      return;
+    }
+    const typeInput = event.target.closest('[data-type-input]');
+    if (typeInput) {
+      assignType(typeInput.dataset.typeInput, typeInput.value);
+      return;
+    }
+  });
+
+  els.documents.addEventListener('input', event => {
+    const typeInput = event.target.closest('[data-type-input]');
+    if (typeInput) {
+      showTypeResults(typeInput);
+    }
+  });
+
+  els.documents.addEventListener('dragstart', event => {
+    const card = event.target.closest('.party-page');
+    if (card && card.dataset.pageId) {
+      event.dataTransfer.setData('text/plain', card.dataset.pageId);
+    }
+  });
+  els.documents.addEventListener('dragover', event => {
+    if (event.target.closest('.party-page')) {
+      event.preventDefault();
+    }
+  });
+  els.documents.addEventListener('drop', event => {
+    const card = event.target.closest('.party-page');
+    if (card && card.dataset.pageId) {
+      event.preventDefault();
+      const fromId = event.dataTransfer.getData('text/plain');
+      if (fromId) reorderPage(fromId, card.dataset.pageId);
+    }
+  });
+
+  els.orderPanel.addEventListener('click', event => {
+    const orderBtn = event.target.closest('[data-order]');
+    if (orderBtn) {
+      reorderDocuments(orderBtn.dataset.docId, orderBtn.dataset.order);
+      return;
+    }
+    if (event.target.id === 'partyConfirmOrderBtn' || event.target.closest('#partyConfirmOrderBtn')) {
+      state.orderConfirmed = true;
+      renderOrderPanel();
+      updateExportState();
+    }
+  });
 
   els.cameraBtn.addEventListener('click', () => els.cameraInput.click());
   els.chooseBtn.addEventListener('click', () => els.fileInput.click());

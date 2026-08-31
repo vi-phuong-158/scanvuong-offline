@@ -5,6 +5,18 @@
 
 ---
 
+## [2026-08-30] Harden PDF Preview với Blank-Canvas Validation và Multi-Split UX cho Party Document Mode
+
+- **Quyết định:**
+  1. **PDF Preview Hardening & Blank-Canvas Validation:** PDF.js là renderer chính, không fallback âm thầm. Sau khi render, hàm `hasContentPixels` kiểm tra mật độ pixel màu khác trắng trên canvas. Nếu một trang PDF có stream/XObject nhưng canvas trắng bất thường, throw error để fallback hoặc kích hoạt UI báo lỗi trực quan với nút "Thử lại". Caching canvas derivative trong bộ nhớ (`page.previewThumbCanvas`) giúp khôi phục tức thì khi UI re-render.
+  2. **Multi-Split Architecture:** Hỗ trợ cán bộ đánh dấu nhiều điểm tách `✂ Tách tại đây` cùng lúc và thực thi phân tách tài liệu thành $N+1$ tài liệu chỉ với 1 click (`Áp dụng N điểm tách`). Toàn bộ thứ tự trang, góc xoay, đối tượng PDF nguồn được bảo toàn tuyệt đối, không trùng lặp, không mất trang.
+  3. **Hiển thị nguồn trang rõ ràng:** Hiển thị `Trang X · Nguồn: trang Y/Z` để đối chiếu với tài liệu gốc trên giấy.
+- **Lý do:** Khắc phục triệt để hiện tượng một số thumbnail PDF scan bị trắng khi nhập file nhiều trang; giải quyết bất tiện khi phải tách từng trang một trên các tài liệu dài.
+- **Đánh đổi:** Lưu thêm layer canvas tham chiếu trong bộ nhớ JS trong suốt phiên làm việc (được dọn sạch và thu hồi hoàn toàn khi đóng session/chuyển mode).
+- **Người quyết định:** Senior Frontend Engineer & User Mandate.
+
+---
+
 ## [2026-08-23] Redesign UI Mobile-First với Be Vietnam Pro tự host & Icon SVG nhất quán
 
 - **Quyết định:** Nâng cấp toàn bộ giao diện thành ứng dụng tiện ích di động hiện đại (Premium Mobile Document Utility) tối ưu hoá thao tác một tay:
