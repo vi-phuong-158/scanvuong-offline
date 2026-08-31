@@ -527,7 +527,7 @@
     canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
     canvas.style.width = `${cssW}px`; canvas.style.height = `${cssH}px`;
     const ctx = canvas.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
-    ctx.clearRect(0,0,cssW,cssH); ctx.fillStyle='#111827'; ctx.fillRect(0,0,cssW,cssH);
+    ctx.clearRect(0,0,cssW,cssH); ctx.fillStyle='#1c1210'; ctx.fillRect(0,0,cssW,cssH);
 
     const sw = source.width || source.naturalWidth, sh = source.height || source.naturalHeight;
     const rd = rotatedDimensions(sw, sh, page.rotation);
@@ -549,9 +549,9 @@
 
     const pts = page.corners.map(p => ({x: ox+p.x*dw, y: oy+p.y*dh}));
     ctx.save();
-    ctx.fillStyle='rgba(37,99,235,.10)'; ctx.strokeStyle='#60a5fa'; ctx.lineWidth=2.5;
+    ctx.fillStyle='rgba(179,38,30,.10)'; ctx.strokeStyle='#d9a441'; ctx.lineWidth=2.5;
     ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y); for(let i=1;i<4;i++)ctx.lineTo(pts[i].x,pts[i].y); ctx.closePath(); ctx.fill(); ctx.stroke();
-    pts.forEach((p,i)=>{ ctx.beginPath(); ctx.arc(p.x,p.y,11,0,Math.PI*2); ctx.fillStyle='#fff';ctx.fill();ctx.lineWidth=4;ctx.strokeStyle=i===state.preview.dragCorner?'#f59e0b':'#2563eb';ctx.stroke(); });
+    pts.forEach((p,i)=>{ ctx.beginPath(); ctx.arc(p.x,p.y,11,0,Math.PI*2); ctx.fillStyle='#fff';ctx.fill();ctx.lineWidth=4;ctx.strokeStyle=i===state.preview.dragCorner?'#d9a441':'#b3261e';ctx.stroke(); });
     ctx.restore();
     state.preview.mapping={ox,oy,dw,dh,cssW,cssH,pts};
   }
@@ -1057,7 +1057,7 @@
     canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
     canvas.style.width = `${cssW}px`; canvas.style.height = `${cssH}px`;
     const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, cssW, cssH); ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, cssW, cssH);
+    ctx.clearRect(0, 0, cssW, cssH); ctx.fillStyle = '#1c1210'; ctx.fillRect(0, 0, cssW, cssH);
     if (!front || !back) return;
     setBusy(true, 'Đang dựng trang A4…');
     try {

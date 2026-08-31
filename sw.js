@@ -1,4 +1,4 @@
-const CACHE = 'vigil-lens-v2.5.0';
+const CACHE = 'vigil-lens-v2.6.0';
 const ASSETS = [
   './',
   './index.html',
