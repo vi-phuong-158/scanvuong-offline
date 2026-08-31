@@ -23,6 +23,22 @@ function fixture(pageCount) {
   return new TextEncoder().encode(`%PDF-1.4\n${objects.join('')}%%EOF`);
 }
 
+function boundaryFixture({ nulHeader = false, streamFalsePositive = false, malformed = false } = {}) {
+  const header = nulHeader ? '\x00' : '\n';
+  const fake = '99 0 obj\n<< /Type /Page /MediaBox [0 0 1 1] >>\nendobj\n';
+  const stream = streamFalsePositive ? fake : 'q 1 0 0 1 cm\n';
+  const streamBytes = new TextEncoder().encode(stream);
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    header + '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Contents 4 0 R >>\nendobj\n',
+    '4 0 obj\n<< /Length ' + streamBytes.length + ' >>\nstream\n' + stream + 'endstream\nendobj\n'
+  ];
+  if (malformed) objects[2] = header + '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] >>\n';
+  const outputObjects = malformed ? objects.slice(0, 3) : objects;
+  return new TextEncoder().encode('%PDF-1.4\n' + outputObjects.join('') + '%%EOF');
+}
+
 (async () => {
   const source = PartyPdf.sourceFromBuffer(fixture(10), 'fixture-10.pdf');
   check('PDF metadata reads 10 pages', source.pageCount === 10);
@@ -111,5 +127,16 @@ function fixture(pageCount) {
   check('taxonomy search by code 05', taxonomy.document_types.find(item => item.id === '05').name_vi.includes('kết nạp'));
   check('taxonomy search without Vietnamese accents', taxonomy.document_types.some(item => item.name_vi.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('ket nap')));
   check('taxonomy filename is canonical for 05', taxonomy.document_types.find(item => item.id === '05').filename_base === '05.Quyet_dinh_ket_nap_dang_vien');
+
+  const crlfSource = PartyPdf.sourceFromBuffer(fixture(1), 'crlf-boundary.pdf');
+  check('object header after CR/LF remains supported', crlfSource.pageCount === 1);
+  const nulSource = PartyPdf.sourceFromBuffer(boundaryFixture({ nulHeader: true }), 'nul-boundary.pdf');
+  check('object header after NUL remains supported', nulSource.pageCount === 1);
+  const streamSource = PartyPdf.sourceFromBuffer(boundaryFixture({ streamFalsePositive: true }), 'stream-boundary.pdf');
+  check('object-looking bytes in stream are not parsed as objects', streamSource.pageCount === 1 && !streamSource.objects.has(99));
+  check('/Type /Page is not confused with /Type /Pages', nulSource.pageIds.length === 1 && nulSource.pageIds.every(id => nulSource.objects.get(id).text.includes('/Type /Page')));
+  let malformedFailed = false;
+  try { PartyPdf.sourceFromBuffer(boundaryFixture({ malformed: true }), 'malformed-boundary.pdf'); } catch (error) { malformedFailed = /thiếu endobj|object hợp lệ/.test(error.message); }
+  check('malformed object boundary fails closed', malformedFailed);
   console.log(`Party Mode regression: ${pass}/${pass} checks PASS`);
 })().catch(error => { console.error(error.stack || error); process.exit(1); });

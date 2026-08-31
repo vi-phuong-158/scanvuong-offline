@@ -33,15 +33,77 @@
 
   function bytesFor(value) { return textEncoder.encode(value); }
 
+  function isPdfWhitespace(value) {
+    return value === '\x00' || value === '\t' || value === '\n' || value === '\f' || value === '\r' || value === ' ';
+  }
+
+  function hasTokenBoundary(text, start, token) {
+    const before = start === 0 ? '' : text[start - 1];
+    const after = text[start + token.length] || '';
+    return (!before || isPdfWhitespace(before) || /[()[\]{}<>/%]/.test(before)) &&
+      (!after || isPdfWhitespace(after) || /[()[\]{}<>/%]/.test(after));
+  }
+
+  function findToken(text, token, start) {
+    let index = text.indexOf(token, start);
+    while (index >= 0) {
+      if (hasTokenBoundary(text, index, token)) return index;
+      index = text.indexOf(token, index + token.length);
+    }
+    return -1;
+  }
+
+  function streamMarker(text, start) {
+    let index = text.indexOf('stream', start);
+    while (index >= 0) {
+      const after = text[index + 6];
+      const prefix = text.slice(start, index).replace(/[\x00\t\n\f\r ]+$/, '');
+      if (hasTokenBoundary(text, index, 'stream') && (after === '\r' || after === '\n') && prefix.endsWith('>>')) return index;
+      index = text.indexOf('stream', index + 6);
+    }
+    return -1;
+  }
+
+  function declaredStreamLength(text, streamIndex) {
+    const dictionary = text.slice(0, streamIndex);
+    const direct = Number((dictionary.match(/\/Length\s+(\d+)\b(?!\s+\d+\s+R)/) || [])[1]);
+    return Number.isSafeInteger(direct) && direct >= 0 ? direct : null;
+  }
+
+  function findObjectEnd(text, bodyStart) {
+    const firstEndObj = findToken(text, 'endobj', bodyStart);
+    const streamIndex = streamMarker(text, bodyStart);
+    if (firstEndObj >= 0 && (streamIndex < 0 || firstEndObj < streamIndex)) return firstEndObj;
+    if (streamIndex >= 0) {
+      let dataStart = streamIndex + 6;
+      if (text[dataStart] === '\r' && text[dataStart + 1] === '\n') dataStart += 2;
+      else dataStart += 1;
+      const length = declaredStreamLength(text.slice(bodyStart), streamIndex - bodyStart);
+      let endStream;
+      if (length !== null) {
+        if (dataStart + length > text.length) return -1;
+        const declaredEnd = dataStart + length;
+        endStream = findToken(text, 'endstream', declaredEnd);
+        if (endStream < 0) return -1;
+      } else {
+        endStream = findToken(text, 'endstream', dataStart);
+        if (endStream < 0) return -1;
+      }
+      return findToken(text, 'endobj', endStream + 9);
+    }
+    return findToken(text, 'endobj', bodyStart);
+  }
+
   function parseObjects(bytes) {
     const text = decoder.decode(bytes);
     const objects = new Map();
-    const pattern = /(?:^|[\r\n])\s*(\d+)\s+(\d+)\s+obj\b/g;
+    const pattern = /(\d+)\s+(\d+)\s+obj\b/g;
     let match;
     while ((match = pattern.exec(text))) {
+      if (match.index > 0 && !isPdfWhitespace(text[match.index - 1])) continue;
       const id = Number(match[1]);
       const bodyStart = pattern.lastIndex;
-      const end = text.indexOf('endobj', bodyStart);
+      const end = findObjectEnd(text, bodyStart);
       if (end < 0) throw new Error('PDF không hợp lệ: thiếu endobj.');
       objects.set(id, {
         id,
@@ -65,7 +127,11 @@
 
   function findPageObjects(objects) {
     return Array.from(objects.values())
-      .filter(object => /\/Type\s*\/Page(?!s)\b/.test(object.text))
+      .filter(object => {
+        const stream = streamMarker(object.text, 0);
+        const dictionary = stream < 0 ? object.text : object.text.slice(0, stream);
+        return /\/Type\s*\/Page(?!s)\b/.test(dictionary);
+      })
       .map(object => object.id);
   }
 
@@ -214,7 +280,7 @@
   function streamFor(source, objectId) {
     const object = source.objects.get(objectId);
     if (!object) throw new Error(`PDF thiếu object ${objectId}.`);
-    const stream = object.text.indexOf('stream');
+    const stream = streamMarker(object.text, 0);
     if (stream < 0) throw new Error(`PDF object ${objectId} không có stream.`);
     let dataStart = stream + 6;
     if (object.text[dataStart] === '\r' && object.text[dataStart + 1] === '\n') dataStart += 2;
@@ -724,7 +790,7 @@
 
   function rewriteObjectBytes(object, map) {
     const text = object.text;
-    const stream = text.indexOf('stream');
+    const stream = streamMarker(text, 0);
     if (stream < 0) return latin1Encode(rewriteRefs(text, map));
     let dataStart = stream + 6;
     if (text[dataStart] === '\r' && text[dataStart + 1] === '\n') dataStart += 2;
