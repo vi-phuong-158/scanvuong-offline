@@ -537,3 +537,14 @@
   - **Có `wasmUrl`** (sau fix): 13/13 trang `renderer: pdfjs`, ink **0.0899–0.2426**, darkPixels 0.0142–0.0514, 122–779 ms/trang, 0 console error, 0 warning. Trang 10 ink 0.0061 — trang gần trắng có thật trong bản scan, không phải lỗi dựng hình.
   - End-to-end trong app: import 13 trang → 6 thumbnail đầu dựng ngay, 7 trang còn lại lazy theo IntersectionObserver, cuối cùng **13/13 `ready`**; viewer trang 1 ink 0.163, trang 2 ink 0.218; đóng viewer workspace giữ nguyên 13 trang; mobile 390×844 không tràn ngang, nút 44px; **0 console error**.
 - **Ghi chú vận hành:** người dùng thấy trắng vì Service Worker **cũ** (cache `vigil-lens-v2.6.0`) vẫn phục vụ `party-pdf.js` bản chưa có `wasmUrl` — banner "Phiên bản mới đã sẵn sàng" chính là dấu hiệu. Bấm **Cập nhật** (postMessage `SKIP_WAITING` → `controllerchange` → `location.reload()`) hoặc Ctrl+Shift+R là nạp bản mới.
+
+## [2026-09-02] Sửa "giật về đầu trang" khi bấm Tách tại đây (và mọi thao tác khác trong Party Mode)
+- **Agent:** Claude Code
+- **Thay đổi:** `render()` trong `party-mode.js` lưu lại `scrollLeft` của từng `.party-page-rail[data-document-id]` trước khi ghi đè `els.documents.innerHTML`, rồi khôi phục lại theo đúng `document-id` sau khi DOM mới được dựng.
+- **File đã sửa:** `party-mode.js`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Người dùng báo bấm "Tách tại đây" bị "giật về đầu trang". Nguyên nhân: `render()` gọi `els.documents.innerHTML = ...` để dựng lại toàn bộ danh sách tài liệu ở **mọi** hành động (tách, xoay, xoá, di chuyển trang...). Mỗi lần như vậy, `.party-page-rail` (dải thumbnail cuộn ngang trong từng tài liệu) bị thay bằng phần tử DOM mới với `scrollLeft = 0`. Nếu cán bộ đã cuộn sang phải để tìm điểm tách ở trang xa, ngay khi bấm là dải thumbnail bật về trang 1 — không phải cuộn cửa sổ trình duyệt (đã đo `window.scrollY` không đổi trong repro).
+- **Kiểm tra (Chromium headless, PDF tổng hợp 14 trang, cuộn window 300px + cuộn rail 400px trước khi bấm):**
+  - Trước fix: bấm "Tách tại đây" → `railScrollLeft` 400 → **0** (tái hiện đúng lỗi); `window.scrollY` không đổi (300 → 300), xác nhận đây không phải cuộn trang mà là cuộn dải thumbnail.
+  - Sau fix: `railScrollLeft` giữ nguyên 400 → 400. Test thêm hành động **Xoay** (350 → 350, giữ nguyên) và **Áp dụng 2 điểm tách** (thao tác cấu trúc, tài liệu đầu giữ nguyên id, `scrollLeft` được trình duyệt tự kẹp về giá trị hợp lệ mới thay vì bật về 0) — không có trường hợp nào giật về đầu.
+  - `node scripts/regression_party_mode.cjs` 31/31 PASS · `node scripts/test_touch_targets.cjs` 145/145 PASS · `node --check party-mode.js` PASS.
+

@@ -310,9 +310,23 @@
     if (!state.active) return;
     if (state.viewer.pageId && !pageById(state.viewer.pageId)) closePageViewer();
     const docs = state.documents;
+    // Every action rebuilds #partyDocuments from scratch, which would silently
+    // reset each document's horizontally-scrolled page rail back to page 1
+    // (e.g. after "Tách tại đây" on a page found by scrolling right). Save the
+    // scroll position per document id and restore it once the new rail exists.
+    const railScroll = new Map();
+    els.documents.querySelectorAll('.party-page-rail[data-document-id]').forEach(rail => {
+      if (rail.scrollLeft) railScroll.set(rail.dataset.documentId, rail.scrollLeft);
+    });
     els.empty.classList.toggle('hidden', state.sources.length > 0);
     els.workspace.classList.toggle('hidden', state.sources.length === 0);
     els.documents.innerHTML = docs.length ? docs.map((doc, docIndex) => renderDocument(doc, docIndex)).join('') : '<div class="party-empty-doc">Chưa có tài liệu. Hãy thêm nguồn hoặc tạo tài liệu mới.</div>';
+    if (railScroll.size) {
+      els.documents.querySelectorAll('.party-page-rail[data-document-id]').forEach(rail => {
+        const left = railScroll.get(rail.dataset.documentId);
+        if (left) rail.scrollLeft = left;
+      });
+    }
     renderCoverage();
     renderOrderPanel();
     queuePdfPreviews();
