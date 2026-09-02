@@ -75,14 +75,14 @@ async function cdpUrl() {
 
 function syntheticPdf(pageCount, lineEnding = '\n') {
   let offset = 0;
-  const header = '%PDF-1.4\n';
+  const header = `%PDF-1.4${lineEnding}`;
   const offsets = [];
   const parts = [header];
   offset += Buffer.byteLength(header, 'latin1');
 
   function addObj(num, body) {
     offsets[num] = offset;
-    const str = `${num} 0 obj\n${body}\nendobj\n`;
+    const str = `${num} 0 obj${lineEnding}${body}${lineEnding}endobj${lineEnding}`;
     parts.push(str);
     offset += Buffer.byteLength(str, 'latin1');
   }
@@ -98,22 +98,21 @@ function syntheticPdf(pageCount, lineEnding = '\n') {
     const red = ((i * 37) % 80 + 160) / 255;
     const green = ((i * 61) % 100 + 100) / 255;
     const blue = ((i * 23) % 100 + 80) / 255;
-    const content = `q\n${red.toFixed(3)} ${green.toFixed(3)} ${blue.toFixed(3)} rg\n40 40 ${width - 80} ${height - 80} re\nf\n0 0 0 RG\n8 w\n60 60 ${width - 120} ${height - 120} re\nS\nQ\n`;
+    const content = `q${lineEnding}${red.toFixed(3)} ${green.toFixed(3)} ${blue.toFixed(3)} rg${lineEnding}40 40 ${width - 80} ${height - 80} re${lineEnding}f${lineEnding}0 0 0 RG${lineEnding}8 w${lineEnding}60 60 ${width - 120} ${height - 120} re${lineEnding}S${lineEnding}Q${lineEnding}`;
     addObj(pageId, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Contents ${contentId} 0 R >>`);
-    addObj(contentId, `<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream`);
+    addObj(contentId, `<< /Length ${Buffer.byteLength(content, 'latin1')} >>${lineEnding}stream${lineEnding}${content}endstream`);
   }
 
   const startxref = offset;
   const totalObjs = 2 + pageCount * 2 + 1;
-  let xref = `xref\n0 ${totalObjs}\n0000000000 65535 f \n`;
+  let xref = `xref${lineEnding}0 ${totalObjs}${lineEnding}0000000000 65535 f ${lineEnding}`;
   for (let num = 1; num < totalObjs; num++) {
     const offStr = String(offsets[num] || 0).padStart(10, '0');
-    xref += `${offStr} 00000 n \n`;
+    xref += `${offStr} 00000 n ${lineEnding}`;
   }
-  const trailer = `trailer\n<< /Size ${totalObjs} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF`;
+  const trailer = `trailer${lineEnding}<< /Size ${totalObjs} /Root 1 0 R >>${lineEnding}startxref${lineEnding}${startxref}${lineEnding}%%EOF`;
   parts.push(xref, trailer);
-  const pdf = parts.join('');
-  return Buffer.from(lineEnding === '\n' ? pdf : pdf.replace(/\n/g, lineEnding), 'latin1');
+  return Buffer.from(parts.join(''), 'latin1');
 }
 
 function syntheticImagePdf(pageCount) {
@@ -544,6 +543,42 @@ async function runPrivateRealPdfAcceptance(cdp, fixturePath, expectedPages) {
   if (exported.join(',') !== expected || cdp.errors.length) throw new Error(`Private real PDF export failed: ${JSON.stringify({ expected, exported, errors: cdp.errors })}`);
   console.log(`PASS Party private real ${expectedPages}-page PDF preview, coverage, document creation and export acceptance`);
 }
+
+async function runReal13PdfAcceptance(cdp, fixturePath) {
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+  await new Promise(resolve => setTimeout(resolve, 400));
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click(); document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath);
+  await new Promise(resolve => setTimeout(resolve, 2500));
+
+  const count = await cdp.eval("document.querySelectorAll('.party-source-pool .party-page').length");
+  if (count !== 13) throw new Error(`Expected 13 pages, got ${count}`);
+
+  await cdp.eval("document.getElementById('partyRangeInput').value='1-3'; document.getElementById('partyRangeBtn').click();");
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  await cdp.eval("document.getElementById('partyCreateDocBtn').click();");
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  await cdp.eval("const input = document.querySelector('[data-type-input]'); input.value='05'; input.dispatchEvent(new Event('change', { bubbles: true }));");
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  await preparePrivateDownloadCapture(cdp);
+  await cdp.eval("document.querySelector('[data-doc-export]').click();");
+  for (let w = 0; w < 30; w++) {
+    const downloaded = await cdp.eval("(window.__partyDownloads || []).length");
+    if (downloaded > 0) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  const exportedCounts = await readPrivateExportPageCounts(cdp);
+  if (exportedCounts.join(',') !== '3' || cdp.errors.length) {
+    throw new Error(`Real 13-page PDF browser export failed: ${JSON.stringify({ exportedCounts, errors: cdp.errors })}`);
+  }
+  console.log(`PASS Party real 13-page PDF (pages 1-3) browser acceptance · 3 pages exported successfully`);
+}
 async function runPdfWorkflow(cdp) {
   const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_synthetic_fixture.pdf');
   fs.writeFileSync(fixturePath, syntheticPdf(10));
@@ -552,7 +587,13 @@ async function runPdfWorkflow(cdp) {
   cdp.errors.length = 0;
   await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
   await cdp.eval("document.getElementById('partyPdfBtn').click()");
-  await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 350));
+  await setFileInput(cdp, '#partyPdfInput', fixturePath);
+  for (let w = 0; w < 30; w++) {
+    const ready = await cdp.eval("document.querySelectorAll('.party-pdf-preview[data-preview-rendered=\"true\"]').length");
+    if (ready >= 6) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  await new Promise(resolve => setTimeout(resolve, 300));
   const imported = JSON.parse(await cdp.eval("JSON.stringify({sources:document.querySelectorAll('.party-source-pool .party-page').length, actions:['partyCameraBtn','partyChooseBtn','partyPdfBtn'].every(id => !document.getElementById(id).classList.contains('hidden')), fileCount:document.getElementById('partyPdfInput').files.length, canvases:[...document.querySelectorAll('.party-pdf-preview')].map(canvas => ({width:canvas.width,height:canvas.height,rgba:[...canvas.getContext('2d').getImageData(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1).data]})), toast:document.getElementById('toast').textContent})"));
   const canvasSizes = imported.canvases.map(canvas => `${canvas.width}x${canvas.height}`);
   const canvasColors = imported.canvases.map(canvas => canvas.rgba.slice(0, 3).join(','));
@@ -802,6 +843,8 @@ server.listen(PORT, async () => {
     await runPdfErrorAcceptance(cdp);
     if (process.env.PARTY_REAL_PDF_2) await runPrivateRealPdfAcceptance(cdp, process.env.PARTY_REAL_PDF_2, 2);
     if (process.env.PARTY_REAL_PDF_12) await runPrivateRealPdfAcceptance(cdp, process.env.PARTY_REAL_PDF_12, 12);
+    const real13PdfPath = path.join(ROOT, 'Scan2026-08-24_150131.pdf');
+    if (fs.existsSync(real13PdfPath)) await runReal13PdfAcceptance(cdp, real13PdfPath);
     for (const viewport of [
       { width: 1792, height: 896 }, { width: 1366, height: 768 }, { width: 1024, height: 768 },
       { width: 768, height: 1024 }, { width: 390, height: 844 }

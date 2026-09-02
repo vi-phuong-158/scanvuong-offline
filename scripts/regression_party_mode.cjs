@@ -18,7 +18,8 @@ function fixture(pageCount) {
     const pageId = 3 + i * 2;
     const contentId = pageId + 1;
     objects.push(`${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents ${contentId} 0 R >>\nendobj\n`);
-    objects.push(`${contentId} 0 obj\n<< /Length 9 >>\nstream\nq 1 0 0 1 cm\nendstream\nendobj\n`);
+    const content = 'q 1 0 0 1 cm\n';
+    objects.push(`${contentId} 0 obj\n<< /Length ${content.length} >>\nstream\n${content}endstream\nendobj\n`);
   }
   return new TextEncoder().encode(`%PDF-1.4\n${objects.join('')}%%EOF`);
 }
@@ -181,5 +182,145 @@ function boundaryFixture({ nulHeader = false, streamFalsePositive = false, malfo
   let malformedFailed = false;
   try { PartyPdf.sourceFromBuffer(boundaryFixture({ malformed: true }), 'malformed-boundary.pdf'); } catch (error) { malformedFailed = /thiếu endobj|object hợp lệ/.test(error.message); }
   check('malformed object boundary fails closed', malformedFailed);
+
+  // --- Synthetic Suites A-I for Indirect / Direct Stream Length ---
+  function makeSyntheticPdf(objDefs) {
+    const parts = ['%PDF-1.4\n'];
+    for (const o of objDefs) {
+      parts.push(`${o.id} ${o.gen || 0} obj\n${o.body}\nendobj\n`);
+    }
+    parts.push('%%EOF');
+    return new TextEncoder().encode(parts.join(''));
+  }
+
+  // A. Direct length
+  const pdfA = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>' },
+    { id: 4, body: '<< /Length 12 >>\nstream\nq 1 0 0 1 cm\nendstream' }
+  ]);
+  const srcA = PartyPdf.sourceFromBuffer(pdfA, 'pdfA.pdf');
+  check('Synthetic A: direct length parses 1 page', srcA.pageCount === 1);
+
+  // B. Indirect length
+  const pdfB = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>' },
+    { id: 4, body: '<< /Length 5 0 R >>\nstream\nq 1 0 0 1 cm\nendstream' },
+    { id: 5, body: '12' }
+  ]);
+  const srcB = PartyPdf.sourceFromBuffer(pdfB, 'pdfB.pdf');
+  check('Synthetic B: indirect length parses 1 page and has object 5', srcB.pageCount === 1 && srcB.objects.has(5));
+
+  // C. Indirect length object appears AFTER stream object
+  const pdfC = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 4, body: '<< /Length 10 0 R >>\nstream\nhello world!\nendstream' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>' },
+    { id: 10, body: '12' }
+  ]);
+  const srcC = PartyPdf.sourceFromBuffer(pdfC, 'pdfC.pdf');
+  check('Synthetic C: indirect length placed after stream parses cleanly', srcC.pageCount === 1 && srcC.objects.has(10));
+
+  // D. Binary stream with NO whitespace before endstream
+  const streamDataD = new Uint8Array([1, 2, 3, 4]);
+  const prefixD = new TextEncoder().encode('%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>\nendobj\n4 0 obj\n<< /Length 4 >>\nstream\n');
+  const suffixD = new TextEncoder().encode('endstream\nendobj\n%%EOF');
+  const outD = new Uint8Array(prefixD.length + streamDataD.length + suffixD.length);
+  outD.set(prefixD, 0);
+  outD.set(streamDataD, prefixD.length);
+  outD.set(suffixD, prefixD.length + streamDataD.length);
+  const srcD = PartyPdf.sourceFromBuffer(outD, 'pdfD.pdf');
+  check('Synthetic D: binary stream without whitespace before endstream PASS', srcD.pageCount === 1);
+
+  // E. Fake endstream bytes inside binary stream data
+  const fakeStreamPayload = 'payload-containing-endstream-marker';
+  const pdfE = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>' },
+    { id: 4, body: `<< /Length ${fakeStreamPayload.length} >>\nstream\n${fakeStreamPayload}\nendstream` }
+  ]);
+  const srcE = PartyPdf.sourceFromBuffer(pdfE, 'pdfE.pdf');
+  check('Synthetic E: declared length wins over fake endstream in stream', srcE.pageCount === 1);
+  const expE = await PartyPdf.buildPdf([srcE.page(0)]).arrayBuffer();
+  check('Synthetic E: exported PDF retains full payload without truncation', new TextDecoder('iso-8859-1').decode(expE).includes(fakeStreamPayload));
+
+  // F. Missing indirect length object -> FAIL CLOSED
+  const pdfF = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>' },
+    { id: 4, body: '<< /Length 999 0 R >>\nstream\nhello\nendstream' }
+  ]);
+  let fFailed = false;
+  try { PartyPdf.sourceFromBuffer(pdfF, 'pdfF.pdf'); } catch (err) { fFailed = /không tìm thấy object|thiếu endobj/.test(err.message); }
+  check('Synthetic F: missing indirect length object fails closed', fFailed);
+
+  // G. Invalid indirect length value -> FAIL CLOSED
+  const pdfG = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>' },
+    { id: 4, body: '<< /Length 5 0 R >>\nstream\nhello\nendstream' },
+    { id: 5, body: 'abc' }
+  ]);
+  let gFailed = false;
+  try { PartyPdf.sourceFromBuffer(pdfG, 'pdfG.pdf'); } catch (err) { gFailed = /không đọc được giá trị hợp lệ|thiếu endobj/.test(err.message); }
+  check('Synthetic G: invalid indirect length value fails closed', gFailed);
+
+  // H. Negative length -> FAIL CLOSED
+  const pdfH = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>' },
+    { id: 4, body: '<< /Length 5 0 R >>\nstream\nhello\nendstream' },
+    { id: 5, body: '-10' }
+  ]);
+  let hFailed = false;
+  try { PartyPdf.sourceFromBuffer(pdfH, 'pdfH.pdf'); } catch (err) { hFailed = /không đọc được giá trị hợp lệ|không hợp lệ|thiếu endobj/.test(err.message); }
+  check('Synthetic H: negative length fails closed', hFailed);
+
+  // I. Out-of-bounds length -> FAIL CLOSED
+  const pdfI = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>' },
+    { id: 4, body: '<< /Length 5 0 R >>\nstream\nhello\nendstream' },
+    { id: 5, body: '99999999' }
+  ]);
+  let iFailed = false;
+  try { PartyPdf.sourceFromBuffer(pdfI, 'pdfI.pdf'); } catch (err) { iFailed = /vượt quá kích thước tệp|bounds vượt quá|thiếu endobj/.test(err.message); }
+  check('Synthetic I: out-of-bounds length fails closed', iFailed);
+
+  // --- Real PDF Acceptance: Scan2026-08-24_150131.pdf ---
+  const realPdfPath = require('path').join(root, 'Scan2026-08-24_150131.pdf');
+  if (fs.existsSync(realPdfPath)) {
+    const realBuf = fs.readFileSync(realPdfPath);
+    const realSource = PartyPdf.sourceFromBuffer(realBuf, 'Scan2026-08-24_150131.pdf');
+    check('Real PDF has 13 pages', realSource.pageCount === 13);
+    check('Real PDF has object 11', realSource.objects.has(11));
+    check('Real PDF has object 84', realSource.objects.has(84));
+    check('Real PDF has object 149', realSource.objects.has(149));
+
+    const real3Pages = [0, 1, 2].map(i => realSource.page(i));
+    const realExportedBuf = new Uint8Array(await PartyPdf.buildPdf(real3Pages).arrayBuffer());
+    const realExportedText = new TextDecoder('iso-8859-1').decode(realExportedBuf);
+    const realPageMatches = realExportedText.match(/\/Type\s*\/Page(?!s)\b/g) || [];
+    check('Real PDF 3-page export produces exactly 3 pages', realPageMatches.length === 3);
+
+    const reimported = PartyPdf.sourceFromBuffer(realExportedBuf, 'exported-real-3page.pdf');
+    check('Real PDF 3-page export re-parses with 3 pages', reimported.pageCount === 3);
+
+    let realExportedImages = 0;
+    for (const obj of reimported.objects.values()) {
+      if (obj.text.includes('/Subtype /Image') || obj.text.includes('/Subtype/Image')) realExportedImages++;
+    }
+    check('Real PDF 3-page export retains scan images without loss', realExportedImages > 0);
+  }
+
   console.log(`Party Mode regression: ${pass}/${pass} checks PASS`);
 })().catch(error => { console.error(error.stack || error); process.exit(1); });

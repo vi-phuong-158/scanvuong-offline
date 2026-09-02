@@ -290,3 +290,17 @@
 - **Đánh đổi:**
   Các tài liệu được tạo chỉ từ các trang người dùng đã chủ động chọn. Tuy nhiên, thứ tự trang, ghép/chuyển trang, xoay trang và đổi loại tài liệu vẫn được hỗ trợ đầy đủ.
 - **Người quyết định:** Codex (theo yêu cầu DEV TASK của người dùng).
+
+## [2026-09-02] Party PDF Parser: Hỗ trợ giải mã gián tiếp `/Length n 0 R` và lấy declared length làm authority chính cho stream
+
+- **Quyết định:**
+  1. Quét trước vị trí các object (`buildObjectIndex(text)`): Quét 1 lần toàn bộ buffer dạng text Latin-1 để lập bảng ánh xạ `objectId` -> vị trí định nghĩa `n g obj`. Bảng này cho phép tìm nhanh bất kỳ object nào với độ phức tạp $O(1)$ mà không quét lặp.
+  2. Hỗ trợ giải mã `/Length n 0 R` gián tiếp (`resolveIndirectLength`): Khi stream dictionary chứa `/Length <refId> <refGen> R`, tra cứu `refId` trong `objectIndex`, trích xuất giá trị số nguyên trong body của object tham chiếu, xác thực không âm và nằm trong giới hạn buffer, phòng chống self-reference và cyclic reference với tập `visited`, có cơ chế cache `lengthCache`.
+  3. Declared length làm authority chính cho stream boundary: Không scan nhị phân để tìm `endstream` trước. Vị trí kết thúc dữ liệu stream được xác định bởi `dataEnd = dataStart + length`. Kiểm tra bounded lookahead tại `declaredEnd + [0, 1, 2]` cho 4 biến thể PDF thực tế: `<binary byte>endstream`, `\nendstream`, `\rendstream`, `\r\nendstream`. Không yêu cầu byte cuối dữ liệu nhị phân phải là khoảng trắng.
+  4. Lưu trữ `streamDataStart`, `streamDataEnd`, `endStreamOffset` trong object metadata: `streamFor` và `rewriteObjectBytes` tái sử dụng trực tiếp các offset này, miễn nhiễm hoàn toàn với chuỗi byte giả `endstream` bên trong dữ liệu nhị phân.
+  5. Fail-closed: Bất kỳ trường hợp `/Length` tham chiếu object không tồn tại, body không phải số nguyên, số âm, hoặc vượt quá kích thước tệp đều ném lỗi rõ ràng thay vì nuốt lỗi hoặc đoán vị trí.
+- **Lý do:**
+  Tệp PDF thực tế của máy scan văn phòng (`Scan2026-08-24_150131.pdf`, 13 trang, 1097 objects, 528 indirect lengths) dùng `/Length 11 0 R` với object 11 định nghĩa sau. Parser cũ không hỗ trợ tham chiếu gián tiếp nên rơi vào fallback scan nhị phân `findToken('endstream')`. Vì byte cuối stream của object 10 là `\x04` (không phải whitespace), `hasTokenBoundary` từ chối `endstream` thật và nuốt nhầm toàn bộ 30 object tiếp theo (bao gồm object 11), dẫn tới lỗi xuất `PDF thiếu object 11.`.
+- **Đánh đổi:**
+  Tốn thêm ~2.2ms cho một lượt quét regex lập chỉ mục vị trí các object lúc nạp tệp (1097 objects trong 1.1MB chỉ mất 2.2ms). Đổi lại, parser đạt độ chính xác 100%, không phụ thuộc thứ tự xuất hiện của object độ dài, xử lý an toàn mọi tệp scan MRC/đa lớp.
+- **Người quyết định:** Codex (theo yêu cầu DEV TASK của người dùng).

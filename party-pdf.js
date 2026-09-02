@@ -65,38 +65,149 @@
     return -1;
   }
 
-  function declaredStreamLength(text, streamIndex) {
-    const dictionary = text.slice(0, streamIndex);
-    const direct = Number((dictionary.match(/\/Length\s+(\d+)\b(?!\s+\d+\s+R)/) || [])[1]);
-    return Number.isSafeInteger(direct) && direct >= 0 ? direct : null;
+  function buildObjectIndex(text) {
+    const index = new Map();
+    const pattern = /(\d+)\s+(\d+)\s+obj\b/g;
+    let match;
+    while ((match = pattern.exec(text))) {
+      if (match.index > 0 && !isPdfWhitespace(text[match.index - 1])) continue;
+      const id = Number(match[1]);
+      const entry = {
+        id,
+        generation: Number(match[2]),
+        headerStart: match.index,
+        bodyStart: pattern.lastIndex
+      };
+      const list = index.get(id);
+      if (list) list.push(entry);
+      else index.set(id, [entry]);
+    }
+    return index;
   }
 
-  function findObjectEnd(text, bodyStart) {
+  function resolveIndirectLength(text, objectIndex, refId, refGen, currentObjId, cache, visited) {
+    if (refId === currentObjId) {
+      throw new Error(`PDF stream tham chiếu /Length object ${refId} bị lặp chính nó (self reference).`);
+    }
+    if (visited.has(refId)) {
+      throw new Error(`PDF stream tham chiếu /Length object ${refId} bị vòng lặp (reference cycle).`);
+    }
+    if (cache.has(refId)) return cache.get(refId);
+
+    const candidates = objectIndex.get(refId);
+    if (!candidates || !candidates.length) {
+      throw new Error(`PDF stream tham chiếu /Length object ${refId} nhưng không tìm thấy object.`);
+    }
+
+    visited.add(refId);
+
+    let resolvedValue = null;
+    for (const candidate of candidates) {
+      if (candidate.generation !== refGen) continue;
+      const endObj = findToken(text, 'endobj', candidate.bodyStart);
+      if (endObj < 0) continue;
+      const raw = text.slice(candidate.bodyStart, endObj);
+      const cleaned = raw.replace(/%[^\r\n]*[\r\n]?/g, '').trim();
+      if (!/^[+-]?\d+$/.test(cleaned)) continue;
+      const val = Number(cleaned);
+      if (!Number.isSafeInteger(val) || val < 0) continue;
+      if (val > text.length) {
+        throw new Error(`PDF stream tham chiếu /Length object ${refId} vượt quá kích thước tệp.`);
+      }
+      resolvedValue = val;
+      break;
+    }
+
+    if (resolvedValue === null) {
+      throw new Error(`PDF stream tham chiếu /Length object ${refId} nhưng không đọc được giá trị hợp lệ.`);
+    }
+
+    cache.set(refId, resolvedValue);
+    return resolvedValue;
+  }
+
+  function matchEndStreamAtDeclaredEnd(text, declaredEnd) {
+    for (const offset of [declaredEnd, declaredEnd + 1, declaredEnd + 2]) {
+      if (offset + 9 <= text.length && text.slice(offset, offset + 9) === 'endstream') {
+        const gap = text.slice(declaredEnd, offset);
+        if (gap === '' || gap === '\n' || gap === '\r' || gap === '\r\n') {
+          const after = text[offset + 9] || '';
+          if (!after || isPdfWhitespace(after) || /[()[\]{}<>/%]/.test(after)) {
+            return offset;
+          }
+        }
+      }
+    }
+    return -1;
+  }
+
+  function resolveStreamLength(text, bodyStart, streamIndex, objectIndex, currentObjId, lengthCache) {
+    const dictionary = text.slice(bodyStart, streamIndex);
+    const directM = dictionary.match(/\/Length\s+([+-]?\d+)\b(?!\s+\d+\s+R)/);
+    if (directM) {
+      const val = Number(directM[1]);
+      if (!Number.isSafeInteger(val) || val < 0) {
+        throw new Error(`PDF stream có /Length direct không hợp lệ: ${directM[1]}.`);
+      }
+      return val;
+    }
+    const indirectM = dictionary.match(/\/Length\s+(\d+)\s+(\d+)\s+R\b/);
+    if (indirectM) {
+      const refId = Number(indirectM[1]);
+      const refGen = Number(indirectM[2]);
+      return resolveIndirectLength(text, objectIndex, refId, refGen, currentObjId, lengthCache, new Set([currentObjId]));
+    }
+    return null;
+  }
+
+  function findObjectEnd(text, bodyStart, objectIndex, currentObjId, lengthCache) {
     const firstEndObj = findToken(text, 'endobj', bodyStart);
     const streamIndex = streamMarker(text, bodyStart);
-    if (firstEndObj >= 0 && (streamIndex < 0 || firstEndObj < streamIndex)) return firstEndObj;
+    if (firstEndObj >= 0 && (streamIndex < 0 || firstEndObj < streamIndex)) {
+      return { end: firstEndObj, streamInfo: null };
+    }
     if (streamIndex >= 0) {
       let dataStart = streamIndex + 6;
       if (text[dataStart] === '\r' && text[dataStart + 1] === '\n') dataStart += 2;
-      else dataStart += 1;
-      const length = declaredStreamLength(text.slice(bodyStart), streamIndex - bodyStart);
-      let endStream;
+      else if (text[dataStart] === '\n' || text[dataStart] === '\r') dataStart += 1;
+
+      const length = resolveStreamLength(text, bodyStart, streamIndex, objectIndex, currentObjId, lengthCache);
+      let endStream = -1;
+      let streamDataEnd = -1;
       if (length !== null) {
-        if (dataStart + length > text.length) return -1;
         const declaredEnd = dataStart + length;
-        endStream = findToken(text, 'endstream', declaredEnd);
-        if (endStream < 0) return -1;
+        if (declaredEnd > text.length) {
+          throw new Error('PDF stream có /Length vượt quá kích thước tệp.');
+        }
+        endStream = matchEndStreamAtDeclaredEnd(text, declaredEnd);
+        if (endStream < 0) {
+          throw new Error('PDF stream không tìm thấy endstream sau declared length.');
+        }
+        streamDataEnd = declaredEnd;
       } else {
         endStream = findToken(text, 'endstream', dataStart);
-        if (endStream < 0) return -1;
+        if (endStream < 0) return { end: -1, streamInfo: null };
+        streamDataEnd = endStream;
       }
-      return findToken(text, 'endobj', endStream + 9);
+      const endObj = findToken(text, 'endobj', endStream + 9);
+      if (endObj < 0) return { end: -1, streamInfo: null };
+      return {
+        end: endObj,
+        streamInfo: {
+          streamIndex: streamIndex - bodyStart,
+          streamDataStart: dataStart - bodyStart,
+          streamDataEnd: streamDataEnd - bodyStart,
+          endStreamOffset: endStream - bodyStart
+        }
+      };
     }
-    return findToken(text, 'endobj', bodyStart);
+    return { end: findToken(text, 'endobj', bodyStart), streamInfo: null };
   }
 
   function parseObjects(bytes) {
     const text = decoder.decode(bytes);
+    const objectIndex = buildObjectIndex(text);
+    const lengthCache = new Map();
     const objects = new Map();
     const pattern = /(\d+)\s+(\d+)\s+obj\b/g;
     let match;
@@ -104,14 +215,22 @@
       if (match.index > 0 && !isPdfWhitespace(text[match.index - 1])) continue;
       const id = Number(match[1]);
       const bodyStart = pattern.lastIndex;
-      const end = findObjectEnd(text, bodyStart);
+      const result = findObjectEnd(text, bodyStart, objectIndex, id, lengthCache);
+      const end = result.end;
       if (end < 0) throw new Error('PDF không hợp lệ: thiếu endobj.');
-      objects.set(id, {
+      const objRecord = {
         id,
         generation: Number(match[2]),
         text: text.slice(bodyStart, end),
         bytes: bytes.slice(bodyStart, end)
-      });
+      };
+      if (result.streamInfo) {
+        objRecord.streamIndex = result.streamInfo.streamIndex;
+        objRecord.streamDataStart = result.streamInfo.streamDataStart;
+        objRecord.streamDataEnd = result.streamInfo.streamDataEnd;
+        objRecord.endStreamOffset = result.streamInfo.endStreamOffset;
+      }
+      objects.set(id, objRecord);
       pattern.lastIndex = end + 6;
     }
     if (!objects.size) throw new Error('PDF không có object hợp lệ.');
@@ -283,11 +402,14 @@
     if (!object) throw new Error(`PDF thiếu object ${objectId}.`);
     const stream = streamMarker(object.text, 0);
     if (stream < 0) throw new Error(`PDF object ${objectId} không có stream.`);
+    const dict = object.text.slice(0, stream);
+    if (object.streamDataStart !== undefined && object.streamDataEnd !== undefined) {
+      return { dict, bytes: object.bytes.slice(object.streamDataStart, object.streamDataEnd) };
+    }
     let dataStart = stream + 6;
     if (object.text[dataStart] === '\r' && object.text[dataStart + 1] === '\n') dataStart += 2;
     else if (object.text[dataStart] === '\n' || object.text[dataStart] === '\r') dataStart += 1;
     if (dataStart < 0 || dataStart > object.bytes.length) throw new Error(`PDF object ${objectId} có stream offset không hợp lệ.`);
-    const dict = object.text.slice(0, stream);
     const directLength = Number((dict.match(/\/Length\s+(\d+)\b(?!\s+\d+\s+R)/) || [])[1]);
     const lengthRef = Number((dict.match(/\/Length\s+(\d+)\s+\d+\s+R\b/) || [])[1]);
     const referencedLength = lengthRef ? Number((source.objects.get(lengthRef)?.text.match(/-?\d+/) || [])[0]) : NaN;
@@ -804,10 +926,17 @@
     const text = object.text;
     const stream = streamMarker(text, 0);
     if (stream < 0) return latin1Encode(rewriteRefs(text, map));
-    let dataStart = stream + 6;
-    if (text[dataStart] === '\r' && text[dataStart + 1] === '\n') dataStart += 2;
-    else if (text[dataStart] === '\n' || text[dataStart] === '\r') dataStart += 1;
-    const endStream = text.indexOf('endstream', dataStart);
+    let dataStart;
+    let endStream;
+    if (object.streamDataStart !== undefined && object.endStreamOffset !== undefined) {
+      dataStart = object.streamDataStart;
+      endStream = object.endStreamOffset;
+    } else {
+      dataStart = stream + 6;
+      if (text[dataStart] === '\r' && text[dataStart + 1] === '\n') dataStart += 2;
+      else if (text[dataStart] === '\n' || text[dataStart] === '\r') dataStart += 1;
+      endStream = text.indexOf('endstream', dataStart);
+    }
     if (endStream < 0) throw new Error(`PDF object ${object.id} thiếu endstream.`);
     const prefix = latin1Encode(rewriteRefs(text.slice(0, dataStart), map));
     const streamBytes = object.bytes.slice(dataStart, endStream);

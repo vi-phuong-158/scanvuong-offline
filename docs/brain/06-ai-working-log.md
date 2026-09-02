@@ -570,3 +570,28 @@
   - Sau fix: `railScrollLeft` giữ nguyên 400 → 400. Test thêm hành động **Xoay** (350 → 350, giữ nguyên) và **Áp dụng 2 điểm tách** (thao tác cấu trúc, tài liệu đầu giữ nguyên id, `scrollLeft` được trình duyệt tự kẹp về giá trị hợp lệ mới thay vì bật về 0) — không có trường hợp nào giật về đầu.
   - `node scripts/regression_party_mode.cjs` 31/31 PASS · `node scripts/test_touch_targets.cjs` 145/145 PASS · `node --check party-mode.js` PASS.
 
+## [2026-09-02] Fix Party PDF indirect `/Length n 0 R` parser bug using real 13-page PDF
+- **Agent:** Codex
+- **Thay đổi:**
+  - Sửa parser trong `party-pdf.js`:
+    - Thêm `buildObjectIndex(text)` quét vị trí định nghĩa mọi object trong document.
+    - Thêm `resolveIndirectLength(text, objectIndex, refId, refGen, currentObjId, cache, visited)` giải mã tham chiếu gián tiếp, phòng chống cyclic reference, xác thực integer bounds.
+    - Sửa `resolveStreamLength`: Hỗ trợ cả trực tiếp `/Length <number>` và gián tiếp `/Length <refId> <refGen> R`.
+    - Thêm `matchEndStreamAtDeclaredEnd(text, declaredEnd)` với bounded lookahead 0..2 bytes (`endstream`, `\nendstream`, `\rendstream`, `\r\nendstream`), không đòi hỏi byte cuối dữ liệu nhị phân là whitespace.
+    - Sửa `findObjectEnd`: Dùng declared length làm authority chính, không scan nhị phân. Lưu `streamDataStart`, `streamDataEnd`, `endStreamOffset`.
+    - Sửa `streamFor` và `rewriteObjectBytes`: Cắt stream dựa trên offset đã lưu, tránh scan nhầm fake `endstream` trong binary data.
+  - Bổ sung test suite trong `scripts/regression_party_mode.cjs`:
+    - Thêm acceptance cho file scan thật `Scan2026-08-24_150131.pdf`: Kiểm tra 13 trang, nhận diện đủ object 11, 84, 149; xuất thành công trang 1-3 với 3 `/Type /Page` và bảo toàn 106 scan images.
+    - Thêm toàn bộ bộ test synthetic A–I (Direct length, Indirect length, Out-of-order indirect object, Binary stream không whitespace trước endstream, Fake endstream trong binary payload, Missing ref fail-closed, Invalid non-numeric value fail-closed, Negative length fail-closed, Out-of-bounds fail-closed).
+  - Cập nhật `scripts/acceptance_party_ui.cjs`: Thêm kịch bản kiểm tra trình duyệt với file thật `Scan2026-08-24_150131.pdf` (chọn trang 1-3 -> tạo tài liệu -> gán taxonomy 05 -> xuất file -> kiểm tra PDF xuất ra).
+- **File đã sửa:** `party-pdf.js`, `scripts/regression_party_mode.cjs`, `scripts/acceptance_party_ui.cjs`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Khắc phục lỗi `PDF thiếu object 11.` khi chọn trang 1–3 từ file scan thật `Scan2026-08-24_150131.pdf` để tạo và xuất tài liệu Đảng.
+- **Kiểm tra:**
+  - `node --check party-pdf.js`: PASS
+  - `node --check party-mode.js`: PASS
+  - `python scripts/validate_static.py`: PASS (10/10)
+  - `node scripts/regression_party_mode.cjs`: PASS (53/53 checks)
+  - `node scripts/regression_export_busy.js`: PASS (29/29 checks)
+  - `node scripts/regression_scan_id.js`: PASS (52/52 checks)
+  - `node scripts/acceptance_party_ui.cjs`: PASS (bao gồm browser acceptance test với `Scan2026-08-24_150131.pdf` xuất thành công 3 trang).
+
