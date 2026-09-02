@@ -16,6 +16,24 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-02] Cập nhật Hướng dẫn sử dụng trong ứng dụng cho Scan tài liệu Đảng
+- **Agent:** Antigravity (Gemini 3.7 Flash)
+- **Thay đổi:**
+  1. Thiết kế lại toàn diện modal Hướng dẫn sử dụng (`#partyHelpDialog`) theo cấu trúc 2 tầng:
+     - **Tầng 1 (Quy trình nhanh 6 bước):** Đặt ngay đầu dialog với 6 thẻ bước trực quan: Nhập nguồn → Kiểm tra trang nguồn → Chọn trang tạo tài liệu → Sắp xếp & chỉnh trang → Chọn loại trong 104 loại → Kiểm tra & xuất PDF.
+     - **Tầng 2 (Hướng dẫn chi tiết theo nghiệp vụ):** 24 mục chi tiết giải thích rõ ràng khái niệm Trang nguồn vs Tài liệu, khu vực Danh sách trang nguồn, xem trước lớn & cảnh báo không mất trang, 3 cách chọn trang (tick/khoảng/rời/tất cả), cách chia 1 PDF thành nhiều tài liệu, đổi thứ tự trang (`← Trước`/`Sau →`), ghép với trước/sau, chuyển trang, xoay 90°, thay trang tại chỗ, thêm trang, xóa khỏi tài liệu (trả trang về pool chưa gán), xóa tài liệu, danh mục 104 loại & canonical filename, xử lý nhiều tài liệu cùng loại (`.1`, `.2`) kèm xác nhận thứ tự, thanh phân trang (coverage), xuất riêng từng tài liệu (`Xuất tài liệu này`), xuất tất cả, bảo toàn chất lượng PDF gốc (page-object copy, không rasterize), bảo mật 100% offline (không OCR, không AI, không upload), và ví dụ thực tế hoàn chỉnh xử lý file scan 36 trang.
+  2. Bổ sung styling responsive trong `styles.css`: Sheet layout với header cố định (nút Đóng luôn hiển thị khi cuộn), quickflow cards, numbered step badges, callout boxes (ghi chú/cảnh báo/bảo mật), visual button tags (`.party-help-btn-tag`), và tối ưu giao diện mobile 390×844.
+  3. Bảo toàn 100% logic xử lý PDF, parser, preview, split/create, merge, move, rotate, replace, insert, remove, taxonomy, filename canonical, export PDF.
+- **File đã sửa:** `index.html`, `styles.css`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Hướng dẫn trong app đã cũ, chưa phản ánh workflow chọn trang nguồn → tạo tài liệu → xuất riêng lẻ và danh mục 104 loại mới, cần cập nhật chi tiết cho cán bộ lần đầu sử dụng.
+- **Kiểm tra:**
+  - `node --check app.js`, `node --check party-mode.js`, `node --check party-pdf.js`: Cú pháp JavaScript hợp lệ 100%.
+  - `python scripts/validate_static.py`: 10/10 PASS (zero external URLs, zero UI emojis, zero legacy brand, asset cache verified).
+  - `node scripts/regression_party_mode.cjs`: 53/53 PASS.
+  - `node scripts/acceptance_offline_pwa.cjs`: 100% Offline Verified PASS.
+  - `node scripts/test_touch_targets.cjs`: 142/142 PASS.
+  - Headless Chrome CDP Help UX verification trên Desktop (1280×800) và Mobile (390×844): Dialog mở mượt mà, scroll riêng, không tràn màn hình ngang (`overflowX = false`), nút Đóng hoạt động tốt, hiển thị đầy đủ 13/13 required topics và 25/25 sections; bảo toàn 100% trạng thái Party Mode khi đóng/mở hướng dẫn.
+
 ## [2026-09-02] Chuyển đổi Party Document Mode: Chọn trang → Tạo tài liệu → Xuất riêng lẻ
 - **Agent:** Codex
 - **Thay đổi:**
