@@ -16,6 +16,7 @@
   const PREVIEW_CACHE_LIMIT = 16;
   const MAX_IMAGE_DIMENSION = 10000;
   const MAX_DECODED_BYTES = 64 * 1024 * 1024;
+  const LOCALLY_DECODABLE_FILTERS = new Set(['FlateDecode', 'Fl', 'DCTDecode', 'DCT']);
 
   function latin1Encode(value) {
     const out = new Uint8Array(value.length);
@@ -603,7 +604,10 @@
   async function pdfJsDocument(source) {
     if (!source.previewPdfDocument) {
       const pdfjs = await pdfJsLibrary();
-      const task = pdfjs.getDocument({ data: source.bytes.slice(), isEvalSupported: false, useWorkerFetch: false });
+      // Bitonal scans (CCITTFax/JBIG2) and JPEG 2000 scans decode inside these
+      // wasm modules; without a local wasmUrl pdf.js paints the page white.
+      const wasmUrl = new URL('./assets/vendor/pdfjs/wasm/', document.baseURI).href;
+      const task = pdfjs.getDocument({ data: source.bytes.slice(), isEvalSupported: false, useWorkerFetch: false, wasmUrl });
       source.previewPdfLoadingTask = task;
       source.previewPdfDocument = task.promise;
     }
@@ -639,10 +643,13 @@
         return false;
       }
       for (const [, id] of xobjs) {
+        const filters = streamFilters(streamFor(ref.source, id).dict);
+        // Filters this build cannot decode locally (CCITTFaxDecode, JBIG2Decode,
+        // JPXDecode...) make a blank canvas unverifiable, so treat the page as
+        // inked rather than accepting a silently white preview.
+        if (filters.some(filter => !LOCALLY_DECODABLE_FILTERS.has(filter))) return true;
         const stream = await decodeStream(ref.source, id);
-        const dict = parseDict(stream.dict || '');
-        const filter = String(dict.Filter || '');
-        if (filter.includes('DCTDecode')) {
+        if (filters.includes('DCTDecode') || filters.includes('DCT')) {
           const blob = new Blob([stream.bytes], { type: 'image/jpeg' });
           const img = await createImageBitmap(blob);
           const c = document.createElement('canvas');
@@ -651,7 +658,7 @@
           const cx = c.getContext('2d');
           cx.drawImage(img, 0, 0, c.width, c.height);
           if (hasContentPixels(c)) return true;
-        } else if (filter.includes('FlateDecode') || !filter) {
+        } else {
           const bytes = stream.bytes;
           let nonWhite = 0;
           const total = Math.floor(bytes.length / 16);
@@ -770,7 +777,12 @@
       fallbackError = err;
     }
 
-    const finalError = new Error(`Không thể hiển thị xem trước trang ${ref.index + 1} (PDF.js: ${pdfJsError?.message || 'lỗi dựng hình'}, Fallback: ${fallbackError?.message || 'không hỗ trợ'})`);
+    // Name the encoding when both renderers stopped at a filter neither can
+    // decode, so the operator reads a cause instead of two stack messages.
+    const unsupportedFilter = /chưa hỗ trợ: ([A-Za-z0-9]+)/.exec(fallbackError?.message || '')?.[1];
+    const finalError = new Error(unsupportedFilter
+      ? `Trang ${ref.index + 1} dùng ảnh nén ${unsupportedFilter}; bản PDF.js đóng gói trong ứng dụng không có bộ giải mã cho định dạng này nên chưa dựng được ảnh xem trước.`
+      : `Không thể hiển thị xem trước trang ${ref.index + 1} (PDF.js: ${pdfJsError?.message || 'lỗi dựng hình'}, Fallback: ${fallbackError?.message || 'không hỗ trợ'})`);
     console.error('[PartyPdf Preview Failure]', {
       sourceFile: ref.source.name,
       sourcePage: ref.index + 1,

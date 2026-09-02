@@ -10,14 +10,18 @@
     fileInput: $('partyFileInput'), cameraInput: $('partyCameraInput'), pdfInput: $('partyPdfInput'),
     cameraBtn: $('partyCameraBtn'), chooseBtn: $('partyChooseBtn'), pdfBtn: $('partyPdfBtn'),
     addBtn: $('partyAddBtn'), addPdfBtn: $('partyAddPdfBtn'), newDocumentBtn: $('partyNewDocumentBtn'),
-    helpDialog: $('partyHelpDialog'), helpClose: $('partyHelpClose')
+    helpDialog: $('partyHelpDialog'), helpClose: $('partyHelpClose'),
+    viewerDialog: $('partyPreviewDialog'), viewerCanvas: $('partyPreviewCanvas'), viewerImage: $('partyPreviewImage'),
+    viewerTitle: $('partyPreviewTitle'), viewerMeta: $('partyPreviewMeta'), viewerStatus: $('partyPreviewStatus'),
+    viewerPrev: $('partyPreviewPrev'), viewerNext: $('partyPreviewNext'), viewerRotate: $('partyPreviewRotate'),
+    viewerClose: $('partyPreviewClose')
   };
 
   const state = {
     active: false, busy: false, sources: [], documents: [], selected: null,
     orderConfirmed: false, pendingAction: null, nextDocument: 1, markedSplits: new Set(),
     previewObserver: null, previewQueue: new Map(), previewRunning: false, previewGeneration: 0,
-    cachedThumbPages: []
+    cachedThumbPages: [], viewer: { pageId: null, generation: 0 }
   };
 
   const defaultCorners = [{ x: .045, y: .045 }, { x: .955, y: .045 }, { x: .955, y: .955 }, { x: .045, y: .955 }];
@@ -206,6 +210,96 @@
     }
   }
 
+  // In-place page viewer: a modal over the workspace, never a new tab, so the
+  // operator keeps the document list and the split marks they were working on.
+  function setViewerStatus(text, isError = false) {
+    if (!els.viewerStatus) return;
+    els.viewerStatus.textContent = text || '';
+    els.viewerStatus.classList.toggle('hidden', !text);
+    els.viewerStatus.classList.toggle('is-error', !!isError);
+  }
+
+  function clearViewerCanvas() {
+    if (!els.viewerCanvas) return;
+    els.viewerCanvas.width = els.viewerCanvas.width;
+  }
+
+  function viewerMaxEdge() {
+    const stage = Math.max(720, Math.min(window.innerWidth || 900, (window.innerHeight || 900) * 1.4));
+    return Math.min(1600, Math.round(stage * Math.min(2, window.devicePixelRatio || 1)));
+  }
+
+  async function renderPageViewer() {
+    const found = pageById(state.viewer.pageId);
+    const stage = els.viewerCanvas?.parentElement;
+    if (!found || !stage) return;
+    const { doc, page } = found;
+    const index = doc.pages.indexOf(page);
+    const generation = ++state.viewer.generation;
+
+    els.viewerTitle.textContent = `Trang ${index + 1}`;
+    els.viewerMeta.textContent = page.kind === 'pdf'
+      ? `Nguồn: trang ${page.sourcePage + 1}/${page.source?.pageCount || page.sourceTotalPages || '?'} · ${page.source?.name || ''}`
+      : (page.file?.name || page.name || 'Ảnh scan mới');
+    els.viewerPrev.disabled = index <= 0;
+    els.viewerNext.disabled = index >= doc.pages.length - 1;
+
+    if (page.kind !== 'pdf') {
+      els.viewerCanvas.hidden = true;
+      els.viewerImage.hidden = false;
+      els.viewerImage.src = page.url;
+      stage.classList.remove('is-busy', 'is-empty');
+      setViewerStatus('');
+      return;
+    }
+
+    els.viewerImage.hidden = true;
+    els.viewerImage.removeAttribute('src');
+    els.viewerCanvas.hidden = false;
+    clearViewerCanvas();
+    stage.classList.add('is-busy');
+    stage.classList.remove('is-empty');
+    setViewerStatus('Đang dựng bản xem trước…');
+    const isCurrent = () => state.active && generation === state.viewer.generation && state.viewer.pageId === page.id;
+    try {
+      const result = await PartyPdf.renderThumbnail(page.source.page(page.sourcePage), els.viewerCanvas, viewerMaxEdge(), isCurrent, page.rotation);
+      if (result?.stale || generation !== state.viewer.generation) return;
+      stage.classList.remove('is-busy');
+      setViewerStatus(result.isBlank
+        ? 'Trang này dựng ra ảnh trắng. Trang gốc vẫn được giữ nguyên khi xuất PDF.'
+        : '');
+    } catch (error) {
+      if (generation !== state.viewer.generation) return;
+      stage.classList.remove('is-busy');
+      stage.classList.add('is-empty');
+      setViewerStatus(`${error?.message || 'Không dựng được bản xem trước cho trang này.'} Trang gốc vẫn được giữ nguyên khi xuất PDF.`, true);
+    }
+  }
+
+  function openPageViewer(pageId) {
+    if (!pageById(pageId) || typeof els.viewerDialog?.showModal !== 'function') return;
+    state.viewer.pageId = pageId;
+    if (!els.viewerDialog.open) els.viewerDialog.showModal();
+    renderPageViewer();
+  }
+
+  function closePageViewer() {
+    state.viewer.pageId = null;
+    state.viewer.generation += 1;
+    if (els.viewerDialog?.open) els.viewerDialog.close();
+  }
+
+  function stepPageViewer(delta) {
+    const found = pageById(state.viewer.pageId);
+    if (!found) return;
+    const target = found.doc.pages[found.doc.pages.indexOf(found.page) + delta];
+    if (!target) return;
+    state.selected = { documentId: found.doc.id, pageId: target.id };
+    state.viewer.pageId = target.id;
+    render();
+    renderPageViewer();
+  }
+
   function setAction(action, documentId, pageId) {
     state.pendingAction = { action, documentId, pageId };
     els.fileInput.value = '';
@@ -214,6 +308,7 @@
 
   function render() {
     if (!state.active) return;
+    if (state.viewer.pageId && !pageById(state.viewer.pageId)) closePageViewer();
     const docs = state.documents;
     els.empty.classList.toggle('hidden', state.sources.length > 0);
     els.workspace.classList.toggle('hidden', state.sources.length === 0);
@@ -559,6 +654,7 @@
   function activate() { state.active = true; els.empty.classList.remove('hidden'); render(); }
   function deactivate() {
     state.active = false; state.previewGeneration += 1; disconnectPdfPreviewObserver();
+    closePageViewer();
     state.markedSplits.clear();
     state.cachedThumbPages = [];
     const releasedSources = new Set();
@@ -582,7 +678,11 @@
     const thumbBtn = event.target.closest('.party-page-thumb');
     if (thumbBtn) {
       const found = pageById(thumbBtn.dataset.pageId);
-      if (found) { state.selected = { documentId: found.doc.id, pageId: found.page.id }; render(); }
+      if (found) {
+        state.selected = { documentId: found.doc.id, pageId: found.page.id };
+        render();
+        openPageViewer(found.page.id);
+      }
       return;
     }
     const retryBtn = event.target.closest('[data-page-retry]');
@@ -687,6 +787,24 @@
   document.querySelectorAll('[data-party-help]').forEach(button => button.addEventListener('click', openHelp));
   els.helpClose?.addEventListener('click', () => els.helpDialog.close());
   els.helpDialog?.addEventListener('click', event => { if (event.target === els.helpDialog) els.helpDialog.close(); });
+
+  els.viewerClose?.addEventListener('click', closePageViewer);
+  els.viewerPrev?.addEventListener('click', () => stepPageViewer(-1));
+  els.viewerNext?.addEventListener('click', () => stepPageViewer(1));
+  els.viewerRotate?.addEventListener('click', () => {
+    const pageId = state.viewer.pageId;
+    if (!pageId) return;
+    handlePageAction('rotate', pageId);
+    state.viewer.pageId = pageId;
+    renderPageViewer();
+  });
+  els.viewerDialog?.addEventListener('click', event => { if (event.target === els.viewerDialog) closePageViewer(); });
+  els.viewerDialog?.addEventListener('close', () => { state.viewer.pageId = null; state.viewer.generation += 1; });
+  els.viewerDialog?.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    stepPageViewer(event.key === 'ArrowLeft' ? -1 : 1);
+  });
 
   window.VigilLensParty = { activate, deactivate, hasWork };
 })();

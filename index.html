@@ -136,7 +136,9 @@
 
           <button id="modePartyBtn" class="mode-card party-mode-card" type="button">
             <div class="mode-card-visual">
-              <div class="mode-icon-box party-box" aria-hidden="true">▣</div>
+              <div class="mode-icon-box party-box" aria-hidden="true">
+                <img src="icons/vector-bua-liem-5.png" alt="" class="party-box-icon" />
+              </div>
               <span class="mode-pill">104 loại</span>
             </div>
             <div class="mode-card-content">
@@ -198,7 +200,12 @@
     <!-- Party Document Mode: local scan/PDF organization only -->
     <section id="partyEmptyState" class="empty-state-section card hidden">
       <div class="drop-zone party-drop-zone">
-        <div class="drop-icon party-drop-icon" aria-hidden="true">⇧</div>
+        <div class="party-empty-visual">
+          <div class="mode-icon-box party-box" aria-hidden="true">
+            <img src="icons/vector-bua-liem-5.png" alt="" class="party-box-icon" />
+          </div>
+          <span class="mode-pill">104 loại</span>
+        </div>
         <span class="party-kicker">SCAN TÀI LIỆU ĐẢNG</span>
         <h2>Nhập nguồn tài liệu</h2>
         <p class="drop-subtitle">Scan ảnh hoặc nhập PDF · Bạn chủ động tách, ghép và đặt tên</p>
@@ -433,6 +440,28 @@
           <section><h3>12. Chọn loại tài liệu</h3><p>Gõ mã số hoặc tên tài liệu vào ô <strong>Loại tài liệu do cán bộ chọn</strong> (danh mục 104 loại tài liệu chuẩn). Phần mềm sẽ tự động điền tên file chuẩn (ví dụ <code>05.Quyet_dinh_ket_nap_dang_vien.pdf</code>). Phần mềm không tự phân loại nội dung nhằm đảm bảo độ chính xác tuyệt đối theo quyết định của cán bộ.</p></section>
           <section><h3>13. Xuất tất cả</h3><p>Sau khi đã phân đủ mọi trang nguồn và chọn loại cho tất cả tài liệu, bấm nút <strong>Xuất tất cả tài liệu</strong>. Toàn bộ các file PDF chuẩn sẽ được tải về máy của cán bộ một cách an toàn, nhanh chóng và giữ nguyên chất lượng gốc.</p></section>
         </div>
+      </div>
+    </dialog>
+    <dialog id="partyPreviewDialog" class="party-preview-dialog" aria-labelledby="partyPreviewTitle">
+      <div class="party-preview-sheet">
+        <header class="party-preview-head">
+          <div>
+            <span class="party-kicker">XEM TRƯỚC TẠI CHỖ</span>
+            <h2 id="partyPreviewTitle">Trang</h2>
+            <p id="partyPreviewMeta" class="party-preview-meta"></p>
+          </div>
+          <button id="partyPreviewClose" class="btn ghost small" type="button">Đóng</button>
+        </header>
+        <div class="party-preview-stage">
+          <canvas id="partyPreviewCanvas" aria-label="Ảnh xem trước trang"></canvas>
+          <img id="partyPreviewImage" alt="Ảnh xem trước trang" hidden />
+          <p id="partyPreviewStatus" class="party-preview-status">Đang dựng…</p>
+        </div>
+        <footer class="party-preview-foot">
+          <button id="partyPreviewPrev" class="btn secondary small" type="button">← Trang trước</button>
+          <button id="partyPreviewRotate" class="btn secondary small" type="button">↻ Xoay</button>
+          <button id="partyPreviewNext" class="btn secondary small" type="button">Trang sau →</button>
+        </footer>
       </div>
     </dialog>
     <!-- 4. Scan ID Workspace -->

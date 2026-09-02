@@ -215,5 +215,6 @@ assets/party/document_types.json and party-taxonomy.js are a local mirror of the
 - **Upstream repository:** https://github.com/mozilla/pdf.js
 - **Pinned version:** 5.7.284
 - **License:** Apache License 2.0
-- **Use in this project:** local-only PDF thumbnail rendering for Party Document Mode. The worker and module are vendored and precached; source PDF export continues to copy original PDF page objects rather than using thumbnail pixels.
+- **Use in this project:** local-only PDF thumbnail and page preview rendering for Party Document Mode. The worker and module are vendored and precached; source PDF export continues to copy original PDF page objects rather than using thumbnail pixels.
+- **Vendored files:** `pdf.mjs`, `pdf.worker.mjs`, and the decoder modules `wasm/jbig2.wasm` (JBIG2 and CCITTFax images), `wasm/openjpeg.wasm` (JPEG 2000 images) and `wasm/qcms_bg.wasm` (ICC colour handling), all taken from the same 5.7.284 release. Without them PDF.js renders bitonal scanned pages as blank canvases.
 - **Full license text:** `assets/vendor/pdfjs/LICENSE`

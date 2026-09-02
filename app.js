@@ -1277,7 +1277,7 @@
   // PWA install + offline state
   window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();state.deferredInstallPrompt=e;els.installBtn.classList.remove('hidden');});
   els.installBtn.addEventListener('click',async()=>{if(!state.deferredInstallPrompt)return;state.deferredInstallPrompt.prompt();await state.deferredInstallPrompt.userChoice;state.deferredInstallPrompt=null;els.installBtn.classList.add('hidden');});
-  function updateOnlineBadge(){els.offlineBadge.textContent=navigator.onLine?'Xử lý trên thiết bị':'Offline · vẫn dùng được';}
+  function updateOnlineBadge(){if(!els.offlineBadge)return;els.offlineBadge.textContent=navigator.onLine?'Xử lý trên thiết bị':'Offline · vẫn dùng được';}
   addEventListener('online',updateOnlineBadge);addEventListener('offline',updateOnlineBadge);updateOnlineBadge();
 
   // Service Worker registration + update detection

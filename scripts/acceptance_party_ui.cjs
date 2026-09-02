@@ -536,6 +536,11 @@ async function runPdfWorkflow(cdp) {
   const canvasSizes = imported.canvases.map(canvas => `${canvas.width}x${canvas.height}`);
   const canvasColors = imported.canvases.map(canvas => canvas.rgba.slice(0, 3).join(','));
   if (imported.docs !== 1 || imported.pages !== 10 || imported.canvases.length !== 10 || !imported.coverage.includes('10/10') || !imported.canvases.some(canvas => canvas.width < canvas.height) || !imported.canvases.some(canvas => canvas.width > canvas.height) || new Set(canvasColors).size < 3 || imported.canvases.some(canvas => canvas.rgba[0] > 248 && canvas.rgba[1] > 248 && canvas.rgba[2] > 248) || cdp.errors.length) throw new Error(`PDF thumbnail render failed: ${JSON.stringify({ imported, canvasSizes, canvasColors, errors: cdp.errors })}`);
+  // The thumbnail canvas must stay inside its clipped 120px box: an overflowing
+  // canvas is silently cropped by the container and only shows the top of the page.
+  const fitted = JSON.parse(await cdp.eval("JSON.stringify([...document.querySelectorAll('.party-pdf-preview')].map((canvas, index) => { const box = canvas.closest('.party-page-thumb').getBoundingClientRect(); const rect = canvas.getBoundingClientRect(); return { index, overflowX: Math.round(rect.width - box.width), overflowY: Math.round(rect.height - box.height), hidden: rect.width < 1 || rect.height < 1 }; }))"));
+  const clipped = fitted.filter(item => item.overflowX > 1 || item.overflowY > 1 || item.hidden);
+  if (clipped.length) throw new Error(`PDF thumbnail canvas overflows its clipped container: ${JSON.stringify(clipped)}`);
   const importedShot = await cdp.send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_import_1366x768.png'), Buffer.from(importedShot.data, 'base64'));
   await cdp.eval("document.querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 80));
   await cdp.eval("document.querySelectorAll('.party-document')[1].querySelector('.party-page-thumb').click(); document.querySelectorAll('.party-document')[1].querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 100));

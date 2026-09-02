@@ -1,4 +1,4 @@
-const CACHE = 'vigil-lens-v2.6.0';
+const CACHE = 'vigil-lens-v2.7.1';
 const ASSETS = [
   './',
   './index.html',
@@ -9,10 +9,14 @@ const ASSETS = [
   './party-taxonomy.js',
   './assets/vendor/pdfjs/pdf.mjs',
   './assets/vendor/pdfjs/pdf.worker.mjs',
+  './assets/vendor/pdfjs/wasm/jbig2.wasm',
+  './assets/vendor/pdfjs/wasm/openjpeg.wasm',
+  './assets/vendor/pdfjs/wasm/qcms_bg.wasm',
   './document-detector.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/vector-bua-liem-5.png',
   './assets/party/document_types.json',
   './assets/fonts/BeVietnamPro-Regular.woff2',
   './assets/fonts/BeVietnamPro-Medium.woff2',

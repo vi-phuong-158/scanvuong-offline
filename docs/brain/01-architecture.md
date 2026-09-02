@@ -36,7 +36,8 @@ scanvuong-offline/
 ├── manifest.webmanifest    # Khai báo PWA (tên, icon, display mode, start_url)
 ├── icons/
 │   ├── icon-192.png
-│   └── icon-512.png
+│   ├── icon-512.png
+│   └── vector-bua-liem-5.png
 ├── server.py                # Static HTTP server cục bộ (chỉ dùng thư viện chuẩn Python)
 ├── start-windows.bat        # Launcher Windows: tìm py/python, chạy server.py
 ├── vercel.json               # Header khi deploy lên host tĩnh (không bắt buộc để chạy local)

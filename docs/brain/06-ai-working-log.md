@@ -16,6 +16,17 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-02] Thay logo và icon Scan tài liệu Đảng bằng vector-bua-liem-5.png
+- **Agent:** Codex
+- **Thay đổi:**
+  1. Thẻ chọn chế độ (`#modePartyBtn`): Thay ký tự placeholder `▣` bằng `<img src="icons/vector-bua-liem-5.png" class="party-box-icon" alt="" />`.
+  2. Màn hình nhập nguồn Party Mode (`#partyEmptyState`): Thay ký tự mũi tên lên `⇧` ở giữa bằng cụm `.party-empty-visual` đặt icon búa liềm góc trên bên trái (`.party-box`) và pill `104 loại` góc trên bên phải, đồng bộ chuẩn giao diện với thẻ chế độ.
+  3. CSS (`styles.css`): Định kiểu dùng chung cho `.party-box`, `.party-box-icon`, và căn chỉnh layout cho `.party-drop-zone`.
+  4. Service Worker (`sw.js`): Thêm `./icons/vector-bua-liem-5.png` vào `ASSETS` precache và nâng cache lên `vigil-lens-v2.7.1`.
+- **File đã sửa:** `index.html`, `styles.css`, `sw.js`, `docs/brain/01-architecture.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Người dùng yêu cầu thay logo phần scan tài liệu Đảng và chuyển icon mũi tên lên thành icon búa liềm đặt ở góc bên trái giống thẻ chế độ khác.
+- **Kiểm tra:** `node --check app.js`, `node --check sw.js`, `python scripts/validate_static.py` PASS 10/10 (26 assets cached, 0 broken, 0 URL ngoài), `node scripts/regression_sw_update.cjs` PASS 9/9, `node scripts/regression_party_mode.cjs` PASS 31/31.
+
 ## [2026-08-31] Frontend Redesign: Red/Gold Brand, Frosted Glass, Modern Rounded Blocks
 - **Agent:** Claude Code
 - **Thay đổi:** Redesign-preserve toàn bộ giao diện (không đổi IA/HTML structure/IDs, không đụng pipeline `app.js`/`document-detector.js`/`party-*.js`). Thay hệ token màu từ xanh dương lạnh (cobalt) sang đỏ (`--primary #b3261e`) + vàng đồng (`--gold #b9852a`) trên nền trung tính ấm; áp dụng cho cả token `--manager-*` của Party Mode (trước đó dùng bảng màu xanh ngọc/navy riêng biệt, nay đồng bộ đỏ/vàng). Thêm hệ token kính mờ (`--glass-*`, xấp xỉ web của "frosted glass", có fallback `prefers-reduced-transparency`) áp dụng cho topbar, badge "100% Offline", update-banner. Tăng toàn bộ thang bo góc (`--radius-*`) và một số bán kính cứng trong Party Mode để có cảm giác khối bo tròn hiện đại hơn. Đổi shadow token sang tint ấm thay vì xám lạnh. Đồng bộ màu tay cầm góc & khung tứ giác trên canvas chỉnh sửa (`app.js`) từ xanh dương sang đỏ/vàng (chỉ đổi hằng số màu vẽ, không đổi logic homography/corner detection). Cập nhật `theme-color`/`background_color` trong `index.html` và `manifest.webmanifest`, bump cache Service Worker lên `vigil-lens-v2.6.0` để bản redesign được người dùng đã cài PWA nhận qua luồng update-banner có sẵn. Thêm dòng credit "Thiết kế bởi Đại úy Vi Ngọc Phương - Cán bộ Phòng An ninh đối ngoại" và thông báo bản quyền vào `.app-footer` theo yêu cầu người dùng. Font Be Vietnam Pro giữ nguyên (đã tự host sẵn từ trước, không cần đổi).
@@ -467,3 +478,62 @@
 - **File đã sửa:** `party-pdf.js`, `scripts/regression_party_mode.cjs`.
 - **Lý do:** PDF thực `Scan2026-08-19_155638.pdf` có 12 page objects sau byte `0x00`; parser cũ bỏ sót và báo không có trang đọc được dù PDF.js/Poppler đọc đủ.
 - **Kiểm tra:** Baseline exact `ca8c8ea0068e125087bd27bac5659820283c3198` tái hiện fail; parser sau fix đọc 12/12; focused Party regression 31/31; isolated Chromium real-PDF acceptance 12/12 preview, coverage, split và export PASS; không sửa renderer/PDF nguồn.
+
+## [2026-09-02] Party PDF thumbnail bị cắt (canvas tràn khung 120px) + SW registration chết vì `offlineBadge`
+- **Agent:** Claude Code
+- **Thay đổi:**
+  1. `.party-pdf-thumb canvas` chuyển sang `position: absolute; inset: 0` để canvas nhận đúng hộp 192×120 của `.party-page-thumb`. Trước đó canvas là grid item có `height: 100%` trong implicit row `auto` → phần trăm chiều cao rơi vào phụ thuộc vòng, Chrome lấy chiều cao theo tỷ lệ nội tại của bitmap (192×272) nên canvas tràn 152px và bị `overflow: hidden` của nút cắt mất 56% dưới; `object-fit: contain` không có tác dụng vì hộp canvas đã đúng tỷ lệ bitmap.
+  2. `updateOnlineBadge()` trong `app.js` guard `els.offlineBadge` null. Phần tử `#offlineBadge` đã bị gỡ khỏi `index.html` từ `ec84839`; hàm ném TypeError ngay khi load, cắt luôn phần cuối IIFE nên **service worker chưa từng được đăng ký kể từ đó**.
+  3. Thêm gate chống tái phát trong `scripts/acceptance_party_ui.cjs`: mỗi `.party-pdf-preview` phải nằm gọn trong `.party-page-thumb` (overflow ≤ 1px, không zero-size).
+- **File đã sửa:** `styles.css`, `app.js`, `scripts/acceptance_party_ui.cjs`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Người dùng báo thumbnail PDF sau khi nhập chỉ hiện phần trên của trang, trang có nội dung ở giữa/dưới trông như trắng. Không phải lỗi renderer hay parser — pdf.js dựng đủ trang, CSS cắt mất phần dưới.
+- **Kiểm tra:**
+  - Base→fix reproduction (Chromium headless, PDF scan tổng hợp 8 trang DCTDecode, viewport 1366×900): base = 6/6 canvas tràn `overflowY +152px` (canvas 192×272 trong hộp 192×120); sau fix = 0 tràn, toàn trang hiển thị letterbox 85×120, ảnh chụp desktop 1366×900 và mobile 390×844 không tràn ngang.
+  - Service worker: trước fix `getRegistrations()` = 0, không controller; sau fix = 1 registration, `controller: true`, console sạch (không còn TypeError).
+  - `node scripts/acceptance_party_ui.cjs` → PARTY_UI_BROWSER_ACCEPTANCE: PASS (17 PASS, gồm gate containment mới).
+  - `node scripts/regression_party_mode.cjs` 31/31 PASS · `node scripts/test_touch_targets.cjs` 145/145 PASS · `node scripts/regression_sw_update.cjs` 9/9 PASS · `python scripts/validate_static.py` 10/10 PASS · `node --check app.js sw.js party-mode.js party-pdf.js` PASS.
+  - Chưa chạy trên PDF thật của người dùng (không có corpus trong checkout) — cần kiểm tra lại bằng chính `Scan2026-08-28_090429.pdf`.
+- **Ghi chú tồn đọng:** `scripts/acceptance_party_ui.cjs` không thoát khi một gate fail (HTTP server giữ event loop sống) — lần chạy fail treo tới hết timeout thay vì exit code khác 0. Chưa sửa trong task này.
+
+## [2026-09-02] Trang trắng do thiếu bộ giải mã CCITT/JBIG2 + Xem trước tại chỗ (in-place viewer)
+- **Agent:** Claude Code
+- **Thay đổi:**
+  1. `sourceHasInk()` trong `party-pdf.js`: bỏ lời gọi `parseDict()` **không tồn tại** (ReferenceError ném ngay ở trang đầu tiên có XObject, bị `catch` nuốt và luôn trả `false`), thay bằng `streamFilters()`. Thêm `LOCALLY_DECODABLE_FILTERS`; filter không giải mã được cục bộ (CCITTFaxDecode, JBIG2Decode, JPXDecode...) được coi là "có mực" vì không thể chứng minh trang trắng → không chấp nhận canvas trắng một cách im lặng nữa.
+  2. `renderThumbnail()` sinh thông báo lỗi cho người dùng nêu đúng tên định dạng nén thay vì ghép hai message kỹ thuật.
+  3. Thêm **Xem trước tại chỗ**: `<dialog id="partyPreviewDialog">` trong `index.html`, style trong `styles.css`, logic `openPageViewer/renderPageViewer/stepPageViewer/closePageViewer` trong `party-mode.js`. Bấm thumbnail = chọn trang + mở xem trước phóng lớn ngay trong trang (modal, không mở tab mới); có ← Trang trước / ↻ Xoay / Trang sau →, phím ← →, Esc, bấm nền để đóng. Trang lỗi hiển thị nguyên nhân trong khung xem trước.
+  4. Thêm gate containment thumbnail vào `scripts/acceptance_party_ui.cjs` (từ task trước cùng ngày).
+- **File đã sửa:** `party-pdf.js`, `party-mode.js`, `index.html`, `styles.css`, `scripts/acceptance_party_ui.cjs`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Người dùng vẫn thấy thumbnail trắng sau khi sửa lỗi cắt canvas. Nguyên nhân gốc: bản pdf.js 5.7.284 đóng gói tại `assets/vendor/pdfjs/` chuyển giải mã JBIG2 **và CCITTFax** sang `jbig2.wasm` (class `JBig2CCITTFaxImage`), JPEG2000 sang `openjpeg.wasm`, kèm fallback JS `jbig2_nowasm_fallback.js`. Không file nào được vendor, `wasmUrl` cũng chưa cấu hình → mọi trang scan bitonal (CCITT G3/G4, JBIG2) dựng ra canvas trắng, chỉ log `warning: Dependent image isn't ready yet`. Bảo vệ blank-canvas không kích hoạt vì `parseDict` undefined.
+- **Kiểm tra:**
+  - Probe encoding (Chromium headless, fixture PIL): `jpeg-page.pdf` → `renderer: pdfjs, isBlank: false, ink 0.154`; `ccitt-page.pdf` → `renderer: pdfjs, isBlank: true, ink 0` (tái hiện chính xác triệu chứng trang trắng).
+  - Sau fix, PDF hỗn hợp 3 trang (DCT, CCITT, DCT): thumbnail = `ready / is-error / ready` — không còn trang trắng im lặng; viewer trang CCITT hiện "Trang 2 dùng ảnh nén CCITTFaxDecode; bản PDF.js đóng gói trong ứng dụng không có bộ giải mã...".
+  - Viewer: mở modal (`dialog.matches(':modal') === true`, không mở tab mới), canvas 595×842 ink 0.112 nằm gọn trong stage, prev/next/đóng hoạt động, workspace giữ nguyên 3 trang sau khi đóng.
+  - Mobile 390×844: sheet 366×675, 0 tràn ngang, 4 nút đều cao 44px.
+  - `node scripts/acceptance_party_ui.cjs` → PASS (17 PASS) · `regression_party_mode.cjs` 31/31 · `test_touch_targets.cjs` 145/145 · `regression_sw_update.cjs` 9/9 · `regression_export_busy.js` 29/29 · `validate_static.py` 10/10 · `node --check` PASS.
+- **Đã xử lý tiếp (người dùng chọn phương án vendor):** xem entry kế tiếp. ~~Còn lại: trang CCITT/JBIG2 vẫn chưa xem trước được — mới chỉ báo lỗi trung thực. Ba hướng: (a) vendor `jbig2.wasm` + `openjpeg.wasm` + `jbig2_nowasm_fallback.js` từ pdf.js 5.7.284 và set `wasmUrl` (cần tải file mới → phải được duyệt); (b) tự viết bộ giải mã CCITT G3/G4 cho fallback renderer (thuần offline, không thêm file ngoài); (c) giữ nguyên trạng thái báo lỗi. **Xuất PDF không bị ảnh hưởng ở cả ba hướng** vì export copy nguyên page object gốc.~~
+
+## [2026-09-02] Vendor bộ giải mã wasm của PDF.js (jbig2/openjpeg/qcms) — trang scan bitonal xem trước được
+- **Agent:** Claude Code
+- **Thay đổi:**
+  1. Thêm `assets/vendor/pdfjs/wasm/jbig2.wasm` (105 KB), `openjpeg.wasm` (252 KB), `qcms_bg.wasm` (89 KB) lấy đúng release PDF.js **5.7.284** — cùng bản với `pdf.mjs`/`pdf.worker.mjs` đã vendor. Không thêm JS fallback `*_nowasm_fallback.js` vì ứng dụng vốn đã yêu cầu WebAssembly (ONNX Runtime).
+  2. `pdfJsDocument()` trong `party-pdf.js` truyền `wasmUrl` trỏ tới thư mục cục bộ đó.
+  3. `sw.js`: thêm 3 file vào `ASSETS`, nâng cache `vigil-lens-v2.6.0` → `vigil-lens-v2.7.0`.
+  4. `THIRD_PARTY_NOTICES.md`: liệt kê các file vendor mới và lý do.
+- **File đã sửa:** `party-pdf.js`, `sw.js`, `THIRD_PARTY_NOTICES.md`, `assets/vendor/pdfjs/wasm/*` (mới), `docs/brain/06-ai-working-log.md`.
+- **Lý do:** PDF.js 5.7 giải mã JBIG2/CCITTFax và JPEG 2000 trong wasm; thiếu file thì trang scan bitonal dựng ra canvas trắng. Người dùng chọn phương án vendor để sửa triệt để mà vẫn giữ 100% offline sau lần tải đầu.
+- **Kiểm tra:**
+  - Probe encoding trước/sau: `ccitt-page.pdf` từ `isBlank: true, ink 0` → `isBlank: false, ink 0.153`; `jpeg-page.pdf` giữ nguyên `ink 0.154`; console sạch, không còn `Dependent image isn't ready yet`.
+  - PDF hỗn hợp 3 trang (DCT/CCITT/DCT): 3/3 thumbnail `ready` (trước đó trang CCITT là `is-error`), viewer trang CCITT `ink 0.112`, 0 console error.
+  - Offline PWA acceptance: `PRECACHE_COMPLETE 18/18`, 26 asset cached, `OFFLINE_RELOAD_PASS`, `NO_REQUIRED_RUNTIME_NETWORK_DEPENDENCY` PASS, 0 external request.
+  - `node scripts/acceptance_party_ui.cjs` → PASS (18 PASS) · `regression_party_mode.cjs` 31/31 · `test_touch_targets.cjs` 145/145 · `regression_sw_update.cjs` 9/9 · `regression_export_busy.js` 29/29 · `validate_static.py` 10/10 · `node --check` PASS.
+  - Chưa chạy trên `Scan2026-08-28_090429.pdf` thật của người dùng — cần xác nhận lại trên máy người dùng.
+
+## [2026-09-02] Nghiệm thu trên PDF scan thật của cán bộ (`Scan2026-08-24_150131.pdf`, 13 trang)
+- **Agent:** Claude Code
+- **Thay đổi:** Không sửa code sản phẩm. Thêm `/​*.pdf` vào `.gitignore` để scan thật thả vào checkout không bao giờ bị commit (hồ sơ nhân sự).
+- **Cấu trúc file thật (phân tích cục bộ, không gửi đi đâu):** PDF 1.4, không mã hoá, 13 trang, **515 image XObject** — 13 ảnh `/FlateDecode /DCTDecode` DeviceRGB 8-bit (lớp nền màu) và **502 ảnh `/CCITTFaxDecode` 1-bit** (lớp chữ). Đây là scan **MRC/layered** của máy scan văn phòng: toàn bộ chữ nằm ở lớp CCITT.
+- **Kiểm tra (Chromium headless, server 127.0.0.1, không có request rời máy):**
+  - **Không có `wasmUrl`** (trạng thái trước fix): 13/13 trang ink 0.0008–0.012, darkPixels ~0.000 → đúng hiện tượng "trắng xoá". Đáng chú ý: `isBlank` vẫn `false` vì lớp nền JPEG mờ vượt ngưỡng 0.0005, nên bảo vệ blank-canvas **không thể** bắt được trang MRC — chỉ vendor wasm mới sửa được.
+  - **Có `wasmUrl`** (sau fix): 13/13 trang `renderer: pdfjs`, ink **0.0899–0.2426**, darkPixels 0.0142–0.0514, 122–779 ms/trang, 0 console error, 0 warning. Trang 10 ink 0.0061 — trang gần trắng có thật trong bản scan, không phải lỗi dựng hình.
+  - End-to-end trong app: import 13 trang → 6 thumbnail đầu dựng ngay, 7 trang còn lại lazy theo IntersectionObserver, cuối cùng **13/13 `ready`**; viewer trang 1 ink 0.163, trang 2 ink 0.218; đóng viewer workspace giữ nguyên 13 trang; mobile 390×844 không tràn ngang, nút 44px; **0 console error**.
+- **Ghi chú vận hành:** người dùng thấy trắng vì Service Worker **cũ** (cache `vigil-lens-v2.6.0`) vẫn phục vụ `party-pdf.js` bản chưa có `wasmUrl` — banner "Phiên bản mới đã sẵn sàng" chính là dấu hiệu. Bấm **Cập nhật** (postMessage `SKIP_WAITING` → `controllerchange` → `location.reload()`) hoặc Ctrl+Shift+R là nạp bản mới.

@@ -18,6 +18,10 @@ __pycache__/
 *.local
 .vercel
 
+# Real scans dropped in the checkout for local testing — never commit them,
+# they are personnel records.
+/*.pdf
+
 # Benchmark outputs, caches, node_modules & private datasets
 benchmark-output/
 benchmark-private/
