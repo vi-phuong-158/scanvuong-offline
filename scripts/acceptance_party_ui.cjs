@@ -57,7 +57,7 @@ async function cdpUrl() {
       const response = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`);
       if (response.ok) {
         const tabs = await response.json();
-        const tab = tabs.find(item => item.type === 'page');
+        const tab = tabs.find(item => item.type === 'page' && !item.url.startsWith('chrome-extension://')) || tabs.find(item => item.type === 'page');
         if (tab?.webSocketDebuggerUrl) return tab.webSocketDebuggerUrl;
       }
     } catch (_) {}
@@ -227,7 +227,8 @@ async function runLineEndingAcceptance(cdp) {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 360)); cdp.errors.length = 0;
     await cdp.eval("document.getElementById('modePartyBtn').click(); document.getElementById('partyPdfBtn').click()"); await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 500));
-    const imported = JSON.parse(await cdp.eval("JSON.stringify({pages:document.querySelectorAll('.party-page').length,coverage:document.getElementById('partyCoverageText').textContent})"));
+    await cdp.eval("document.getElementById('partySelectAllBtn').click(); document.getElementById('partyCreateDocBtn').click()"); await new Promise(resolve => setTimeout(resolve, 200));
+    const imported = JSON.parse(await cdp.eval("JSON.stringify({pages:document.querySelectorAll('.party-created-docs .party-page').length,coverage:document.getElementById('partyCoverageText').textContent})"));
     if (imported.pages !== 3 || !imported.coverage.includes('3/3') || cdp.errors.length) throw new Error(`PDF ${name} line-ending import failed: ${JSON.stringify({ imported, errors: cdp.errors })}`);
   }
   console.log('PASS Party PDF LF/CR/CRLF object-boundary acceptance');
@@ -238,15 +239,16 @@ async function runHelpUxAcceptance(cdp) {
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 360)); cdp.errors.length = 0;
   await cdp.eval("document.getElementById('modePartyBtn').click(); document.querySelector('[data-party-help]').click()"); await new Promise(resolve => setTimeout(resolve, 120));
   const help = JSON.parse(await cdp.eval("JSON.stringify({open:document.getElementById('partyHelpDialog').open,sections:document.querySelectorAll('#partyHelpDialog section').length,text:document.getElementById('partyHelpDialog').textContent})"));
-  const requiredTopics = ['Tài liệu là gì?','Trang nguồn là gì?','Tách tại đây là gì?','Cách chia 1 PDF thành nhiều tài liệu','Ghép với trước','Ghép với sau','Chuyển trang','Xoay trang','Thay trang','Thêm trang','Xóa trang','Chọn loại tài liệu','Xuất tất cả'];
+  const requiredTopics = ['Tài liệu là gì?','Trang nguồn là gì?','Chọn trang và tạo tài liệu','Cách chia 1 PDF thành nhiều tài liệu','Ghép với trước','Ghép với sau','Chuyển trang','Xoay trang','Thay trang','Thêm trang','Xóa trang','Chọn loại tài liệu','Xuất tất cả'];
   if (!help.open || help.sections < 13 || !requiredTopics.every(label => help.text.includes(label)) || cdp.errors.length) throw new Error(`Party help content failed: ${JSON.stringify({ open: help.open, sections: help.sections })}`);
   await cdp.eval("document.getElementById('partyHelpClose').click()");
   const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_help_controls.pdf'); fs.writeFileSync(fixturePath, syntheticPdf(2)); await cdp.eval("document.getElementById('partyPdfBtn').click()"); await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 520));
-  const desktop = JSON.parse(await cdp.eval("JSON.stringify((() => { const page=document.querySelector('.party-page'); const labels=[...page.querySelectorAll('.party-page-actions > button')].map(button=>button.textContent.trim()); const canvas=page.querySelector('.party-pdf-preview'); const before=[canvas.width,canvas.height]; page.querySelector('[data-page-action=rotate]').click(); return {labels,before}; })())")); await new Promise(resolve => setTimeout(resolve, 480));
-  const rotated = JSON.parse(await cdp.eval("JSON.stringify((() => { const canvas=document.querySelector('.party-pdf-preview'); return {after:[canvas.width,canvas.height],coverage:document.getElementById('partyCoverageText').textContent}; })())"));
+  await cdp.eval("document.getElementById('partySelectAllBtn').click(); document.getElementById('partyCreateDocBtn').click();"); await new Promise(resolve => setTimeout(resolve, 200));
+  const desktop = JSON.parse(await cdp.eval("JSON.stringify((() => { const page=document.querySelector('.party-created-docs .party-page'); const labels=[...page.querySelectorAll('.party-page-actions > button')].map(button=>button.textContent.trim()); const canvas=page.querySelector('.party-pdf-preview'); const before=[canvas.width,canvas.height]; page.querySelector('[data-page-action=rotate]').click(); return {labels,before}; })())")); await new Promise(resolve => setTimeout(resolve, 480));
+  const rotated = JSON.parse(await cdp.eval("JSON.stringify((() => { const canvas=document.querySelector('.party-created-docs .party-pdf-preview'); return {after:[canvas.width,canvas.height],coverage:document.getElementById('partyCoverageText').textContent}; })())"));
   if (!['← Trước','Sau →','↻ Xoay','↺ Thay trang','+ Thêm sau','Xóa'].every(label => desktop.labels.includes(label)) || desktop.before[0] !== rotated.after[1] || desktop.before[1] !== rotated.after[0] || !rotated.coverage.includes('2/2') || cdp.errors.length) throw new Error(`Party desktop controls failed: ${JSON.stringify({ desktop, rotated, errors: cdp.errors })}`);
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }); await new Promise(resolve => setTimeout(resolve, 180));
-  const mobile = JSON.parse(await cdp.eval("JSON.stringify((() => { const page=document.querySelector('.party-page'); const more=page.querySelector('.party-page-more'); more.open=true; return {menuVisible:getComputedStyle(more).display !== 'none',direct:[...page.querySelectorAll('.party-page-action-optional')].filter(button=>getComputedStyle(button).display !== 'none').length,text:more.textContent,overflow:document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth}; })())"));
+  const mobile = JSON.parse(await cdp.eval("JSON.stringify((() => { const page=document.querySelector('.party-created-docs .party-page'); const more=page.querySelector('.party-page-more'); more.open=true; return {menuVisible:getComputedStyle(more).display !== 'none',direct:[...page.querySelectorAll('.party-page-action-optional')].filter(button=>getComputedStyle(button).display !== 'none').length,text:more.textContent,overflow:document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth}; })())"));
   if (!mobile.menuVisible || mobile.direct || !['Thay trang','Thêm sau','Xóa khỏi tài liệu'].every(label => mobile.text.includes(label)) || mobile.overflow || cdp.errors.length) throw new Error(`Party mobile controls failed: ${JSON.stringify({ mobile, errors: cdp.errors })}`);
   console.log('PASS Party help and labelled desktop/mobile control acceptance');
 }
@@ -259,106 +261,123 @@ async function preparePrivateDownloadCapture(cdp) {
   await cdp.eval("window.__partyDownloads=[]; HTMLAnchorElement.prototype.click=function(){if(this.download&&String(this.href).startsWith('blob:'))window.__partyDownloads.push({href:this.href});};");
 }
 
-async function runMultiSplitAcceptance(cdp) {
+async function runPageSelectionWorkflowAcceptance(cdp) {
   const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_multisplit_fixture.pdf');
   fs.writeFileSync(fixturePath, syntheticPdf(12));
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 400));
   cdp.errors.length = 0;
-  await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+  await cdp.eval("(() => { const btn = document.getElementById('modePartyBtn'); btn.click(); return document.getElementById('modeSelect').classList.contains('hidden'); })()");
+  await new Promise(resolve => setTimeout(resolve, 100));
   await cdp.eval("document.getElementById('partyPdfBtn').click()");
   await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 600));
 
-  // Check source page numbering format
-  const sourceCheck = JSON.parse(await cdp.eval("JSON.stringify({sources:[...document.querySelectorAll('.party-page-source')].map(el=>el.textContent.trim())})"));
-  if (sourceCheck.sources.length !== 12 || sourceCheck.sources[0] !== 'Nguồn: trang 1/12' || sourceCheck.sources[11] !== 'Nguồn: trang 12/12') {
-    throw new Error(`Source page number format mismatch: ${JSON.stringify(sourceCheck)}`);
+  // Step 4: Verify each page has checkbox control with touch target >= 44px
+  const sourceCheck = JSON.parse(await cdp.eval("JSON.stringify({sources:[...document.querySelectorAll('.party-source-pool .party-page-source')].map(el=>el.textContent.trim()), checkTouchTargets:[...document.querySelectorAll('.party-page-check')].map(el=>Math.min(el.getBoundingClientRect().width, el.getBoundingClientRect().height))})"));
+  if (sourceCheck.sources.length !== 12 || sourceCheck.sources[0] !== 'Nguồn: trang 1/12' || sourceCheck.sources[11] !== 'Nguồn: trang 12/12' || sourceCheck.checkTouchTargets.some(s => s < 44)) {
+    throw new Error(`Source page number format or touch target mismatch: ${JSON.stringify(sourceCheck)}`);
   }
 
-  // Toggle split marks at page 3 (index 2), page 6 (index 5), page 9 (index 8)
-  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[2].click()");
-  await new Promise(resolve => setTimeout(resolve, 80));
-  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[5].click()");
-  await new Promise(resolve => setTimeout(resolve, 80));
-  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[8].click()");
-  await new Promise(resolve => setTimeout(resolve, 120));
-
-  const markedState = JSON.parse(await cdp.eval("JSON.stringify({markedButtons:document.querySelectorAll('.party-split-btn.is-marked').length, applyBtnText:document.querySelector('.party-apply-splits')?.textContent.trim()})"));
-  if (markedState.markedButtons !== 3 || markedState.applyBtnText !== 'Áp dụng 3 điểm tách') {
-    throw new Error(`Marked split state mismatch: ${JSON.stringify(markedState)}`);
+  // Step 5-6: Select exactly 2 pages (page 1 and page 2) -> UI shows "Đã chọn 2 trang"
+  await cdp.eval("document.querySelectorAll('[data-page-select]')[0].click()");
+  await new Promise(resolve => setTimeout(resolve, 60));
+  await cdp.eval("document.querySelectorAll('[data-page-select]')[1].click()");
+  await new Promise(resolve => setTimeout(resolve, 60));
+  const sel2State = JSON.parse(await cdp.eval("JSON.stringify({countText:document.getElementById('partySelectionCount')?.textContent.trim(), createDisabled:document.getElementById('partyCreateDocBtn').disabled})"));
+  if (sel2State.countText !== 'Đã chọn 2 trang' || sel2State.createDisabled) {
+    throw new Error(`Selection state mismatch after clicking 2 pages: ${JSON.stringify(sel2State)}`);
   }
 
-  // Test clear marked splits
-  await cdp.eval("document.querySelector('.party-clear-splits').click()");
-  await new Promise(resolve => setTimeout(resolve, 120));
-  const clearedState = JSON.parse(await cdp.eval("JSON.stringify({markedButtons:document.querySelectorAll('.party-split-btn.is-marked').length, hasMultiSplitBar:!!document.querySelector('.party-multisplit-bar')})"));
-  if (clearedState.markedButtons !== 0 || clearedState.hasMultiSplitBar) {
-    throw new Error(`Clear marked splits failed: ${JSON.stringify(clearedState)}`);
-  }
-
-  // Re-mark at 3, 6, 9 and apply
-  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[2].click()");
-  await new Promise(resolve => setTimeout(resolve, 80));
-  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[5].click()");
-  await new Promise(resolve => setTimeout(resolve, 80));
-  await cdp.eval("document.querySelectorAll('[data-split-toggle]')[8].click()");
-  await new Promise(resolve => setTimeout(resolve, 120));
-  await cdp.eval("document.querySelector('.party-apply-splits').click()");
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  const splitResult = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, docCounts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), docSources:[...document.querySelectorAll('.party-document')].map(doc=>[...doc.querySelectorAll('.party-page-source')].map(s=>s.textContent.trim())), coverage:document.getElementById('partyCoverageText').textContent})"));
-  if (splitResult.docs !== 4 || splitResult.docCounts.join(',') !== '3,3,3,3' || !splitResult.coverage.includes('12/12')) {
-    throw new Error(`Multi-split execution mismatch: ${JSON.stringify(splitResult)}`);
-  }
-
-
-  // Reorder two source pages inside the first split document. The card/page
-  // identity must travel with its source reference; coverage stays one-to-one.
-  const beforeReorder = JSON.parse(await cdp.eval("JSON.stringify((() => { const doc=document.querySelectorAll('.party-document')[0]; return [...doc.querySelectorAll('.party-page')].map(page=>({id:page.dataset.pageId,source:page.querySelector('.party-page-source').textContent.trim()})); })())"));
-  await cdp.eval("document.querySelectorAll('.party-document')[0].querySelector('.party-page [data-page-action=down]').click()");
+  // Step 7-8: Click "Tạo tài liệu từ trang đã chọn" -> New document contains exactly 2 pages
+  await cdp.eval("document.getElementById('partyCreateDocBtn').click()");
   await new Promise(resolve => setTimeout(resolve, 150));
-  const reorderedResult = JSON.parse(await cdp.eval("JSON.stringify((() => { const docs=[...document.querySelectorAll('.party-document')], all=[...document.querySelectorAll('.party-page')]; return {first:[...docs[0].querySelectorAll('.party-page')].map(page=>({id:page.dataset.pageId,source:page.querySelector('.party-page-source').textContent.trim()})),coverage:document.getElementById('partyCoverageText').textContent,total:all.length,sourcePages:all.map(page=>page.querySelector('.party-page-source').textContent.trim())}; })())"));
-  const expectedReorderSources = ['Nguồn: trang 2/12', 'Nguồn: trang 1/12', 'Nguồn: trang 3/12'];
-  const expectedReorderIds = [beforeReorder[1]?.id, beforeReorder[0]?.id, beforeReorder[2]?.id];
-  const expectedAllSources = Array.from({ length: 12 }, (_, index) => `Nguồn: trang ${index + 1}/12`).sort().join(';');
-  if (reorderedResult.first.map(page => page.source).join(';') !== expectedReorderSources.join(';') || reorderedResult.first.map(page => page.id).join(';') !== expectedReorderIds.join(';') || reorderedResult.total !== 12 || reorderedResult.sourcePages.slice().sort().join(';') !== expectedAllSources || !reorderedResult.coverage.includes('12/12')) {
-    throw new Error(`Reorder after multi-split failed: ${JSON.stringify({ beforeReorder, reorderedResult })}`);
-  }
-  // Merge doc 2 into doc 1
-  await cdp.eval("document.querySelectorAll('.party-document')[1].querySelector('[data-doc-action=merge-prev]').click()");
-  await new Promise(resolve => setTimeout(resolve, 150));
-  const mergedResult = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, docCounts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), coverage:document.getElementById('partyCoverageText').textContent})"));
-  if (mergedResult.docs !== 3 || mergedResult.docCounts.join(',') !== '6,3,3' || !mergedResult.coverage.includes('12/12')) {
-    throw new Error(`Merge after multi-split failed: ${JSON.stringify(mergedResult)}`);
+  const doc1State = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, doc1Pages:document.querySelectorAll('.party-document')[0].querySelectorAll('.party-page').length, doc1Sources:[...document.querySelectorAll('.party-document')[0].querySelectorAll('.party-page-source')].map(s=>s.textContent.trim()), badges:document.querySelectorAll('.party-assigned-badge').length, coverage:document.getElementById('partyCoverageText').textContent})"));
+  if (doc1State.docs !== 1 || doc1State.doc1Pages !== 2 || doc1State.doc1Sources.join(';') !== 'Nguồn: trang 1/12;Nguồn: trang 2/12' || doc1State.badges !== 2) {
+    throw new Error(`Doc 1 creation failed: ${JSON.stringify(doc1State)}`);
   }
 
-  // Move page 6 from doc 1 to doc 2
-  await cdp.eval("document.querySelectorAll('.party-document')[0].querySelectorAll('.party-page-thumb')[5].click()");
+  // Step 9: Assign valid taxonomy to Doc 1
+  await cdp.eval("(() => { const input = document.querySelectorAll('[data-type-input]')[0]; input.value = '05'; input.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  // Step 10: Verify "Xuất tài liệu này" is ENABLED
+  const exportDoc1Btn = JSON.parse(await cdp.eval("JSON.stringify({disabled:document.querySelectorAll('[data-doc-export]')[0]?.disabled, text:document.querySelectorAll('[data-doc-export]')[0]?.textContent.trim()})"));
+  if (exportDoc1Btn.disabled || !exportDoc1Btn.text.includes('Xuất tài liệu này')) {
+    throw new Error(`Export doc 1 button not enabled: ${JSON.stringify(exportDoc1Btn)}`);
+  }
+
+  // Step 11-12: Export succeeds even though other source pages are unassigned (coverage 2/12 is not a blocker)
+  if (!doc1State.coverage.includes('2/12')) {
+    throw new Error(`Coverage report mismatch: expected 2/12, got ${doc1State.coverage}`);
+  }
+  await preparePrivateDownloadCapture(cdp);
+  await cdp.eval("document.querySelectorAll('[data-doc-export]')[0].click()");
+  await new Promise(resolve => setTimeout(resolve, 700));
+  const singleExported = await readPrivateExportPageCounts(cdp);
+  if (singleExported.join(',') !== '2' || cdp.errors.length) {
+    throw new Error(`Partial export of 2-page document failed: ${JSON.stringify({ singleExported, errors: cdp.errors })}`);
+  }
+
+  // Step 13: Select second group of pages out of order (click page 5, then page 3) -> create Doc 2 in ascending order [3, 5]
+  await cdp.eval("document.querySelectorAll('[data-page-select]')[4].click()");
+  await new Promise(resolve => setTimeout(resolve, 50));
+  await cdp.eval("document.querySelectorAll('[data-page-select]')[2].click()");
+  await new Promise(resolve => setTimeout(resolve, 50));
+  const selGroup2 = JSON.parse(await cdp.eval("JSON.stringify({countText:document.getElementById('partySelectionCount')?.textContent.trim()})"));
+  if (selGroup2.countText !== 'Đã chọn 2 trang') {
+    throw new Error(`Second group selection mismatch: ${JSON.stringify(selGroup2)}`);
+  }
+  await cdp.eval("document.getElementById('partyCreateDocBtn').click()");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const doc2Sources = JSON.parse(await cdp.eval("JSON.stringify([...document.querySelectorAll('.party-document')[1].querySelectorAll('.party-page-source')].map(s=>s.textContent.trim()))"));
+  if (doc2Sources.join(';') !== 'Nguồn: trang 3/12;Nguồn: trang 5/12') {
+    throw new Error(`Doc 2 ascending order preservation failed: ${JSON.stringify(doc2Sources)}`);
+  }
+
+  // Step 14: Verify duplicate page assignment protection
+  const dupCheck = JSON.parse(await cdp.eval("JSON.stringify({badges:document.querySelectorAll('.party-assigned-badge').length, assignedPages:document.querySelectorAll('.party-page.is-assigned').length, coverage:document.getElementById('partyCoverageText').textContent})"));
+  if (dupCheck.badges !== 4 || dupCheck.assignedPages !== 4 || !dupCheck.coverage.includes('4/12')) {
+    throw new Error(`Duplicate protection check failed: ${JSON.stringify(dupCheck)}`);
+  }
+
+  // Export Doc 2 individually as well
+  await cdp.eval("(() => { const input = document.querySelectorAll('[data-type-input]')[1]; input.value = '07'; input.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await preparePrivateDownloadCapture(cdp);
+  await cdp.eval("document.querySelectorAll('[data-doc-export]')[1].click()");
+  await new Promise(resolve => setTimeout(resolve, 700));
+  const doc2Exported = await readPrivateExportPageCounts(cdp);
+  if (doc2Exported.join(',') !== '2' || cdp.errors.length) {
+    throw new Error(`Doc 2 export failed: ${JSON.stringify({ doc2Exported, errors: cdp.errors })}`);
+  }
+
+  // Select all remaining unassigned pages (pages 4, 6, 7, 8, 9, 10, 11, 12 = 8 pages) -> Doc 3
+  await cdp.eval("document.getElementById('partySelectAllBtn').click()");
   await new Promise(resolve => setTimeout(resolve, 80));
-  await cdp.eval("(() => { const docs=[...document.querySelectorAll('.party-document')]; const select=docs[0].querySelector('.party-move-select'); select.value=docs[1].dataset.documentId; select.dispatchEvent(new Event('change',{bubbles:true})); })()");
-  await new Promise(resolve => setTimeout(resolve, 150));
-  const movedResult = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, docCounts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), docSources:[...document.querySelectorAll('.party-document')].map(doc=>[...doc.querySelectorAll('.party-page-source')].map(s=>s.textContent.trim())), coverage:document.getElementById('partyCoverageText').textContent})"));
-  if (movedResult.docs !== 3 || movedResult.docCounts.join(',') !== '5,4,3' || !movedResult.coverage.includes('12/12')) {
-    throw new Error(`Move page after multi-split failed: ${JSON.stringify(movedResult)}`);
+  const remainingSelCount = JSON.parse(await cdp.eval("JSON.stringify({countText:document.getElementById('partySelectionCount')?.textContent.trim()})"));
+  if (remainingSelCount.countText !== 'Đã chọn 8 trang') {
+    throw new Error(`Remaining select all count mismatch: expected 8, got ${JSON.stringify(remainingSelCount)}`);
   }
-  if (movedResult.docSources[0].join(';') !== 'Nguồn: trang 2/12;Nguồn: trang 1/12;Nguồn: trang 3/12;Nguồn: trang 4/12;Nguồn: trang 5/12' ||
-      movedResult.docSources[1].join(';') !== 'Nguồn: trang 7/12;Nguồn: trang 8/12;Nguồn: trang 9/12;Nguồn: trang 6/12' ||
-      movedResult.docSources[2].join(';') !== 'Nguồn: trang 10/12;Nguồn: trang 11/12;Nguồn: trang 12/12') {
-    throw new Error(`Source page preservation after move mismatch: ${JSON.stringify(movedResult.docSources)}`);
+  await cdp.eval("document.getElementById('partyCreateDocBtn').click()");
+  await new Promise(resolve => setTimeout(resolve, 150));
+
+  const all3Docs = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, docCounts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), coverage:document.getElementById('partyCoverageText').textContent})"));
+  if (all3Docs.docs !== 3 || all3Docs.docCounts.join(',') !== '2,2,8' || !all3Docs.coverage.includes('12/12')) {
+    throw new Error(`3 documents creation failed: ${JSON.stringify(all3Docs)}`);
   }
 
-  // Assign taxonomies and export all 3 docs
-  await cdp.eval("['05','07','38'].forEach((type,index)=>{const input=document.querySelectorAll('[data-type-input]')[index]; input.value=type; input.dispatchEvent(new Event('change',{bubbles:true}));});");
-  await new Promise(resolve => setTimeout(resolve, 150));
+  // Assign taxonomy to Doc 3 and export all 3 docs
+  await cdp.eval("(() => { const input = document.querySelectorAll('[data-type-input]')[2]; input.value = '38'; input.dispatchEvent(new Event('change', { bubbles: true })); })()");
+  await new Promise(resolve => setTimeout(resolve, 100));
   await preparePrivateDownloadCapture(cdp);
   await cdp.eval("document.getElementById('partyExportAllBtn').click()");
   await new Promise(resolve => setTimeout(resolve, 1000));
-  const exported = await readPrivateExportPageCounts(cdp);
-  if (exported.join(',') !== '5,4,3' || cdp.errors.length) {
-    throw new Error(`Multi-split and modified workflow export failed: ${JSON.stringify({ expected: '5,4,3', exported, errors: cdp.errors })}`);
+  const allExported = await readPrivateExportPageCounts(cdp);
+  if (allExported.join(',') !== '2,2,8' || cdp.errors.length) {
+    throw new Error(`Export all failed: ${JSON.stringify({ expected: '2,2,8', allExported, errors: cdp.errors })}`);
   }
 
-  console.log('PASS Party multi-split UX (toggle, clear, apply 3 points -> 4 docs, reorder identity/source/coverage, merge, move, source preservation & export)');
+  console.log('PASS Party page selection UX (14-step mandatory scenario: checkbox touch targets, select 2 pages, create doc, ascending order, duplicate protection, partial export without 100% coverage, export all)');
 }
 
 async function runEventListenerAcceptance(cdp) {
@@ -376,21 +395,25 @@ async function runEventListenerAcceptance(cdp) {
   await cdp.eval("document.querySelectorAll('.party-page-thumb')[1].click()");
   await cdp.eval("document.querySelectorAll('.party-page-thumb')[0].click()");
 
+  // Create doc to get card actions
+  await cdp.eval("document.getElementById('partySelectAllBtn').click(); document.getElementById('partyCreateDocBtn').click();");
+  await new Promise(resolve => setTimeout(resolve, 200));
+
   // Rotate button single-execution (+90 deg)
-  const beforeRotate = JSON.parse(await cdp.eval("JSON.stringify((() => { const c=document.querySelector('.party-pdf-preview'); return {w:c.width,h:c.height}; })())"));
-  await cdp.eval("document.querySelector('[data-page-action=rotate]').click()");
+  const beforeRotate = JSON.parse(await cdp.eval("JSON.stringify((() => { const c=document.querySelector('.party-created-docs .party-pdf-preview'); return {w:c.width,h:c.height}; })())"));
+  await cdp.eval("document.querySelector('.party-created-docs [data-page-action=rotate]').click()");
   await new Promise(resolve => setTimeout(resolve, 400));
-  const afterRotate = JSON.parse(await cdp.eval("JSON.stringify((() => { const c=document.querySelector('.party-pdf-preview'); return {w:c.width,h:c.height}; })())"));
+  const afterRotate = JSON.parse(await cdp.eval("JSON.stringify((() => { const c=document.querySelector('.party-created-docs .party-pdf-preview'); return {w:c.width,h:c.height}; })())"));
   if (beforeRotate.w !== afterRotate.h || beforeRotate.h !== afterRotate.w) {
     throw new Error(`Rotate event listener duplicated: before=${JSON.stringify(beforeRotate)}, after=${JSON.stringify(afterRotate)}`);
   }
 
-  // Split toggle button single-execution (exactly 1 click -> marked = true)
-  await cdp.eval("document.querySelector('[data-split-toggle]').click()");
-  await new Promise(resolve => setTimeout(resolve, 100));
-  const markedState = JSON.parse(await cdp.eval("JSON.stringify({markedCount:document.querySelectorAll('.party-split-btn.is-marked').length})"));
-  if (markedState.markedCount !== 1) {
-    throw new Error(`Split toggle event listener duplicated: markedCount=${markedState.markedCount}`);
+  // Remove document and verify pages are back in source pool unassigned
+  await cdp.eval("document.querySelector('.party-remove-document').click()");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const afterRemove = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, sources:document.querySelectorAll('.party-source-pool .party-page').length})"));
+  if (afterRemove.docs !== 0 || afterRemove.sources !== 2) {
+    throw new Error(`Remove document event listener failed: ${JSON.stringify(afterRemove)}`);
   }
 
   console.log('PASS Party event listener delegation & non-duplication acceptance');
@@ -499,21 +522,19 @@ async function runPrivateRealPdfAcceptance(cdp, fixturePath, expectedPages) {
     throw new Error(`Private real PDF preview failed: ${JSON.stringify({ expectedPages, imported, errors: cdp.errors })}`);
   }
   if (expectedPages === 2) {
-    await cdp.eval("const page=document.querySelector('.party-page'); page.querySelector('[data-page-action=down]').click(); document.querySelector('.party-page').querySelector('[data-page-action=rotate]').click()"); await new Promise(resolve => setTimeout(resolve, 520));
-    await cdp.eval("document.querySelector('.party-page-thumb').click(); document.querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 180));
-    const split = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length,coverage:document.getElementById('partyCoverageText').textContent})"));
-    if (split.docs !== 2 || !split.coverage.includes('2/2')) throw new Error(`Private real 2-page split failed: ${JSON.stringify(split)}`);
-    await cdp.eval("document.querySelectorAll('.party-document')[1].querySelector('[data-doc-action=merge-prev]').click(); const input=document.querySelector('[data-type-input]'); input.value='05'; input.dispatchEvent(new Event('change',{bubbles:true}));"); await new Promise(resolve => setTimeout(resolve, 180));
+    await cdp.eval("document.getElementById('partySelectAllBtn').click(); document.getElementById('partyCreateDocBtn').click();"); await new Promise(resolve => setTimeout(resolve, 200));
+    await cdp.eval("const page=document.querySelector('.party-created-docs .party-page'); page.querySelector('[data-page-action=down]').click(); document.querySelector('.party-created-docs .party-page').querySelector('[data-page-action=rotate]').click()"); await new Promise(resolve => setTimeout(resolve, 520));
+    await cdp.eval("const input=document.querySelector('[data-type-input]'); input.value='05'; input.dispatchEvent(new Event('change',{bubbles:true}));"); await new Promise(resolve => setTimeout(resolve, 180));
   } else {
-    // Multi-split after page 6 (index 5), page 9 (index 8), page 10 (index 9)
-    await cdp.eval("document.querySelectorAll('[data-split-toggle]')[5].click()");
-    await new Promise(resolve => setTimeout(resolve, 80));
-    await cdp.eval("document.querySelectorAll('[data-split-toggle]')[8].click()");
-    await new Promise(resolve => setTimeout(resolve, 80));
-    await cdp.eval("document.querySelectorAll('[data-split-toggle]')[9].click()");
-    await new Promise(resolve => setTimeout(resolve, 120));
-    await cdp.eval("document.querySelector('.party-apply-splits').click()");
-    await new Promise(resolve => setTimeout(resolve, 250));
+    // Select pages to create 4 documents: [1-6], [7-9], [10], [11-12] -> counts 6,3,1,2
+    await cdp.eval("document.getElementById('partyRangeInput').value='1-6'; document.getElementById('partyRangeBtn').click(); document.getElementById('partyCreateDocBtn').click();");
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await cdp.eval("document.getElementById('partyRangeInput').value='7-9'; document.getElementById('partyRangeBtn').click(); document.getElementById('partyCreateDocBtn').click();");
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await cdp.eval("document.getElementById('partyRangeInput').value='10'; document.getElementById('partyRangeBtn').click(); document.getElementById('partyCreateDocBtn').click();");
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await cdp.eval("document.getElementById('partyRangeInput').value='11-12'; document.getElementById('partyRangeBtn').click(); document.getElementById('partyCreateDocBtn').click();");
+    await new Promise(resolve => setTimeout(resolve, 150));
     const split = JSON.parse(await cdp.eval("JSON.stringify({counts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length),coverage:document.getElementById('partyCoverageText').textContent})"));
     if (split.counts.join(',') !== '6,3,1,2' || !split.coverage.includes('12/12')) throw new Error(`Private real 12-page multi-split failed: ${JSON.stringify(split)}`);
     await cdp.eval("['05','07','38','37'].forEach((type,index)=>{const input=document.querySelectorAll('[data-type-input]')[index]; input.value=type; input.dispatchEvent(new Event('change',{bubbles:true}));});"); await new Promise(resolve => setTimeout(resolve, 200));
@@ -521,7 +542,7 @@ async function runPrivateRealPdfAcceptance(cdp, fixturePath, expectedPages) {
   await preparePrivateDownloadCapture(cdp); await cdp.eval("document.getElementById('partyExportAllBtn').click()"); await new Promise(resolve => setTimeout(resolve, expectedPages === 2 ? 800 : 1300));
   const exported = await readPrivateExportPageCounts(cdp); const expected = expectedPages === 2 ? '2' : '6,3,1,2';
   if (exported.join(',') !== expected || cdp.errors.length) throw new Error(`Private real PDF export failed: ${JSON.stringify({ expected, exported, errors: cdp.errors })}`);
-  console.log(`PASS Party private real ${expectedPages}-page PDF preview, coverage, multi-split and export acceptance`);
+  console.log(`PASS Party private real ${expectedPages}-page PDF preview, coverage, document creation and export acceptance`);
 }
 async function runPdfWorkflow(cdp) {
   const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_synthetic_fixture.pdf');
@@ -532,31 +553,47 @@ async function runPdfWorkflow(cdp) {
   await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
   await cdp.eval("document.getElementById('partyPdfBtn').click()");
   await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 350));
-  const imported = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, pages:document.querySelectorAll('.party-page').length, coverage:document.getElementById('partyCoverageText').textContent, actions:['partyCameraBtn','partyChooseBtn','partyPdfBtn'].every(id => !document.getElementById(id).classList.contains('hidden')), fileCount:document.getElementById('partyPdfInput').files.length, canvases:[...document.querySelectorAll('.party-pdf-preview')].map(canvas => ({width:canvas.width,height:canvas.height,rgba:[...canvas.getContext('2d').getImageData(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1).data]})), toast:document.getElementById('toast').textContent})"));
+  const imported = JSON.parse(await cdp.eval("JSON.stringify({sources:document.querySelectorAll('.party-source-pool .party-page').length, actions:['partyCameraBtn','partyChooseBtn','partyPdfBtn'].every(id => !document.getElementById(id).classList.contains('hidden')), fileCount:document.getElementById('partyPdfInput').files.length, canvases:[...document.querySelectorAll('.party-pdf-preview')].map(canvas => ({width:canvas.width,height:canvas.height,rgba:[...canvas.getContext('2d').getImageData(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1).data]})), toast:document.getElementById('toast').textContent})"));
   const canvasSizes = imported.canvases.map(canvas => `${canvas.width}x${canvas.height}`);
   const canvasColors = imported.canvases.map(canvas => canvas.rgba.slice(0, 3).join(','));
-  if (imported.docs !== 1 || imported.pages !== 10 || imported.canvases.length !== 10 || !imported.coverage.includes('10/10') || !imported.canvases.some(canvas => canvas.width < canvas.height) || !imported.canvases.some(canvas => canvas.width > canvas.height) || new Set(canvasColors).size < 3 || imported.canvases.some(canvas => canvas.rgba[0] > 248 && canvas.rgba[1] > 248 && canvas.rgba[2] > 248) || cdp.errors.length) throw new Error(`PDF thumbnail render failed: ${JSON.stringify({ imported, canvasSizes, canvasColors, errors: cdp.errors })}`);
+  if (imported.sources !== 10 || imported.canvases.length !== 10 || !imported.canvases.some(canvas => canvas.width < canvas.height) || !imported.canvases.some(canvas => canvas.width > canvas.height) || new Set(canvasColors).size < 3 || imported.canvases.some(canvas => canvas.rgba[0] > 248 && canvas.rgba[1] > 248 && canvas.rgba[2] > 248) || cdp.errors.length) throw new Error(`PDF thumbnail render failed: ${JSON.stringify({ imported, canvasSizes, canvasColors, errors: cdp.errors })}`);
   // The thumbnail canvas must stay inside its clipped 120px box: an overflowing
   // canvas is silently cropped by the container and only shows the top of the page.
   const fitted = JSON.parse(await cdp.eval("JSON.stringify([...document.querySelectorAll('.party-pdf-preview')].map((canvas, index) => { const box = canvas.closest('.party-page-thumb').getBoundingClientRect(); const rect = canvas.getBoundingClientRect(); return { index, overflowX: Math.round(rect.width - box.width), overflowY: Math.round(rect.height - box.height), hidden: rect.width < 1 || rect.height < 1 }; }))"));
   const clipped = fitted.filter(item => item.overflowX > 1 || item.overflowY > 1 || item.hidden);
   if (clipped.length) throw new Error(`PDF thumbnail canvas overflows its clipped container: ${JSON.stringify(clipped)}`);
   const importedShot = await cdp.send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_import_1366x768.png'), Buffer.from(importedShot.data, 'base64'));
-  await cdp.eval("document.querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 80));
-  await cdp.eval("document.querySelectorAll('.party-document')[1].querySelector('.party-page-thumb').click(); document.querySelectorAll('.party-document')[1].querySelector('[data-doc-action=split]').click()"); await new Promise(resolve => setTimeout(resolve, 100));
-  const split = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, pages:document.querySelectorAll('.party-page').length, counts:[...document.querySelectorAll('.party-document')].map(doc => doc.querySelectorAll('.party-page').length), coverage:document.getElementById('partyCoverageText').textContent})"));
-  if (split.docs !== 3 || split.pages !== 10 || split.counts.join(',') !== '1,1,8' || !split.coverage.includes('10/10')) throw new Error(`PDF split failed: ${JSON.stringify(split)}`);
+
+  // Create Doc 1 (pages 1-2) and Doc 2 (pages 3-10)
+  await cdp.eval("document.getElementById('partyRangeInput').value='1-2'; document.getElementById('partyRangeBtn').click(); document.getElementById('partyCreateDocBtn').click();");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  await cdp.eval("document.getElementById('partyRangeInput').value='3-10'; document.getElementById('partyRangeBtn').click(); document.getElementById('partyCreateDocBtn').click();");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const split = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, pages:document.querySelectorAll('.party-created-docs .party-page').length, counts:[...document.querySelectorAll('.party-document')].map(doc => doc.querySelectorAll('.party-page').length), coverage:document.getElementById('partyCoverageText').textContent})"));
+  if (split.docs !== 2 || split.pages !== 10 || split.counts.join(',') !== '2,8' || !split.coverage.includes('10/10')) throw new Error(`PDF doc creation failed: ${JSON.stringify(split)}`);
   const splitShot = await cdp.send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_split_1366x768.png'), Buffer.from(splitShot.data, 'base64'));
-  await cdp.eval("document.querySelectorAll('.party-document')[0].querySelector('[data-doc-action=merge-next]').click()"); await new Promise(resolve => setTimeout(resolve, 100));
-  await cdp.eval("const docs=[...document.querySelectorAll('.party-document')]; docs[1].querySelector('.party-page-thumb').click(); const select=docs[1].querySelector('.party-move-select'); select.value=docs[0].dataset.documentId; select.dispatchEvent(new Event('change',{bubbles:true}))"); await new Promise(resolve => setTimeout(resolve, 100));
-  const moved = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, pages:document.querySelectorAll('.party-page').length, coverage:document.getElementById('partyCoverageText').textContent, inputs:document.querySelectorAll('[data-type-input]').length})"));
-  if (moved.docs !== 2 || moved.pages !== 10 || !moved.coverage.includes('10/10') || moved.inputs !== 2) throw new Error(`PDF merge/move failed: ${JSON.stringify(moved)}`);
+
+  // Move page from doc 2 to doc 1
+  await cdp.eval("(() => { const docs = [...document.querySelectorAll('.party-document')]; const select = docs[1].querySelector('.party-move-select'); select.value = docs[0].dataset.documentId; select.dispatchEvent(new Event('change', { bubbles: true })); })()"); await new Promise(resolve => setTimeout(resolve, 150));
+  const moved = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, counts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), coverage:document.getElementById('partyCoverageText').textContent})"));
+  if (moved.docs !== 2 || moved.counts.join(',') !== '3,7' || !moved.coverage.includes('10/10')) throw new Error(`PDF move failed: ${JSON.stringify(moved)}`);
+
   await cdp.eval("(() => { const input = document.querySelector('[data-type-input]'); input.value='05'; input.dispatchEvent(new Event('change',{bubbles:true})); })()"); await new Promise(resolve => setTimeout(resolve, 80));
   await cdp.eval("(() => { const input = document.querySelectorAll('[data-type-input]')[1]; input.value='07 — Quyết định công nhận đảng viên chính thức'; input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new Event('change',{bubbles:true})); })()"); await new Promise(resolve => setTimeout(resolve, 100));
   const ready = JSON.parse(await cdp.eval("JSON.stringify({types:[...document.querySelectorAll('[data-type-input]')].map(input=>input.value), exportDisabled:document.getElementById('partyExportAllBtn').disabled, status:document.getElementById('partyExportStatus').textContent, coverage:document.getElementById('partyCoverageText').textContent})"));
   if (ready.types.some(value => !/^0[57]/.test(value)) || ready.exportDisabled || !ready.coverage.includes('10/10')) throw new Error(`PDF taxonomy/export readiness failed: ${JSON.stringify(ready)}`);
   const finalShot = await cdp.send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(SCREENSHOT_DIR, 'party_workspace_pdf_split_ready_1366x768.png'), Buffer.from(finalShot.data, 'base64'));
-  await cdp.eval("document.getElementById('partyExportAllBtn').click()"); await new Promise(resolve => setTimeout(resolve, 250));
+
+  // Test individual export of Doc 1 (3 pages)
+  await preparePrivateDownloadCapture(cdp);
+  await cdp.eval("document.querySelectorAll('[data-doc-export]')[0].click()");
+  await new Promise(resolve => setTimeout(resolve, 600));
+  const singleExported = await readPrivateExportPageCounts(cdp);
+  if (singleExported.join(',') !== '3') throw new Error(`Single doc export failed: ${JSON.stringify(singleExported)}`);
+
+  // Test export all
+  await preparePrivateDownloadCapture(cdp);
+  await cdp.eval("document.getElementById('partyExportAllBtn').click()"); await new Promise(resolve => setTimeout(resolve, 800));
   if (cdp.errors.length) throw new Error(`PDF export click emitted console errors: ${cdp.errors.join(',')}`);
   console.log(`PASS Party PDF workflow · screenshots ${SCREENSHOT_DIR}`);
 }
@@ -682,8 +719,9 @@ async function runWorkspaceViewportSmoke(cdp, viewport) {
   await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
   await cdp.eval("document.getElementById('partyPdfBtn').click()");
   await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 350));
-  const workspace = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, pages:document.querySelectorAll('.party-page').length, coverage:document.getElementById('partyCoverageText').textContent, workspaceVisible:!document.getElementById('partyWorkspace').classList.contains('hidden'), overflow:document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth, scrollWidth:document.documentElement.scrollWidth, innerWidth, wide:[...document.querySelectorAll('body *')].map(el=>{const r=el.getBoundingClientRect();return {tag:el.tagName,id:el.id,cls:el.className,right:Math.round(r.right),width:Math.round(r.width)}}).filter(item=>item.right>innerWidth+1).slice(-8), actionTargets:[...document.querySelectorAll('.party-page-actions button,.party-page-more summary,.party-document-actions .btn,.party-move-select,.party-taxonomy-field input')].filter(el=>getComputedStyle(el).display !== 'none' && el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return Math.min(r.width,r.height)}), actions:['partyAddBtn','partyAddPdfBtn','partyNewDocumentBtn'].every(id => !document.getElementById(id).classList.contains('hidden'))})"));
-  if (workspace.docs !== 1 || workspace.pages !== 10 || !workspace.coverage.includes('10/10') || !workspace.workspaceVisible || workspace.overflow || !workspace.actions || workspace.actionTargets.some(size => size < 44) || cdp.errors.length) throw new Error(`Party workspace failed at ${viewport.width}x${viewport.height}: ${JSON.stringify({ workspace, errors: cdp.errors })}`);
+  await cdp.eval("document.getElementById('partySelectAllBtn').click(); document.getElementById('partyCreateDocBtn').click();"); await new Promise(resolve => setTimeout(resolve, 150));
+  const workspace = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, pages:document.querySelectorAll('.party-page').length, coverage:document.getElementById('partyCoverageText').textContent, workspaceVisible:!document.getElementById('partyWorkspace').classList.contains('hidden'), overflow:document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth, scrollWidth:document.documentElement.scrollWidth, innerWidth, wide:[...document.querySelectorAll('body *')].map(el=>{const r=el.getBoundingClientRect();return {tag:el.tagName,id:el.id,cls:el.className,right:Math.round(r.right),width:Math.round(r.width)}}).filter(item=>item.right>innerWidth+1).slice(-8), actionTargets:[...document.querySelectorAll('.party-page-actions button,.party-page-more summary,.party-document-actions .btn,.party-move-select,.party-taxonomy-field input')].filter(el=>getComputedStyle(el).display !== 'none' && el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return Math.min(r.width,r.height)}), actions:['partyAddBtn','partyAddPdfBtn'].every(id => !document.getElementById(id).classList.contains('hidden'))})"));
+  if (workspace.docs !== 1 || !workspace.coverage.includes('10/10') || !workspace.workspaceVisible || workspace.overflow || !workspace.actions || workspace.actionTargets.some(size => size < 44) || cdp.errors.length) throw new Error(`Party workspace failed at ${viewport.width}x${viewport.height}: ${JSON.stringify({ workspace, errors: cdp.errors })}`);
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(SCREENSHOT_DIR, `party_workspace_pdf_import_${viewport.width}x${viewport.height}.png`), Buffer.from(shot.data, 'base64'));
   console.log(`PASS Party workspace ${viewport.width}x${viewport.height} · screenshot ${SCREENSHOT_DIR}`);
 }
@@ -698,6 +736,7 @@ server.listen(PORT, async () => {
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
+      '--disable-extensions',
       '--no-first-run',
       '--no-default-browser-check',
       `--user-data-dir=${chromeProfile}`,
@@ -715,7 +754,14 @@ server.listen(PORT, async () => {
     ];
     for (const viewport of viewports) {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: false });
-      await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 500));
+      await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+      await new Promise(resolve => setTimeout(resolve, 400));
+      for (let w = 0; w < 40; w++) {
+        const isReady = await cdp.eval("document.readyState === 'complete' && !!window.VigilLensCore && !!window.VigilLensParty && !!document.querySelector('.mode-cards') && getComputedStyle(document.querySelector('.mode-cards')).display === 'grid' && (document.querySelectorAll('.mode-card-content strong')[0]?.clientWidth || 0) > 0");
+        if (isReady) break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
       cdp.errors.length = 0;
       const selector = JSON.parse(await cdp.eval(`JSON.stringify((() => {
         const visible = id => { const el = document.getElementById(id); return !!el && !el.classList.contains('hidden') && getComputedStyle(el).display !== 'none'; };
@@ -730,14 +776,16 @@ server.listen(PORT, async () => {
       if (selector.cardCount !== 3 || selector.overflow || selector.rects.some(rect => rect.width < minCardWidth) || !sameDesktopRow || !titlesReadable || selector.headerTop > viewport.height * .45) throw new Error(`Mode selector failed at ${viewport.width}: ${JSON.stringify(selector)}`);
       const initialShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
       const initialPath = path.join(SCREENSHOT_DIR, `${viewport.name}.png`); fs.writeFileSync(initialPath, Buffer.from(initialShot.data, 'base64'));
-      await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+      await cdp.eval("(() => { const btn = document.getElementById('modePartyBtn'); btn.click(); return document.getElementById('modeSelect').classList.contains('hidden'); })()");
+      await new Promise(resolve => setTimeout(resolve, 100));
       const entry = JSON.parse(await cdp.eval(`JSON.stringify((() => { const visible = id => { const el = document.getElementById(id); return !!el && !el.classList.contains('hidden') && getComputedStyle(el).display !== 'none'; }; return { modeHidden: document.getElementById('modeSelect').classList.contains('hidden'), partyEmpty: visible('partyEmptyState'), importActions: ['partyCameraBtn','partyChooseBtn','partyPdfBtn'].every(visible), partyApi: typeof window.VigilLensParty, switchVisible: visible('switchModeBtn') }; })())`));
       if (!entry.modeHidden || !entry.partyEmpty || !entry.importActions || entry.partyApi !== 'object' || !entry.switchVisible || cdp.errors.length) throw new Error(`Party entry failed at ${viewport.width}: ${JSON.stringify({ entry, errors: cdp.errors })}`);
       const partyShot = await cdp.send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(SCREENSHOT_DIR, `${viewport.name.replace('select', 'entry')}.png`), Buffer.from(partyShot.data, 'base64'));
       await cdp.eval("document.getElementById('switchModeBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
       const back = JSON.parse(await cdp.eval("JSON.stringify({modeVisible:!document.getElementById('modeSelect').classList.contains('hidden'), partyHidden:document.getElementById('partyEmptyState').classList.contains('hidden') && document.getElementById('partyWorkspace').classList.contains('hidden')})"));
       if (!back.modeVisible || !back.partyHidden) throw new Error(`Party back navigation failed at ${viewport.width}: ${JSON.stringify(back)}`);
-      await cdp.eval("document.getElementById('modePartyBtn').click()"); await new Promise(resolve => setTimeout(resolve, 100));
+      await cdp.eval("(() => { const btn = document.getElementById('modePartyBtn'); btn.click(); return document.getElementById('modeSelect').classList.contains('hidden'); })()");
+      await new Promise(resolve => setTimeout(resolve, 100));
       const reentry = JSON.parse(await cdp.eval("JSON.stringify({modeHidden:document.getElementById('modeSelect').classList.contains('hidden'), partyEmpty:!document.getElementById('partyEmptyState').classList.contains('hidden')})"));
       if (!reentry.modeHidden || !reentry.partyEmpty || cdp.errors.length) throw new Error(`Party re-entry failed at ${viewport.width}: ${JSON.stringify({ reentry, errors: cdp.errors })}`);
       console.log(`PASS Party UI ${viewport.width}x${viewport.height} · screenshots ${SCREENSHOT_DIR}`);
@@ -745,7 +793,7 @@ server.listen(PORT, async () => {
     await runLineEndingAcceptance(cdp);
     await runHelpUxAcceptance(cdp);
     await runPdfWorkflow(cdp);
-    await runMultiSplitAcceptance(cdp);
+    await runPageSelectionWorkflowAcceptance(cdp);
     await runEventListenerAcceptance(cdp);
     await runTrueBlankPageAcceptance(cdp);
     await runRapidInteractionRerenderReproduction(cdp);

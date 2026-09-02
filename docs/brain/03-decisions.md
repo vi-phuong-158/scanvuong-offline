@@ -274,3 +274,19 @@
 - **Lý do:** Source review phát hiện job render cũ có thể hoàn tất sau khi người dùng re-render/back-reenter và cache ảnh full-resolution có nguy cơ tăng không giới hạn. Invalidation tách biệt với queue worker để job cũ dừng im lặng mà không khóa job mới; bounds bảo vệ PDF ảnh lớn/malformed.
 - **Đánh đổi:** Preview chỉ hỗ trợ các filter/ảnh được parser local hiểu; filter hiếm như CCITT/JPX/inline image parser đầy đủ tiếp tục fail riêng từng trang thay vì thêm dependency nặng hoặc làm thay đổi source-page export.
 - **Người quyết định:** Codex, theo yêu cầu hardening của người dùng.
+
+## [2026-09-02] Party Document Mode: Thay thế cơ chế "Tách tại đây" bằng mô hình Chọn trang → Tạo tài liệu → Xuất riêng lẻ
+
+- **Quyết định:**
+  1. Bỏ hoàn toàn cơ chế đa điểm tách (`markedSplits`, nút "Tách tại đây", "Áp dụng N điểm tách", "Bỏ các điểm tách", thanh multisplit và các divider).
+  2. Áp dụng mô hình Chọn trang → Tạo tài liệu: Người dùng xem danh sách trang nguồn trong pool (`.party-source-pool`), tích chọn các trang (checkbox touch target $\ge 44\text{px}$ hoặc nhập khoảng trang `1-3`, `17-22`), sau đó bấm **Tạo tài liệu từ trang đã chọn**.
+  3. Bắt buộc bảo toàn thứ tự nguồn tăng dần: Khi tạo tài liệu, dù người dùng tích chọn theo thứ tự bất kỳ (ví dụ 19, 17, 18), tài liệu mới luôn sắp xếp các trang theo thứ tự trang nguồn tăng dần (17, 18, 19).
+  4. Chống trùng lặp trang nguồn (no unintended duplication): Các trang đã được gán vào tài liệu sẽ hiển thị huy hiệu `Tài liệu N` và bị vô hiệu hóa chọn trong pool nguồn. Xóa tài liệu hoặc gỡ trang sẽ tự động trả trang về trạng thái chưa gán trong pool.
+  5. Xuất riêng từng tài liệu (Partial Export): Mỗi thẻ tài liệu có nút **Xuất tài liệu này**, kích hoạt ngay khi tài liệu có $\ge 1$ trang, đã chọn taxonomy chuẩn (01–104) và không busy. Không còn chặn xuất bởi điều kiện toàn bộ file scan phải đạt 100% coverage.
+  6. Tỷ lệ phủ (Coverage) chuyển thành thông tin kiểm toán hỗ trợ người dùng (`N/M trang nguồn đã được xếp vào tài liệu`), không còn là rào cản ngăn xuất PDF.
+  7. Bỏ nút `+ Tài liệu` để tránh người dùng vô tình tạo hàng loạt tài liệu rỗng.
+- **Lý do:**
+  Trong thực tế làm việc với hồ sơ Đảng nhiều trang (ví dụ file scan 80 trang gồm nhiều văn bản rời rạc), cán bộ thường chỉ cần xử lý và xuất ngay văn bản 2 trang đầu tiên mà không muốn bị ép phải phân loại hết 78 trang còn lại. Cơ chế đa điểm tách cũ buộc người dùng phải duyệt hết file, căn đặt điểm cắt giữa các trang và chỉ cho phép xuất khi coverage đạt 100%. Mô hình mới giúp thao tác trực quan, linh hoạt, xử lý đến đâu xuất đến đó một cách an toàn.
+- **Đánh đổi:**
+  Các tài liệu được tạo chỉ từ các trang người dùng đã chủ động chọn. Tuy nhiên, thứ tự trang, ghép/chuyển trang, xoay trang và đổi loại tài liệu vẫn được hỗ trợ đầy đủ.
+- **Người quyết định:** Codex (theo yêu cầu DEV TASK của người dùng).

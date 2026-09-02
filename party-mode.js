@@ -9,7 +9,11 @@
     orderPanel: $('partyOrderPanel'), exportAll: $('partyExportAllBtn'), exportStatus: $('partyExportStatus'),
     fileInput: $('partyFileInput'), cameraInput: $('partyCameraInput'), pdfInput: $('partyPdfInput'),
     cameraBtn: $('partyCameraBtn'), chooseBtn: $('partyChooseBtn'), pdfBtn: $('partyPdfBtn'),
-    addBtn: $('partyAddBtn'), addPdfBtn: $('partyAddPdfBtn'), newDocumentBtn: $('partyNewDocumentBtn'),
+    addBtn: $('partyAddBtn'), addPdfBtn: $('partyAddPdfBtn'),
+    selectionBar: $('partySelectionBar'), selectionCount: $('partySelectionCount'),
+    createDocBtn: $('partyCreateDocBtn'), selectAllBtn: $('partySelectAllBtn'),
+    clearSelectionBtn: $('partyClearSelectionBtn'),
+    rangeInput: $('partyRangeInput'), rangeBtn: $('partyRangeBtn'),
     helpDialog: $('partyHelpDialog'), helpClose: $('partyHelpClose'),
     viewerDialog: $('partyPreviewDialog'), viewerCanvas: $('partyPreviewCanvas'), viewerImage: $('partyPreviewImage'),
     viewerTitle: $('partyPreviewTitle'), viewerMeta: $('partyPreviewMeta'), viewerStatus: $('partyPreviewStatus'),
@@ -19,7 +23,7 @@
 
   const state = {
     active: false, busy: false, sources: [], documents: [], selected: null,
-    orderConfirmed: false, pendingAction: null, nextDocument: 1, markedSplits: new Set(),
+    orderConfirmed: false, pendingAction: null, nextDocument: 1, selectedPages: new Set(),
     previewObserver: null, previewQueue: new Map(), previewRunning: false, previewGeneration: 0,
     cachedThumbPages: [], viewer: { pageId: null, generation: 0 }
   };
@@ -65,7 +69,27 @@
   }
 
   function currentDocument() { return state.documents.find(doc => doc.id === state.selected?.documentId) || state.documents[0] || null; }
-  function pageById(id) { for (const doc of state.documents) { const page = doc.pages.find(item => item.id === id); if (page) return { doc, page }; } return null; }
+  function findDocumentByPageId(id) {
+    for (const doc of state.documents) {
+      if (doc.pages.some(item => item.id === id)) return doc;
+    }
+    return null;
+  }
+  function pageById(id) {
+    const page = state.sources.find(item => item.id === id);
+    if (!page) {
+      for (const doc of state.documents) {
+        const p = doc.pages.find(item => item.id === id);
+        if (p) return { doc, page: p };
+      }
+      return null;
+    }
+    const doc = findDocumentByPageId(id);
+    return { doc, page };
+  }
+  function isPageAvailable(id) {
+    return !findDocumentByPageId(id);
+  }
   function sourcePageKey(page) { return page.kind === 'pdf' ? `${page.source.id}:${page.sourcePage}` : page.id; }
 
   function pagePreview(page, index) {
@@ -124,6 +148,20 @@
     if (!found || found.page.kind !== 'pdf' || found.page.previewState === 'error') return;
     const page = found.page;
     if (!isCurrentPreview(canvas, page, generation)) return;
+    if (page.previewThumbCanvas && page.previewState === 'ready') {
+      const thumb = page.previewThumbCanvas;
+      canvas.width = thumb.width;
+      canvas.height = thumb.height;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      if (ctx) {
+        ctx.drawImage(thumb, 0, 0);
+        canvas.dataset.previewRendered = 'true';
+        canvas.parentElement?.classList.remove('is-loading');
+        const status = canvas.parentElement?.querySelector('.party-pdf-status');
+        if (status) status.textContent = page.previewRenderer === 'fallback' ? 'PDF (fallback)' : 'PDF';
+      }
+      return;
+    }
     page.previewState = 'rendering';
     try {
       const result = await PartyPdf.renderThumbnail(page.source.page(page.sourcePage), canvas, 320, () => isCurrentPreview(canvas, page, generation), page.rotation);
@@ -164,7 +202,8 @@
       state.cachedThumbPages = state.cachedThumbPages.filter(p => p !== page);
       const parent = canvas.parentElement;
       if (parent) {
-        parent.outerHTML = pagePreview(page, found.doc.pages.indexOf(page));
+        const pageIdx = found.doc ? found.doc.pages.indexOf(page) : state.sources.indexOf(page);
+        parent.outerHTML = pagePreview(page, pageIdx >= 0 ? pageIdx : 0);
       }
     }
   }
@@ -234,15 +273,16 @@
     const stage = els.viewerCanvas?.parentElement;
     if (!found || !stage) return;
     const { doc, page } = found;
-    const index = doc.pages.indexOf(page);
+    const list = doc ? doc.pages : state.sources;
+    const index = list.indexOf(page);
     const generation = ++state.viewer.generation;
 
-    els.viewerTitle.textContent = `Trang ${index + 1}`;
+    els.viewerTitle.textContent = doc ? `Trang ${index + 1}` : `Trang nguồn ${index + 1}`;
     els.viewerMeta.textContent = page.kind === 'pdf'
       ? `Nguồn: trang ${page.sourcePage + 1}/${page.source?.pageCount || page.sourceTotalPages || '?'} · ${page.source?.name || ''}`
       : (page.file?.name || page.name || 'Ảnh scan mới');
     els.viewerPrev.disabled = index <= 0;
-    els.viewerNext.disabled = index >= doc.pages.length - 1;
+    els.viewerNext.disabled = index >= list.length - 1;
 
     if (page.kind !== 'pdf') {
       els.viewerCanvas.hidden = true;
@@ -292,9 +332,10 @@
   function stepPageViewer(delta) {
     const found = pageById(state.viewer.pageId);
     if (!found) return;
-    const target = found.doc.pages[found.doc.pages.indexOf(found.page) + delta];
+    const list = found.doc ? found.doc.pages : state.sources;
+    const target = list[list.indexOf(found.page) + delta];
     if (!target) return;
-    state.selected = { documentId: found.doc.id, pageId: target.id };
+    state.selected = { documentId: found.doc?.id || null, pageId: target.id };
     state.viewer.pageId = target.id;
     render();
     renderPageViewer();
@@ -306,33 +347,128 @@
     els.fileInput.click();
   }
 
-  function render() {
-    if (!state.active) return;
-    if (state.viewer.pageId && !pageById(state.viewer.pageId)) closePageViewer();
-    const docs = state.documents;
-    // Every action rebuilds #partyDocuments from scratch, which would silently
-    // reset each document's horizontally-scrolled page rail back to page 1
-    // (e.g. after "Tách tại đây" on a page found by scrolling right). Save the
-    // scroll position per document id and restore it once the new rail exists.
-    const railScroll = new Map();
-    els.documents.querySelectorAll('.party-page-rail[data-document-id]').forEach(rail => {
-      if (rail.scrollLeft) railScroll.set(rail.dataset.documentId, rail.scrollLeft);
-    });
-    els.empty.classList.toggle('hidden', state.sources.length > 0);
-    els.workspace.classList.toggle('hidden', state.sources.length === 0);
-    els.documents.innerHTML = docs.length ? docs.map((doc, docIndex) => renderDocument(doc, docIndex)).join('') : '<div class="party-empty-doc">Chưa có tài liệu. Hãy thêm nguồn hoặc tạo tài liệu mới.</div>';
-    if (railScroll.size) {
-      els.documents.querySelectorAll('.party-page-rail[data-document-id]').forEach(rail => {
-        const left = railScroll.get(rail.dataset.documentId);
-        if (left) rail.scrollLeft = left;
-      });
+  function togglePageSelection(pageId) {
+    if (!isPageAvailable(pageId)) return;
+    if (state.selectedPages.has(pageId)) {
+      state.selectedPages.delete(pageId);
+    } else {
+      state.selectedPages.add(pageId);
     }
-    renderCoverage();
-    renderOrderPanel();
-    queuePdfPreviews();
+    render();
   }
 
-  function renderPageCard(page, index, doc) {
+  function clearPageSelection() {
+    state.selectedPages.clear();
+    render();
+  }
+
+  function selectAllAvailablePages() {
+    state.sources.forEach(p => {
+      if (isPageAvailable(p.id)) state.selectedPages.add(p.id);
+    });
+    render();
+  }
+
+  function selectPageRange(rangeStr) {
+    if (!rangeStr || !state.sources.length) return;
+    const parts = String(rangeStr).split(/[,;\s]+/).filter(Boolean);
+    let added = 0;
+    for (const part of parts) {
+      const m = part.match(/^(\d+)(?:-(\d+))?$/);
+      if (!m) continue;
+      const start = parseInt(m[1], 10);
+      const end = m[2] ? parseInt(m[2], 10) : start;
+      const min = Math.min(start, end);
+      const max = Math.max(start, end);
+      for (let i = min; i <= max; i++) {
+        const page = state.sources[i - 1];
+        if (page && isPageAvailable(page.id)) {
+          if (!state.selectedPages.has(page.id)) {
+            state.selectedPages.add(page.id);
+            added++;
+          }
+        }
+      }
+    }
+    render();
+    if (added) toast(`Đã chọn thêm ${added} trang.`);
+    else toast('Không tìm thấy trang nguồn khả dụng trong khoảng đã nhập.');
+  }
+
+  function createDocumentFromSelection() {
+    if (!state.selectedPages.size) return toast('Chưa chọn trang nào để tạo tài liệu.');
+    const pagesToAssign = state.sources.filter(p => state.selectedPages.has(p.id) && isPageAvailable(p.id));
+    if (!pagesToAssign.length) {
+      state.selectedPages.clear();
+      render();
+      return toast('Các trang đã chọn đã thuộc tài liệu khác.');
+    }
+    const newDoc = {
+      id: uid('doc'),
+      pages: pagesToAssign,
+      typeId: null
+    };
+    state.documents.push(newDoc);
+    state.selectedPages.clear();
+    state.selected = { documentId: newDoc.id, pageId: pagesToAssign[0]?.id || null };
+    state.orderConfirmed = false;
+    render();
+    toast(`Đã tạo Tài liệu ${state.documents.length} gồm ${pagesToAssign.length} trang.`);
+  }
+
+  function renderSelectionBar() {
+    if (!els.selectionBar) return;
+    const count = state.selectedPages.size;
+    const total = state.sources.length;
+    els.selectionBar.classList.toggle('hidden', total === 0);
+    if (els.selectionCount) {
+      els.selectionCount.textContent = `Đã chọn ${count} trang`;
+    }
+    if (els.createDocBtn) {
+      els.createDocBtn.disabled = count === 0 || state.busy;
+    }
+    if (els.clearSelectionBtn) {
+      els.clearSelectionBtn.disabled = count === 0 || state.busy;
+    }
+    if (els.selectAllBtn) {
+      const availableCount = state.sources.filter(p => isPageAvailable(p.id)).length;
+      els.selectAllBtn.disabled = availableCount === 0 || state.busy;
+    }
+    if (els.rangeBtn) {
+      els.rangeBtn.disabled = total === 0 || state.busy;
+    }
+  }
+
+  function renderSourcePageCard(page, index) {
+    const isChecked = state.selectedPages.has(page.id);
+    const doc = findDocumentByPageId(page.id);
+    const isAssigned = !!doc;
+    const assignedDocIndex = isAssigned ? state.documents.indexOf(doc) : -1;
+    const isSelected = state.selected?.pageId === page.id;
+    const sourceInfo = page.kind === 'pdf'
+      ? `Nguồn: trang ${page.sourcePage + 1}/${page.source?.pageCount || page.sourceTotalPages || '?'}`
+      : 'Ảnh scan mới';
+    const fileName = page.file?.name || page.source?.name || page.name;
+
+    return `<div class="party-page ${isSelected ? 'is-selected' : ''} ${isChecked ? 'is-checked' : ''} ${isAssigned ? 'is-assigned' : ''}" data-page-id="${page.id}">
+      <label class="party-page-check touch-target" title="${isAssigned ? `Đã thuộc Tài liệu ${assignedDocIndex + 1}` : (isChecked ? 'Bỏ chọn trang này' : 'Chọn trang này')}">
+        <input type="checkbox" class="party-page-checkbox" data-page-select="${page.id}" ${isChecked ? 'checked' : ''} ${isAssigned ? 'disabled' : ''} aria-label="Chọn trang ${index + 1}">
+        <span class="party-page-check-label">Trang ${index + 1}</span>
+        ${isAssigned ? `<span class="party-assigned-badge" title="Trang đã thuộc Tài liệu ${assignedDocIndex + 1}">Tài liệu ${assignedDocIndex + 1}</span>` : ''}
+      </label>
+      <button class="party-page-thumb" data-page-id="${page.id}" type="button" title="Xem trước trang ${index + 1}">
+        ${pagePreview(page, index)}
+        <span>${index + 1}</span>
+      </button>
+      <div class="party-page-meta">
+        <strong>Trang ${index + 1}</strong>
+        <small class="party-page-source">${esc(sourceInfo)}</small>
+        <small class="party-page-filename" title="${esc(fileName)}">${esc(fileName)}</small>
+      </div>
+    </div>`;
+  }
+
+  function renderDocumentPageCard(page, index, doc) {
     const isSelected = state.selected?.pageId === page.id;
     const sourceInfo = page.kind === 'pdf'
       ? `Nguồn: trang ${page.sourcePage + 1}/${page.source?.pageCount || page.sourceTotalPages || '?'}`
@@ -340,7 +476,7 @@
     const fileName = page.file?.name || page.source?.name || page.name;
 
     return `<div class="party-page ${isSelected ? 'is-selected' : ''}" data-page-id="${page.id}" draggable="true">
-      <button class="party-page-thumb" data-page-id="${page.id}" type="button">
+      <button class="party-page-thumb" data-page-id="${page.id}" type="button" title="Xem trước trang ${index + 1}">
         ${pagePreview(page, index)}
         <span>${index + 1}</span>
       </button>
@@ -371,85 +507,100 @@
   function renderDocument(doc, docIndex) {
     const docs = state.documents;
     const type = taxonomy().find(item => item.id === doc.typeId);
-    const docMarkedCount = doc.pages.filter(p => state.markedSplits.has(p.id)).length;
+    const canExportThisDoc = doc.pages.length > 0 && !!doc.typeId && !state.busy;
 
-    const pageItemsHtml = doc.pages.map((page, index) => {
-      const cardHtml = renderPageCard(page, index, doc);
-      const isSplitMarked = state.markedSplits.has(page.id);
-      const splitDividerHtml = index < doc.pages.length - 1 ? `
-        <div class="party-split-divider">
-          <button class="party-split-btn ${isSplitMarked ? 'is-marked' : ''}" data-split-toggle="${page.id}" data-document-id="${doc.id}" type="button" aria-pressed="${isSplitMarked}" title="${isSplitMarked ? 'Bỏ điểm tách' : 'Đánh dấu tách tại đây'}">
-            <svg class="party-split-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
-            <span class="party-split-label">${isSplitMarked ? 'Đã đánh dấu tách' : 'Tách tại đây'}</span>
-          </button>
-        </div>` : '';
-      return cardHtml + splitDividerHtml;
-    }).join('');
-
-    const multiSplitActionHtml = docMarkedCount > 0 ? `
-      <div class="party-multisplit-bar">
-        <button class="btn primary small party-apply-splits" data-doc-action="apply-splits" data-document-id="${doc.id}" type="button">Áp dụng ${docMarkedCount} điểm tách</button>
-        <button class="btn ghost small party-clear-splits" data-doc-action="clear-splits" data-document-id="${doc.id}" type="button">Bỏ các điểm tách</button>
-      </div>` : '';
+    const pageItemsHtml = doc.pages.map((page, index) => renderDocumentPageCard(page, index, doc)).join('');
 
     return `<article class="party-document ${state.selected?.documentId === doc.id ? 'is-selected' : ''}" data-document-id="${doc.id}">
-      <header class="party-document-head"><div><span class="party-doc-number">TÀI LIỆU ${docIndex + 1}</span><h3>${esc(type?.name_vi || 'Chưa chọn loại tài liệu')}</h3><p>${doc.pages.length} trang · ${type ? esc(type.filename_base) + '.pdf' : 'Chọn loại để sinh tên file'}</p></div>
-      <button class="btn ghost small party-remove-document" data-document-id="${doc.id}" type="button">Xóa tài liệu</button></header>
-      ${multiSplitActionHtml}
+      <header class="party-document-head">
+        <div>
+          <span class="party-doc-number">TÀI LIỆU ${docIndex + 1}</span>
+          <h3>${esc(type?.name_vi || 'Chưa chọn loại tài liệu')}</h3>
+          <p>${doc.pages.length} trang · ${type ? esc(type.filename_base) + '.pdf' : 'Chọn loại để sinh tên file'}</p>
+        </div>
+        <div class="party-head-actions">
+          <button class="btn primary small party-export-doc-btn" data-doc-export="${doc.id}" type="button" ${canExportThisDoc ? '' : 'disabled'}>Xuất tài liệu này</button>
+          <button class="btn ghost small party-remove-document" data-document-id="${doc.id}" type="button">Xóa tài liệu</button>
+        </div>
+      </header>
       <div class="party-page-rail" data-document-id="${doc.id}">${pageItemsHtml}</div>
       <div class="party-document-actions">
-        <button class="btn secondary small" data-doc-action="split" data-document-id="${doc.id}" type="button">Tách sau trang đang chọn</button>
+        <button class="btn secondary small" data-doc-action="add" data-document-id="${doc.id}" type="button">+ Thêm trang</button>
         <button class="btn secondary small" data-doc-action="merge-prev" data-document-id="${doc.id}" type="button">Ghép với trước</button>
         <button class="btn secondary small" data-doc-action="merge-next" data-document-id="${doc.id}" type="button">Ghép với sau</button>
-        <button class="btn secondary small" data-doc-action="add" data-document-id="${doc.id}" type="button">+ Thêm trang</button>
-        <select class="party-move-select" aria-label="Chuyển trang sang tài liệu khác" data-document-id="${doc.id}"><option value="">Chuyển trang…</option>${docs.filter(other => other.id !== doc.id).map(other => `<option value="${other.id}">→ Tài liệu ${docs.indexOf(other) + 1}</option>`).join('')}</select>
+        <select class="party-move-select" aria-label="Chuyển trang sang tài liệu khác" data-document-id="${doc.id}">
+          <option value="">Chuyển trang…</option>
+          ${docs.filter(other => other.id !== doc.id).map(other => `<option value="${other.id}">→ Tài liệu ${docs.indexOf(other) + 1}</option>`).join('')}
+        </select>
       </div>
-      <div class="party-taxonomy-field"><label for="party-type-${doc.id}">Loại tài liệu do cán bộ chọn</label><input id="party-type-${doc.id}" list="party-types-${doc.id}" value="${type ? `${type.id} — ${esc(type.name_vi)}` : ''}" placeholder="Tìm theo mã, tên hoặc không dấu…" data-type-input="${doc.id}" autocomplete="off"><div class="party-type-results" data-type-results="${doc.id}"></div><datalist id="party-types-${doc.id}">${taxonomy().map(item => `<option value="${item.id} — ${esc(item.name_vi)}"></option>`).join('')}</datalist><small>${type ? `Tên chuẩn: ${esc(type.filename_base)}.pdf` : 'Chưa gán taxonomy — chưa thể xuất'}</small></div>
+      <div class="party-taxonomy-field">
+        <label for="party-type-${doc.id}">Loại tài liệu do cán bộ chọn</label>
+        <input id="party-type-${doc.id}" list="party-types-${doc.id}" value="${type ? `${type.id} — ${esc(type.name_vi)}` : ''}" placeholder="Tìm theo mã, tên hoặc không dấu…" data-type-input="${doc.id}" autocomplete="off">
+        <div class="party-type-results" data-type-results="${doc.id}"></div>
+        <datalist id="party-types-${doc.id}">${taxonomy().map(item => `<option value="${item.id} — ${esc(item.name_vi)}"></option>`).join('')}</datalist>
+        <small>${type ? `Tên chuẩn: ${esc(type.filename_base)}.pdf` : 'Chưa gán taxonomy — chưa thể xuất'}</small>
+      </div>
     </article>`;
   }
 
-  function toggleSplitMark(pageId) {
-    if (state.markedSplits.has(pageId)) {
-      state.markedSplits.delete(pageId);
-    } else {
-      state.markedSplits.add(pageId);
-    }
-    render();
-  }
-
-  function applyDocumentSplits(documentId) {
-    const doc = state.documents.find(item => item.id === documentId);
-    if (!doc) return;
-    const markedIndices = [];
-    doc.pages.forEach((page, idx) => {
-      if (state.markedSplits.has(page.id) && idx < doc.pages.length - 1) {
-        markedIndices.push(idx);
-      }
+  function render() {
+    if (!state.active) return;
+    if (state.viewer.pageId && !pageById(state.viewer.pageId)) closePageViewer();
+    const docs = state.documents;
+    const railScroll = new Map();
+    els.documents.querySelectorAll('.party-page-rail[data-document-id]').forEach(rail => {
+      if (rail.scrollLeft) railScroll.set(rail.dataset.documentId, rail.scrollLeft);
     });
-    if (!markedIndices.length) return toast('Chưa có điểm tách nào được đánh dấu.');
+    const sourceRail = $('partySourceRail');
+    const sourceRailScroll = sourceRail ? sourceRail.scrollLeft : 0;
 
-    const chunks = [];
-    let start = 0;
-    for (const splitIdx of markedIndices) {
-      chunks.push(doc.pages.slice(start, splitIdx + 1));
-      start = splitIdx + 1;
+    els.empty.classList.toggle('hidden', state.sources.length > 0);
+    els.workspace.classList.toggle('hidden', state.sources.length === 0);
+
+    renderSelectionBar();
+
+    const unassignedCount = state.sources.filter(p => isPageAvailable(p.id)).length;
+    const sourcePoolHtml = state.sources.length ? `
+      <section class="party-source-pool" aria-label="Danh sách trang nguồn">
+        <div class="party-pool-head">
+          <div>
+            <span class="party-kicker">DANH SÁCH TRANG NGUỒN</span>
+            <h3>Trang nguồn (${state.sources.length} trang${unassignedCount < state.sources.length ? ` · ${unassignedCount} chưa xếp` : ''})</h3>
+            <p class="muted">Tích chọn các trang để tạo tài liệu mới. Trang đã gán có nhãn và không thể chọn lại.</p>
+          </div>
+        </div>
+        <div class="party-page-rail" id="partySourceRail">${state.sources.map((page, idx) => renderSourcePageCard(page, idx)).join('')}</div>
+      </section>` : '';
+
+    const docsHtml = docs.length
+      ? docs.map((doc, docIndex) => renderDocument(doc, docIndex)).join('')
+      : '<div class="party-empty-doc">Chưa có tài liệu nào. Hãy tích chọn các trang nguồn ở trên và bấm "Tạo tài liệu từ trang đã chọn".</div>';
+
+    const createdDocsHtml = `
+      <section class="party-created-docs" aria-label="Danh sách tài liệu đã tạo">
+        <div class="party-docs-head">
+          <div>
+            <span class="party-kicker">TÀI LIỆU ĐÃ TẠO</span>
+            <h3>Tài liệu (${docs.length})</h3>
+          </div>
+        </div>
+        ${docsHtml}
+      </section>`;
+
+    els.documents.innerHTML = sourcePoolHtml + createdDocsHtml;
+
+    if (sourceRailScroll && $('partySourceRail')) {
+      $('partySourceRail').scrollLeft = sourceRailScroll;
     }
-    chunks.push(doc.pages.slice(start));
-
-    doc.pages = chunks[0];
-    const newDocs = chunks.slice(1).map(chunk => ({
-      id: uid('doc'),
-      pages: chunk,
-      typeId: null
-    }));
-
-    const docIndex = state.documents.indexOf(doc);
-    state.documents.splice(docIndex + 1, 0, ...newDocs);
-
-    state.markedSplits.clear();
-    state.orderConfirmed = false;
-    render();
-    toast(`Đã chia thành ${chunks.length} tài liệu (${markedIndices.length} điểm tách).`);
+    if (railScroll.size) {
+      els.documents.querySelectorAll('.party-page-rail[data-document-id]').forEach(rail => {
+        const left = railScroll.get(rail.dataset.documentId);
+        if (left) rail.scrollLeft = left;
+      });
+    }
+    renderCoverage();
+    renderOrderPanel();
+    queuePdfPreviews();
   }
 
   function retryPreview(pageId) {
@@ -466,13 +617,13 @@
 
   function renderCoverage() {
     const total = state.sources.length;
-    const assigned = new Set(state.documents.flatMap(doc => doc.pages.map(sourcePageKey))).size;
+    const assigned = state.sources.filter(p => !isPageAvailable(p.id)).length;
     const percent = total ? Math.round(assigned / total * 100) : 0;
     els.coverageText.textContent = `${assigned}/${total} trang nguồn đã được xếp vào tài liệu`;
     els.coverageBar.style.width = `${percent}%`;
     const missing = total - assigned;
-    els.coverageWarning.textContent = missing ? `Còn ${missing} trang chưa được đưa vào tài liệu` : 'Đã phân đủ mọi trang nguồn.';
-    els.coverageWarning.classList.toggle('hidden', !missing);
+    els.coverageWarning.textContent = missing ? `Còn ${missing} trang chưa xử lý` : 'Đã phân đủ mọi trang nguồn.';
+    els.coverageWarning.classList.toggle('hidden', total === 0);
     els.coverageWarning.classList.toggle('is-ok', !!total && !missing);
   }
 
@@ -494,9 +645,17 @@
   }
 
   function updateExportState() {
-    const ready = state.documents.length > 0 && state.documents.every(doc => doc.pages.length && doc.typeId) && new Set(state.documents.flatMap(doc => doc.pages.map(sourcePageKey))).size === state.sources.length && (!sameTypeGroups().length || state.orderConfirmed);
+    const ready = state.documents.length > 0 &&
+      state.documents.every(doc => doc.pages.length > 0 && doc.typeId) &&
+      (!sameTypeGroups().length || state.orderConfirmed);
     els.exportAll.disabled = !ready || state.busy;
-    els.exportStatus.textContent = ready ? 'Sẵn sàng xuất PDF theo tên canonical.' : 'Cần phân đủ trang, chọn loại và xác nhận thứ tự nếu có loại trùng.';
+    if (!state.documents.length) {
+      els.exportStatus.textContent = 'Chưa có tài liệu nào để xuất.';
+    } else if (ready) {
+      els.exportStatus.textContent = 'Sẵn sàng xuất PDF theo tên canonical.';
+    } else {
+      els.exportStatus.textContent = 'Cần chọn loại tài liệu cho mọi tài liệu đã tạo.';
+    }
   }
 
   function showTypeResults(input) {
@@ -519,40 +678,49 @@
     doc.typeId = type?.id || null; state.orderConfirmed = false; render();
   }
 
-  function ensureDocument() { if (!state.documents.length) state.documents.push({ id: uid('doc'), pages: [], typeId: null }); return state.documents[0]; }
-  function createDocument() { const doc = { id: uid('doc'), pages: [], typeId: null }; state.documents.push(doc); state.nextDocument += 1; state.selected = { documentId: doc.id, pageId: null }; render(); }
-
   function removeDocument(documentId) {
-    const index = state.documents.findIndex(doc => doc.id === documentId); if (index < 0) return;
-    const [doc] = state.documents.splice(index, 1);
-    doc.pages.forEach(p => state.markedSplits.delete(p.id));
-    const fallback = ensureDocument(); fallback.pages.push(...doc.pages); state.orderConfirmed = false; render();
+    const index = state.documents.findIndex(doc => doc.id === documentId);
+    if (index < 0) return;
+    state.documents.splice(index, 1);
+    state.orderConfirmed = false;
+    render();
+    toast(`Đã xóa tài liệu. Các trang đã được trả về danh sách trang nguồn.`);
   }
 
   function handleDocumentAction(action, documentId) {
-    const doc = state.documents.find(item => item.id === documentId); if (!doc) return;
+    const doc = state.documents.find(item => item.id === documentId);
+    if (!doc) return;
     if (action === 'add') { state.pendingAction = { action: 'append', documentId }; els.fileInput.click(); return; }
-    if (action === 'apply-splits') { applyDocumentSplits(documentId); return; }
-    if (action === 'clear-splits') { doc.pages.forEach(p => state.markedSplits.delete(p.id)); render(); return; }
-    if (action === 'split') {
-      const index = doc.pages.findIndex(page => page.id === state.selected?.pageId);
-      if (index < 0 || index === doc.pages.length - 1) return toast('Chọn một trang ở giữa tài liệu để tách.');
-      const next = { id: uid('doc'), pages: doc.pages.splice(index + 1), typeId: null };
-      state.documents.splice(state.documents.indexOf(doc) + 1, 0, next);
-      state.markedSplits.delete(doc.pages[index]?.id);
+    const index = state.documents.indexOf(doc);
+    if (action === 'merge-prev' && index > 0) {
+      state.documents[index - 1].pages.push(...doc.pages);
+      state.documents.splice(index, 1);
       state.orderConfirmed = false;
       render();
-      return;
     }
-    const index = state.documents.indexOf(doc);
-    if (action === 'merge-prev' && index > 0) { state.documents[index - 1].pages.push(...doc.pages); state.documents.splice(index, 1); state.orderConfirmed = false; render(); }
-    if (action === 'merge-next' && index < state.documents.length - 1) { state.documents[index].pages.push(...state.documents[index + 1].pages); state.documents.splice(index + 1, 1); state.orderConfirmed = false; render(); }
+    if (action === 'merge-next' && index < state.documents.length - 1) {
+      state.documents[index].pages.push(...state.documents[index + 1].pages);
+      state.documents.splice(index + 1, 1);
+      state.orderConfirmed = false;
+      render();
+    }
   }
 
   function handlePageAction(action, pageId) {
-    const found = pageById(pageId); if (!found) return;
-    state.selected = { documentId: found.doc.id, pageId };
-    if (action === 'up' || action === 'down') { const index = found.doc.pages.indexOf(found.page), target = action === 'up' ? index - 1 : index + 1; if (target >= 0 && target < found.doc.pages.length) [found.doc.pages[index], found.doc.pages[target]] = [found.doc.pages[target], found.doc.pages[index]]; render(); }
+    const found = pageById(pageId);
+    if (!found) return;
+    if (found.doc) {
+      state.selected = { documentId: found.doc.id, pageId };
+    }
+    if (action === 'up' || action === 'down') {
+      if (!found.doc) return;
+      const index = found.doc.pages.indexOf(found.page);
+      const target = action === 'up' ? index - 1 : index + 1;
+      if (target >= 0 && target < found.doc.pages.length) {
+        [found.doc.pages[index], found.doc.pages[target]] = [found.doc.pages[target], found.doc.pages[index]];
+      }
+      render();
+    }
     if (action === 'rotate') {
       found.page.rotation = (found.page.rotation + 90) % 360;
       if (found.page.kind === 'pdf') {
@@ -563,42 +731,63 @@
       render();
     }
     if (action === 'remove') {
-      state.markedSplits.delete(pageId);
-      found.doc.pages.splice(found.doc.pages.indexOf(found.page), 1);
-      render();
+      if (!found.doc) return;
+      const index = found.doc.pages.indexOf(found.page);
+      if (index >= 0) {
+        found.doc.pages.splice(index, 1);
+        if (found.doc.pages.length === 0) {
+          state.documents.splice(state.documents.indexOf(found.doc), 1);
+        }
+        render();
+        toast('Đã gỡ trang khỏi tài liệu.');
+      }
     }
-    if (action === 'replace' || action === 'insert') { setAction(action, found.doc.id, pageId); }
+    if (action === 'replace' || action === 'insert') {
+      if (found.doc) setAction(action, found.doc.id, pageId);
+    }
   }
 
   function movePage(pageId, documentId) {
     const found = pageById(pageId), target = state.documents.find(doc => doc.id === documentId);
-    if (!found || !target || found.doc === target) return;
-    state.markedSplits.delete(pageId);
+    if (!found || !found.doc || !target || found.doc === target) return;
     found.doc.pages.splice(found.doc.pages.indexOf(found.page), 1);
+    if (found.doc.pages.length === 0) {
+      state.documents.splice(state.documents.indexOf(found.doc), 1);
+    }
     target.pages.push(found.page);
     state.selected = { documentId: target.id, pageId };
     state.orderConfirmed = false;
     render();
   }
-  function reorderPage(fromId, toId) { const from = pageById(fromId), to = pageById(toId); if (!from || !to || from.doc !== to.doc || fromId === toId) return; const list = from.doc.pages, a = list.indexOf(from.page), b = list.indexOf(to.page); list.splice(a, 1); list.splice(b, 0, from.page); state.selected = { documentId: from.doc.id, pageId: fromId }; render(); }
+  function reorderPage(fromId, toId) { const from = pageById(fromId), to = pageById(toId); if (!from || !to || !from.doc || !to.doc || from.doc !== to.doc || fromId === toId) return; const list = from.doc.pages, a = list.indexOf(from.page), b = list.indexOf(to.page); list.splice(a, 1); list.splice(b, 0, from.page); state.selected = { documentId: from.doc.id, pageId: fromId }; render(); }
   function reorderDocuments(documentId, direction) { const index = state.documents.findIndex(doc => doc.id === documentId), target = direction === 'up' ? index - 1 : index + 1; if (index < 0 || target < 0 || target >= state.documents.length) return; [state.documents[index], state.documents[target]] = [state.documents[target], state.documents[index]]; state.orderConfirmed = false; render(); }
 
   function addImages(files, target) {
     const pages = Array.from(files || []).filter(isImage).map(createImagePage);
     if (!pages.length) return toast('Hãy chọn ảnh JPG, PNG hoặc WEBP.');
     state.sources.push(...pages);
-    const doc = target ? state.documents.find(item => item.id === target) : ensureDocument();
-    doc.pages.push(...pages);
-    state.selected = { documentId: doc.id, pageId: pages[0].id };
+    if (target) {
+      const doc = state.documents.find(item => item.id === target);
+      if (doc) doc.pages.push(...pages);
+    }
+    state.selected = { documentId: target || null, pageId: pages[0].id };
     render();
-
+    toast(`Đã thêm ${pages.length} ảnh.`);
   }
 
   async function addPdf(file, target) {
     if (!isPdf(file)) return toast('Hãy chọn một file PDF.');
     try {
       const source = PartyPdf.sourceFromBuffer(await file.arrayBuffer(), file.name || 'PDF');
-      const pages = createPdfPages(file, source); state.sources.push(...pages); const doc = target ? state.documents.find(item => item.id === target) : ensureDocument(); doc.pages.push(...pages); state.selected = { documentId: doc.id, pageId: pages[0].id }; render(); toast(`Đã nhập ${source.pageCount} trang PDF. Thumbnail giữ nguyên trang gốc khi xuất.`);
+      const pages = createPdfPages(file, source);
+      state.sources.push(...pages);
+      if (target) {
+        const doc = state.documents.find(item => item.id === target);
+        if (doc) doc.pages.push(...pages);
+      }
+      state.selected = { documentId: target || null, pageId: pages[0].id };
+      render();
+      toast(`Đã nhập ${source.pageCount} trang PDF. Tích chọn các trang để tạo tài liệu.`);
     } catch (error) { toast(`Không nhập được PDF: ${error.message || error}`); }
   }
 
@@ -616,7 +805,7 @@
           const list = state.documents.find(doc => doc.id === action.documentId)?.pages;
           if (!list) return;
           state.sources.push(...pages);
-          const index = found ? list.findIndex(item => item.id === found.page.id) : list.length;
+          const index = found && found.doc ? list.findIndex(item => item.id === found.page.id) : list.length;
           if (action.action === 'replace') list.splice(index, 1, ...pages);
           else list.splice(action.action === 'insert' ? index + 1 : index, 0, ...pages);
           state.selected = { documentId: action.documentId, pageId: pages[0].id };
@@ -628,7 +817,7 @@
       if (!isImage(file)) return toast('Hãy chọn ảnh hoặc PDF.');
       const page = createImagePage(file); state.sources.push(page);
       const list = state.documents.find(doc => doc.id === action.documentId)?.pages; if (!list) return;
-      const index = found ? list.findIndex(item => item.id === found.page.id) : list.length;
+      const index = found && found.doc ? list.findIndex(item => item.id === found.page.id) : list.length;
       if (action.action === 'replace') { const old = list[index]; if (old?.kind === 'image') URL.revokeObjectURL(old.url); list[index] = page; }
       else list.splice(action.action === 'insert' ? index + 1 : index, 0, page);
       state.selected = { documentId: action.documentId, pageId: page.id }; render(); return;
@@ -638,6 +827,7 @@
     for (const file of selectedFiles.filter(isPdf)) await addPdf(file, null);
     if (!images.length && !selectedFiles.some(isPdf)) toast('Hãy chọn ảnh JPG, PNG, WEBP hoặc PDF.');
   }
+
   async function exportDocument(doc, sequence, totalForType) {
     const type = taxonomy().find(item => item.id === doc.typeId); if (!type) throw new Error('Tài liệu chưa chọn loại.');
     const name = `${type.filename_base}${totalForType > 1 ? `.${sequence}` : ''}.pdf`;
@@ -651,25 +841,76 @@
       const canvas = await core.renderPageCanvas(page, 2200); const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Không tạo được trang ảnh.')), 'image/jpeg', .9));
       mixedItems.push({ kind: 'image', item: { bytes: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height, pageMode: 'a4', margin: false } });
     }
-    // PartyPdf preserves source PDF page objects in their operator-selected
-    // order; scanned images are encoded only for newly added image pages.
     return { name, blob: PartyPdf.buildMixedPdf(mixedItems) };
   }
+
+  async function exportSingleDocument(documentId) {
+    const doc = state.documents.find(item => item.id === documentId);
+    if (!doc || !doc.pages.length || !doc.typeId || state.busy) return;
+    state.busy = true;
+    updateExportState();
+    render();
+    try {
+      const sameTypes = state.documents.filter(item => item.typeId === doc.typeId);
+      const total = sameTypes.length;
+      const sequence = total > 1 ? sameTypes.indexOf(doc) + 1 : 1;
+      const unassigned = state.sources.filter(p => isPageAvailable(p.id)).length;
+      if (unassigned > 0) {
+        toast(`Đang xuất ${doc.pages.length}/${state.sources.length} trang nguồn. ${unassigned} trang còn lại chưa xử lý và vẫn được giữ nguyên trong phiên.`);
+      }
+      const result = await exportDocument(doc, sequence, total);
+      const url = URL.createObjectURL(result.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = result.name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast(`Đã xuất tài liệu: ${result.name}`);
+    } catch (error) {
+      toast(`Không xuất được: ${error.message || error}`);
+    } finally {
+      state.busy = false;
+      updateExportState();
+      render();
+    }
+  }
+
   async function exportAll() {
     if (els.exportAll.disabled || state.busy) return; state.busy = true; updateExportState();
     try {
+      const unassigned = state.sources.filter(p => isPageAvailable(p.id)).length;
+      if (unassigned > 0) {
+        toast(`Đang xuất ${state.sources.length - unassigned}/${state.sources.length} trang nguồn. ${unassigned} trang chưa xử lý được giữ nguyên.`);
+      }
       const groups = sameTypeGroups(); const counts = new Map(groups.map(([id, docs]) => [id, docs.length]));
-      for (let i = 0; i < state.documents.length; i++) { els.exportStatus.textContent = `Đang dựng tài liệu ${i + 1}/${state.documents.length}…`; const doc = state.documents[i]; const total = counts.get(doc.typeId) || 1; const sequence = total > 1 ? state.documents.filter(item => item.typeId === doc.typeId).indexOf(doc) + 1 : 1; const result = await exportDocument(doc, sequence, total); const url = URL.createObjectURL(result.blob); const link = document.createElement('a'); link.href = url; link.download = result.name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 5000); }
+      for (let i = 0; i < state.documents.length; i++) {
+        els.exportStatus.textContent = `Đang dựng tài liệu ${i + 1}/${state.documents.length}…`;
+        const doc = state.documents[i];
+        const total = counts.get(doc.typeId) || 1;
+        const sequence = total > 1 ? state.documents.filter(item => item.typeId === doc.typeId).indexOf(doc) + 1 : 1;
+        const result = await exportDocument(doc, sequence, total);
+        const url = URL.createObjectURL(result.blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = result.name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }
       toast(`Đã xuất ${state.documents.length} tài liệu.`);
-    } catch (error) { els.exportStatus.textContent = `Không xuất được: ${error.message || error}`; toast('Không xuất được PDF.'); }
-    finally { state.busy = false; updateExportState(); }
+    } catch (error) {
+      els.exportStatus.textContent = `Không xuất được: ${error.message || error}`;
+      toast('Không xuất được PDF.');
+    } finally {
+      state.busy = false;
+      updateExportState();
+    }
   }
 
   function activate() { state.active = true; els.empty.classList.remove('hidden'); render(); }
   function deactivate() {
     state.active = false; state.previewGeneration += 1; disconnectPdfPreviewObserver();
     closePageViewer();
-    state.markedSplits.clear();
+    state.selectedPages.clear();
     state.cachedThumbPages = [];
     const releasedSources = new Set();
     [...state.sources, ...state.documents.flatMap(doc => doc.pages)].forEach(page => {
@@ -685,6 +926,7 @@
     state.sources = []; state.documents = []; state.selected = null; state.orderConfirmed = false; state.pendingAction = null;
     els.documents.innerHTML = '';
     els.empty.classList.add('hidden'); els.workspace.classList.add('hidden');
+    if (els.selectionBar) els.selectionBar.classList.add('hidden');
   }
   function hasWork() { return state.sources.length > 0; }
 
@@ -693,7 +935,7 @@
     if (thumbBtn) {
       const found = pageById(thumbBtn.dataset.pageId);
       if (found) {
-        state.selected = { documentId: found.doc.id, pageId: found.page.id };
+        state.selected = { documentId: found.doc?.id || null, pageId: found.page.id };
         render();
         openPageViewer(found.page.id);
       }
@@ -704,11 +946,6 @@
       retryPreview(retryBtn.dataset.pageRetry);
       return;
     }
-    const splitBtn = event.target.closest('[data-split-toggle]');
-    if (splitBtn) {
-      toggleSplitMark(splitBtn.dataset.splitToggle);
-      return;
-    }
     const pageActionBtn = event.target.closest('[data-page-action]');
     if (pageActionBtn) {
       handlePageAction(pageActionBtn.dataset.pageAction, pageActionBtn.dataset.pageId);
@@ -717,6 +954,11 @@
     const docActionBtn = event.target.closest('[data-doc-action]');
     if (docActionBtn) {
       handleDocumentAction(docActionBtn.dataset.docAction, docActionBtn.dataset.documentId);
+      return;
+    }
+    const exportDocBtn = event.target.closest('[data-doc-export]');
+    if (exportDocBtn) {
+      exportSingleDocument(exportDocBtn.dataset.docExport);
       return;
     }
     const removeDocBtn = event.target.closest('.party-remove-document');
@@ -736,10 +978,22 @@
   });
 
   els.documents.addEventListener('change', event => {
-    const moveSelect = event.target.closest('.party-move-select');
-    if (moveSelect && moveSelect.value && state.selected?.pageId) {
-      movePage(state.selected.pageId, moveSelect.value);
+    const checkInput = event.target.closest('[data-page-select]');
+    if (checkInput) {
+      togglePageSelection(checkInput.dataset.pageSelect);
       return;
+    }
+    const moveSelect = event.target.closest('.party-move-select');
+    if (moveSelect && moveSelect.value) {
+      const docId = moveSelect.dataset.documentId;
+      const doc = state.documents.find(d => d.id === docId);
+      const pageToMove = (state.selected?.documentId === docId && state.selected?.pageId && doc?.pages.some(p => p.id === state.selected.pageId))
+        ? state.selected.pageId
+        : doc?.pages[0]?.id;
+      if (pageToMove) {
+        movePage(pageToMove, moveSelect.value);
+        return;
+      }
     }
     const typeInput = event.target.closest('[data-type-input]');
     if (typeInput) {
@@ -788,12 +1042,26 @@
     }
   });
 
+  els.createDocBtn?.addEventListener('click', createDocumentFromSelection);
+  els.selectAllBtn?.addEventListener('click', selectAllAvailablePages);
+  els.clearSelectionBtn?.addEventListener('click', clearPageSelection);
+  els.rangeBtn?.addEventListener('click', () => {
+    selectPageRange(els.rangeInput?.value);
+    if (els.rangeInput) els.rangeInput.value = '';
+  });
+  els.rangeInput?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      selectPageRange(els.rangeInput.value);
+      els.rangeInput.value = '';
+    }
+  });
+
   els.cameraBtn.addEventListener('click', () => els.cameraInput.click());
   els.chooseBtn.addEventListener('click', () => els.fileInput.click());
   els.pdfBtn.addEventListener('click', () => els.pdfInput.click());
   els.addBtn.addEventListener('click', () => els.fileInput.click());
   els.addPdfBtn.addEventListener('click', () => els.pdfInput.click());
-  els.newDocumentBtn.addEventListener('click', createDocument);
   els.fileInput.addEventListener('change', event => { if (state.active) handleFileSelection(event.target.files); event.target.value = ''; });
   els.cameraInput.addEventListener('change', event => { if (state.active) addImages(event.target.files, null); event.target.value = ''; });
   els.pdfInput.addEventListener('change', async event => { if (state.active) await addPdf(event.target.files[0], null); event.target.value = ''; });
@@ -820,5 +1088,8 @@
     stepPageViewer(event.key === 'ArrowLeft' ? -1 : 1);
   });
 
-  window.VigilLensParty = { activate, deactivate, hasWork };
+  window.VigilLensParty = {
+    activate, deactivate, hasWork,
+    togglePageSelection, clearPageSelection, selectAllAvailablePages, selectPageRange, createDocumentFromSelection
+  };
 })();

@@ -64,62 +64,6 @@ function boundaryFixture({ nulHeader = false, streamFalsePositive = false, malfo
   const kids = (mixedText.match(/\/Kids \[([^\]]+)\]/) || [])[1].match(/\d+ 0 R/g).map(value => Number(value.match(/\d+/)[0]));
   const mixedPageBodies = kids.map(id => (mixedText.match(new RegExp(`${id} 0 obj\\n([\\s\\S]*?)\\nendobj`)) || [])[1] || '');
   check('hybrid output keeps operator page order', mixedPageBodies.length === 3 && !mixedPageBodies[0].includes('/XObject') && mixedPageBodies[1].includes('/XObject') && !mixedPageBodies[2].includes('/XObject'));
-  // Multi-split verification on 12-page fixture
-  const source12 = PartyPdf.sourceFromBuffer(fixture(12), 'fixture-12.pdf');
-  check('12-page fixture has 12 pages', source12.pageCount === 12);
-  const pages12 = Array.from({ length: 12 }, (_, i) => ({
-    id: `page-${i + 1}`,
-    kind: 'pdf',
-    source: source12,
-    sourcePage: i,
-    sourceTotalPages: 12
-  }));
-
-  // Helper simulating multi-split logic
-  function splitDocByMarked(pages, markedIds) {
-    const markedIndices = [];
-    pages.forEach((p, idx) => {
-      if (markedIds.has(p.id) && idx < pages.length - 1) markedIndices.push(idx);
-    });
-    const chunks = [];
-    let start = 0;
-    for (const splitIdx of markedIndices) {
-      chunks.push(pages.slice(start, splitIdx + 1));
-      start = splitIdx + 1;
-    }
-    chunks.push(pages.slice(start));
-    return chunks;
-  }
-
-  // Multi-split after page 3, page 6, page 9
-  const marked = new Set(['page-3', 'page-6', 'page-9']);
-  const chunks4 = splitDocByMarked(pages12, marked);
-  check('Multi-split at 3, 6, 9 produces exactly 4 documents', chunks4.length === 4);
-  check('Doc 1 has pages 1..3', chunks4[0].length === 3 && chunks4[0].map(p => p.sourcePage).join(',') === '0,1,2');
-  check('Doc 2 has pages 4..6', chunks4[1].length === 3 && chunks4[1].map(p => p.sourcePage).join(',') === '3,4,5');
-  check('Doc 3 has pages 7..9', chunks4[2].length === 3 && chunks4[2].map(p => p.sourcePage).join(',') === '6,7,8');
-  check('Doc 4 has pages 10..12', chunks4[3].length === 3 && chunks4[3].map(p => p.sourcePage).join(',') === '9,10,11');
-  const allSplitPages = chunks4.flat();
-  check('Multi-split preserves total 12 pages without duplication or omission', allSplitPages.length === 12 && new Set(allSplitPages.map(p => p.sourcePage)).size === 12);
-
-  // Single split after page 4
-  const singleMarked = new Set(['page-4']);
-  const chunks2 = splitDocByMarked(pages12, singleMarked);
-  check('Single split after page 4 produces 2 documents [4, 8]', chunks2.length === 2 && chunks2[0].length === 4 && chunks2[1].length === 8);
-
-  // Clear splits
-  const emptyMarked = new Set();
-  const chunks1 = splitDocByMarked(pages12, emptyMarked);
-  check('Empty marked splits leaves 1 document with 12 pages', chunks1.length === 1 && chunks1[0].length === 12);
-
-  // Export each multi-split chunk
-  for (let c = 0; c < chunks4.length; c++) {
-    const chunkRefs = chunks4[c].map(p => p.source.page(p.sourcePage));
-    const chunkPdf = await PartyPdf.buildPdf(chunkRefs).arrayBuffer();
-    const chunkText = new TextDecoder('iso-8859-1').decode(chunkPdf);
-    check(`Export chunk ${c + 1} has 3 page objects`, (chunkText.match(/\/Type \/Page\b/g) || []).length === 3);
-  }
-
   const taxonomy = JSON.parse(fs.readFileSync(require('path').join(root, 'assets/party/document_types.json'), 'utf8'));
   const ids = taxonomy.document_types.map(item => item.id);
   check('taxonomy has exactly 104 types', taxonomy.document_types.length === 104);
@@ -127,6 +71,105 @@ function boundaryFixture({ nulHeader = false, streamFalsePositive = false, malfo
   check('taxonomy search by code 05', taxonomy.document_types.find(item => item.id === '05').name_vi.includes('kết nạp'));
   check('taxonomy search without Vietnamese accents', taxonomy.document_types.some(item => item.name_vi.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('ket nap')));
   check('taxonomy filename is canonical for 05', taxonomy.document_types.find(item => item.id === '05').filename_base === '05.Quyet_dinh_ket_nap_dang_vien');
+
+  // --- Tests A-I: Selection & Document Creation & Partial Export ---
+  const source80 = PartyPdf.sourceFromBuffer(fixture(80), 'fixture-80.pdf');
+  check('80-page fixture has 80 pages', source80.pageCount === 80);
+  const sources80 = Array.from({ length: 80 }, (_, i) => ({
+    id: `src-page-${i + 1}`,
+    kind: 'pdf',
+    source: source80,
+    sourcePage: i,
+    sourceTotalPages: 80
+  }));
+
+  const simState = {
+    sources: sources80,
+    documents: [],
+    selectedPages: new Set()
+  };
+
+  function simFindDocumentByPageId(id) {
+    return simState.documents.find(doc => doc.pages.some(p => p.id === id)) || null;
+  }
+  function simIsPageAvailable(id) {
+    return !simFindDocumentByPageId(id);
+  }
+  function simCreateDocumentFromSelection() {
+    const pagesToAssign = simState.sources.filter(p => simState.selectedPages.has(p.id) && simIsPageAvailable(p.id));
+    if (!pagesToAssign.length) return null;
+    const newDoc = { id: `doc-${simState.documents.length + 1}`, pages: pagesToAssign, typeId: null };
+    simState.documents.push(newDoc);
+    simState.selectedPages.clear();
+    return newDoc;
+  }
+
+  // Test A: Tích chọn 2 trang trên 80 trang nguồn -> tạo document đúng 2 trang đó, source pool còn 78 trang chưa gán
+  simState.selectedPages.add('src-page-1');
+  simState.selectedPages.add('src-page-2');
+  const docA = simCreateDocumentFromSelection();
+  check('Test A: Doc created with 2 pages', docA && docA.pages.length === 2 && docA.pages[0].id === 'src-page-1' && docA.pages[1].id === 'src-page-2');
+  const unassignedA = simState.sources.filter(p => simIsPageAvailable(p.id)).length;
+  check('Test A: 78 pages remain unassigned in source pool', unassignedA === 78);
+
+  // Test B: Click lộn xộn (19 -> 17 -> 18) -> document mới giữ thứ tự trang nguồn tăng dần (17 -> 18 -> 19)
+  simState.selectedPages.add('src-page-19');
+  simState.selectedPages.add('src-page-17');
+  simState.selectedPages.add('src-page-18');
+  const docB = simCreateDocumentFromSelection();
+  check('Test B: Doc created with 3 pages in ascending source order', docB && docB.pages.map(p => p.id).join(',') === 'src-page-17,src-page-18,src-page-19');
+
+  // Test C: Chọn các trang không liền nhau (22, 25, 29) -> tạo document đúng [22, 25, 29], không lẫn trang trung gian
+  simState.selectedPages.add('src-page-22');
+  simState.selectedPages.add('src-page-25');
+  simState.selectedPages.add('src-page-29');
+  const docC = simCreateDocumentFromSelection();
+  check('Test C: Non-contiguous pages correctly preserved [22, 25, 29]', docC && docC.pages.map(p => p.id).join(',') === 'src-page-22,src-page-25,src-page-29');
+
+  // Test D: Trang đã thuộc document không thể bị chọn lại vào document khác
+  simState.selectedPages.add('src-page-17'); // already in docB
+  simState.selectedPages.add('src-page-30'); // available
+  const docD = simCreateDocumentFromSelection();
+  check('Test D: Assigned page 17 is excluded, only page 30 assigned to new doc', docD && docD.pages.length === 1 && docD.pages[0].id === 'src-page-30');
+  check('Test D: Page 17 is still in docB', docB.pages.some(p => p.id === 'src-page-17'));
+
+  // Test E: Partial export 1 document (2 trang trên 80 trang) sinh PDF đúng 2 trang, không cần coverage = 100%
+  const exportRefs = docA.pages.map(p => p.source.page(p.sourcePage));
+  const exportedPdfBuf = await PartyPdf.buildPdf(exportRefs).arrayBuffer();
+  const exportedPdfText = new TextDecoder('iso-8859-1').decode(exportedPdfBuf);
+  check('Test E: Partial export produces valid PDF with exactly 2 page objects', (exportedPdfText.match(/\/Type \/Page\b/g) || []).length === 2);
+  check('Test E: 80 total source pages remained safe and unchanged', simState.sources.length === 80);
+
+  // Test F: Đặt taxonomy hợp lệ (01..104) -> sinh đúng tên file canonical (05.Quyet_dinh_ket_nap_dang_vien.pdf)
+  docA.typeId = '05';
+  const taxType = taxonomy.document_types.find(t => t.id === docA.typeId);
+  check('Test F: Taxonomy 05 matches canonical filename', taxType && taxType.filename_base === '05.Quyet_dinh_ket_nap_dang_vien');
+  const canonicalNameA = `${taxType.filename_base}.pdf`;
+  check('Test F: Canonical name is 05.Quyet_dinh_ket_nap_dang_vien.pdf', canonicalNameA === '05.Quyet_dinh_ket_nap_dang_vien.pdf');
+
+  // Test G: Trùng loại tài liệu -> sinh đúng suffix .1, .2 theo sequence
+  docB.typeId = '05';
+  const sameDocs = simState.documents.filter(d => d.typeId === '05');
+  check('Test G: 2 documents share type 05', sameDocs.length === 2);
+  const name1 = `${taxType.filename_base}.${sameDocs.indexOf(docA) + 1}.pdf`;
+  const name2 = `${taxType.filename_base}.${sameDocs.indexOf(docB) + 1}.pdf`;
+  check('Test G: First duplicate has suffix .1', name1 === '05.Quyet_dinh_ket_nap_dang_vien.1.pdf');
+  check('Test G: Second duplicate has suffix .2', name2 === '05.Quyet_dinh_ket_nap_dang_vien.2.pdf');
+
+  // Test H: Xóa document -> các trang lập tức quay lại source pool ở trạng thái unassigned, không mất trang
+  const beforeDeleteUnassigned = simState.sources.filter(p => simIsPageAvailable(p.id)).length;
+  const docCToRemovePages = [...docC.pages];
+  const docCIdx = simState.documents.indexOf(docC);
+  simState.documents.splice(docCIdx, 1);
+  const afterDeleteUnassigned = simState.sources.filter(p => simIsPageAvailable(p.id)).length;
+  check('Test H: Deleting docC frees all its 3 pages back to source pool', afterDeleteUnassigned === beforeDeleteUnassigned + 3);
+  check('Test H: All pages of docC are now available', docCToRemovePages.every(p => simIsPageAvailable(p.id)));
+  check('Test H: Total sources remains 80 with 0 data loss', simState.sources.length === 80);
+
+  // Test I: Không có document rỗng được sinh ra khi selectedPages rỗng
+  simState.selectedPages.clear();
+  const emptyDoc = simCreateDocumentFromSelection();
+  check('Test I: Attempting to create document from empty selection returns null / no-op', emptyDoc === null);
 
   const crlfSource = PartyPdf.sourceFromBuffer(fixture(1), 'crlf-boundary.pdf');
   check('object header after CR/LF remains supported', crlfSource.pageCount === 1);

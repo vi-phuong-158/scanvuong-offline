@@ -16,6 +16,28 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-02] Chuyển đổi Party Document Mode: Chọn trang → Tạo tài liệu → Xuất riêng lẻ
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Bỏ hoàn toàn cơ chế đa điểm tách ("Tách tại đây"):** Xóa toàn bộ logic, state (`markedSplits`), UI và CSS phục vụ multi-split dividers (`Tách tại đây`, `Áp dụng N điểm tách`, `Bỏ các điểm tách`).
+  2. **Áp dụng mô hình Chọn trang → Tạo tài liệu:**
+     - Xây dựng vùng Danh sách trang nguồn (`.party-source-pool`) hiển thị toàn bộ trang từ PDF/ảnh đưa vào.
+     - Trang bị kèm checkbox với diện tích chạm $\ge 44\text{px}$, phản hồi tức thì và visual rõ ràng khi chọn (`.is-checked`).
+     - Thanh thao tác chọn (`#partySelectionBar`): Đếm số trang đã chọn, nút **Tạo tài liệu từ trang đã chọn**, nút **Chọn tất cả**, nút **Bỏ chọn**, và bộ chọn khoảng trang linh hoạt (`#partyRangeInput`, hỗ trợ cú pháp `1-3`, `17-22`, `17,19`).
+  3. **Bảo toàn thứ tự trang nguồn tăng dần:** Khi tạo tài liệu mới, hệ thống tự động lọc trang nguồn theo đúng thứ tự gốc tăng dần, bất kể thứ tự người dùng click chọn (ví dụ click `19 -> 17 -> 18` vẫn tạo tài liệu có thứ tự `17 -> 18 -> 19`). Hỗ trợ chọn trang không liền nhau.
+  4. **Chống trùng lặp ngoài ý muốn:** Trang đã được xếp vào tài liệu sẽ có huy hiệu `Tài liệu N` và không thể bị tích chọn trùng lặp vào tài liệu khác.
+  5. **Xuất riêng lẻ từng tài liệu (Partial Export):** Mỗi thẻ tài liệu có nút **Xuất tài liệu này**, kích hoạt ngay khi tài liệu có $\ge 1$ trang và đã chọn taxonomy hợp lệ (01–104). Không bắt buộc coverage toàn bộ PDF = 100%. Thông báo xuất hiển thị rõ số trang đang xuất và số trang còn lại trong phiên.
+  6. **Tỷ lệ phủ là thông tin, không phải rào cản:** Hiển thị `N/M trang nguồn đã được xếp vào tài liệu` mang tính chất kiểm toán, cảnh báo chỉ hiện như gợi ý.
+  7. **Loại bỏ nút "+ Tài liệu"** để tránh tạo document rỗng; xóa tài liệu hoặc gỡ trang tự động trả trang về trạng thái chưa gán an toàn trong pool.
+  8. **Cập nhật trợ giúp & bộ kiểm thử:** Đồng bộ nội dung trong modal Trợ giúp (`index.html`), cập nhật suite test hồi quy `scripts/regression_party_mode.cjs` (36/36 PASS), cập nhật kịch bản browser acceptance headless Chrome CDP trong `scripts/acceptance_party_ui.cjs`.
+- **File đã sửa:** `index.html`, `styles.css`, `party-mode.js`, `scripts/regression_party_mode.cjs`, `scripts/acceptance_party_ui.cjs`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Đáp ứng yêu cầu DEV TASK: Đơn giản hóa Party Document Mode, cho phép cán bộ chọn trang, tạo tài liệu độc lập và xuất ngay từng tài liệu mà không cần duyệt và phân loại toàn bộ file scan lớn.
+- **Kiểm tra:**
+  - `node --check app.js`, `node --check party-mode.js`, `node --check scripts/regression_party_mode.cjs`, `node --check scripts/acceptance_party_ui.cjs` -> Cú pháp hợp lệ 100%.
+  - `python scripts/validate_static.py` -> 10/10 PASS (zero external CDN, zero remote fonts, zero emoji UI).
+  - `node scripts/regression_party_mode.cjs` -> 36/36 PASS (A–I: 80-page fixture, out-of-order selection order test, non-contiguous selection, duplication prevention, partial export, canonical taxonomy naming, duplicate type suffixes .1/.2, delete document recovery, and empty doc prevention).
+  - `node scripts/regression_export_busy.js` + `node scripts/regression_scan_id.js` -> PASS 29/29 & 52/52 checks.
+
 ## [2026-09-02] Thay logo và icon Scan tài liệu Đảng bằng vector-bua-liem-5.png
 - **Agent:** Codex
 - **Thay đổi:**
