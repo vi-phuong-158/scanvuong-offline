@@ -223,8 +223,14 @@
   function inflateSync(data, maxBytes = MAX_DECODED_BYTES) {
     if (typeof process !== 'undefined' && typeof require === 'function') {
       try {
-        return new Uint8Array(require('zlib').inflateSync(data));
-      } catch (_) {}
+        const res = require('zlib').inflateSync(data, { maxOutputLength: maxBytes });
+        if (res.length > maxBytes) throw new Error('Kích thước giải nén vượt quá giới hạn tối đa.');
+        return new Uint8Array(res);
+      } catch (zlibErr) {
+        if (zlibErr?.code === 'ERR_BUFFER_TOO_LARGE' || /maxOutputLength/i.test(zlibErr?.message || '')) {
+          throw new Error('Kích thước giải nén vượt quá giới hạn tối đa.');
+        }
+      }
     }
     let pos = 0;
     if (data.length >= 2 && (data[0] & 0x0f) === 8 && ((data[0] << 8) | data[1]) % 31 === 0) {
@@ -270,6 +276,7 @@
     }
 
     function decodeSymbol(huff) {
+      if (!huff || huff.maxLen === 0) throw new Error('Mã Huffman PDF không hợp lệ.');
       let codeVal = 0;
       for (let len = 1; len <= huff.maxLen; len++) {
         codeVal = (codeVal << 1) | getBits(1);
@@ -294,7 +301,7 @@
     const DEXT = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
     const CLEN_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
-    let out = new Uint8Array(Math.min(data.length * 3 + 1024, maxBytes));
+    let out = new Uint8Array(Math.min(Math.max(data.length * 3 + 1024, 1024), maxBytes));
     let outLen = 0;
     function ensureCapacity(need) {
       if (outLen + need > maxBytes) throw new Error('Kích thước giải nén vượt quá giới hạn tối đa.');
@@ -302,7 +309,7 @@
         let newSize = Math.max(out.length * 2, outLen + need);
         if (newSize > maxBytes) newSize = maxBytes;
         const next = new Uint8Array(newSize);
-        next.set(out);
+        next.set(out.subarray(0, outLen));
         out = next;
       }
     }
@@ -339,16 +346,21 @@
           let codeIdx = 0;
           while (codeIdx < totalCodes) {
             const sym = decodeSymbol(clenTree);
-            if (sym < 16) codeLens[codeIdx++] = sym;
-            else if (sym === 16) {
+            if (sym < 16) {
+              codeLens[codeIdx++] = sym;
+            } else if (sym === 16) {
+              if (codeIdx === 0) throw new Error('Mã lặp độ dài Huffman không hợp lệ tại vị trí đầu.');
               const repeat = getBits(2) + 3;
               const prev = codeLens[codeIdx - 1];
+              if (codeIdx + repeat > totalCodes) throw new Error('Bảng độ dài Huffman vượt quá số lượng mã.');
               for (let r = 0; r < repeat; r++) codeLens[codeIdx++] = prev;
             } else if (sym === 17) {
               const repeat = getBits(3) + 3;
+              if (codeIdx + repeat > totalCodes) throw new Error('Bảng độ dài Huffman vượt quá số lượng mã.');
               for (let r = 0; r < repeat; r++) codeLens[codeIdx++] = 0;
             } else if (sym === 18) {
               const repeat = getBits(7) + 11;
+              if (codeIdx + repeat > totalCodes) throw new Error('Bảng độ dài Huffman vượt quá số lượng mã.');
               for (let r = 0; r < repeat; r++) codeLens[codeIdx++] = 0;
             }
           }
@@ -368,10 +380,11 @@
             const ext = LEXT[lenIdx];
             if (ext > 0) matchLen += getBits(ext);
             const distSym = decodeSymbol(distTree);
+            if (distSym >= DISTS.length) throw new Error('Mã khoảng cách Huffman PDF không hợp lệ.');
             let dist = DISTS[distSym];
             const dext = DEXT[distSym];
             if (dext > 0) dist += getBits(dext);
-            if (dist > outLen) throw new Error('Khoảng cách tham chiếu vượt quá dữ liệu đã giải nén.');
+            if (dist <= 0 || dist > outLen) throw new Error('Khoảng cách tham chiếu vượt quá dữ liệu đã giải nén.');
             ensureCapacity(matchLen);
             let from = outLen - dist;
             for (let m = 0; m < matchLen; m++) out[outLen++] = out[from++];
@@ -439,19 +452,27 @@
       if (first > decodedBytes.length) {
         throw new Error(`PDF ObjStm ${id} có /First vượt quá kích thước stream.`);
       }
-      const headerText = decodedText.slice(0, first);
-      const tokenMatches = [...headerText.matchAll(/\d+/g)].map(m => Number(m[0]));
-      if (tokenMatches.length < 2 * N) {
-        throw new Error(`PDF ObjStm ${id} header không đủ ${N} cặp số.`);
+      const headerText = decodedText.slice(0, first).trim();
+      const headerTokens = headerText ? headerText.split(/\s+/) : [];
+      if (headerTokens.length < 2 * N || headerTokens.some(t => !/^\d+$/.test(t))) {
+        throw new Error(`PDF ObjStm ${id} header không hợp lệ hoặc không đủ ${N} cặp số.`);
       }
 
+      let lastOffset = -1;
       for (let k = 0; k < N; k++) {
-        const compId = tokenMatches[2 * k];
-        const offset = tokenMatches[2 * k + 1];
-        const nextOffset = (k < N - 1) ? tokenMatches[2 * (k + 1) + 1] : (decodedBytes.length - first);
-        if (offset < 0 || offset > nextOffset || (first + nextOffset) > decodedBytes.length) {
+        const compId = Number(headerTokens[2 * k]);
+        const offset = Number(headerTokens[2 * k + 1]);
+        const nextOffset = (k < N - 1) ? Number(headerTokens[2 * (k + 1) + 1]) : (decodedBytes.length - first);
+        if (!Number.isSafeInteger(compId) || compId <= 0) {
+          throw new Error(`PDF ObjStm ${id} chứa object id không hợp lệ: ${compId}.`);
+        }
+        if (offset < 0 || offset < lastOffset || offset > nextOffset || (first + nextOffset) > decodedBytes.length) {
           throw new Error(`PDF ObjStm ${id} chứa object offset không hợp lệ.`);
         }
+        if (compressedObjects.has(compId)) {
+          throw new Error(`PDF ObjStm chứa duplicate object id ${compId}.`);
+        }
+        lastOffset = offset;
         const compBodyText = decodedText.slice(first + offset, first + nextOffset).trim();
         compressedObjects.set(compId, {
           id: compId,
@@ -1365,5 +1386,6 @@
     return copyPageObjects([], [], items);
   }
 
-  window.PartyPdf = { parse, sourceFromBuffer, pageInfo, renderThumbnail, previewCacheStats, releasePreviewCache, buildPdf, buildMixedPdf };
+  window.PartyPdf = { parse, sourceFromBuffer, pageInfo, renderThumbnail, previewCacheStats, releasePreviewCache, buildPdf, buildMixedPdf, _inflateSync: inflateSync };
 })();
+

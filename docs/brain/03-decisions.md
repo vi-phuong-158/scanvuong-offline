@@ -16,8 +16,8 @@
      - Phân tích header $[id_1, offset_1, \dots, id_N, offset_N]$, trích xuất các đối tượng nén và tích hợp vào `source.objects`.
      - Nâng cấp `resolveIndirectLength`: Tra cứu cả đối tượng nén trong `/ObjStm` để xác định chính xác độ dài stream (chẳng hạn `/Length 6 0 R` nằm trong `/ObjStm 8`), duy trì 100% các safety guard đã thiết lập ngày 02/09.
   4. **Materialization khi xuất PDF (`copyPageObjects`):**
-     - Đối tượng nén từ `/ObjStm` khi được trang tham chiếu sẽ được vật chất hóa thành top-level object độc lập (`${outputId} 0 obj\n${body}\nendobj\n`) với ID mới được ánh xạ. PDF xuất ra hoàn toàn tương thích chuẩn PDF 1.4, không còn phụ thuộc vào `/ObjStm`.
-- **Lý do:** Hồ sơ Đảng viên thực tế (file của cán bộ Vũ Tiến Thọ) gặp lỗi không nhận được MediaBox và không tìm thấy object /Length do Ghostscript 10.x nén vào `/ObjStm`.
+- **Lý do:** Hồ sơ Đảng viên số hóa thực tế (PDF scan nhiều trang) gặp lỗi không nhận được MediaBox và không tìm thấy object /Length do Ghostscript 10.x nén vào `/ObjStm`.
+
 - **Đánh đổi:** Tăng thêm ~200 dòng mã pure JS cho bộ giải nén RFC 1951 và parser `/ObjStm`, đổi lại khả năng tương thích 100% với các file PDF chuẩn ISO 32000-1 sinh bởi các engine PDF hiện đại mà vẫn bảo toàn nguyên tắc dependency-free và 100% client-side offline.
 - **Người quyết định:** Lead Core Engineer & User Mandate.
 

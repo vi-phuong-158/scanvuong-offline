@@ -38,8 +38,8 @@
      - Synthetic K: Adjacent close không có khoảng trắng (`>> >>/MediaBox[...]`).
      - Synthetic L: 4 cấp nested dictionary kết thúc bằng `>>>>>>>>/MediaBox`.
      - Synthetic M: PDF có `/ObjStm` nén chứa indirect `/Length` và dictionary, kiểm tra export vật chất hóa thành top-level object thành công.
-- **File đã sửa:** `party-pdf.js`, `scripts/regression_party_mode.cjs`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`.
-- **Lý do:** Hồ sơ thực tế của cán bộ (Vũ Tiến Thọ) gồm 2 file PDF hợp lệ nhưng không tải được do parser bị lệch depth ở thẻ đóng dictionary liền kề và chưa đọc được đối tượng nén trong `/ObjStm` (Ghostscript 10.x).
+- **Lý do:** Hai file PDF thực tế hợp lệ nhưng không tải được do parser bị lệch depth ở thẻ đóng dictionary liền kề và chưa đọc được đối tượng nén trong `/ObjStm` (Ghostscript 10.x).
+
 - **Kiểm tra:**
   - `node --check party-pdf.js` & `node --check scripts/regression_party_mode.cjs`: PASS syntax.
   - `python scripts/validate_static.py`: 10/10 PASS (zero external URLs, zero emojis, zero legacy brand, asset cache verified).
