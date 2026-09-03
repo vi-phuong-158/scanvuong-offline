@@ -16,6 +16,22 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-03] Fix canonical Party UI acceptance timing race
+- **Agent:** Codex
+- **Thay đổi:**
+  - Viết helper `waitFor(cdp, condition, timeoutMs)` trong `scripts/acceptance_party_ui.cjs` để đồng bộ theo trạng thái thật (DOM element, previewRendered, dimensions), loại bỏ triệt để các lệnh sleep cố định gây timing race trên Windows host.
+  - Đồng bộ trạng thái canvas trước và sau hành động rotate trong `runHelpUxAcceptance` và `runEventListenerAcceptance`.
+  - Phân định phạm vi đếm `.party-assigned-badge` thành `.party-source-pool .party-assigned-badge` để không bị đếm nhầm 2 thẻ nhãn tĩnh minh họa trong `#partyHelpDialog`.
+- **File đã sửa:** `scripts/acceptance_party_ui.cjs`
+- **Lý do:** Khắc phục lỗi assertion trong canonical UI acceptance gate do render async của PDF.js trên Windows.
+- **Kiểm tra:**
+  - `node scripts/acceptance_party_ui.cjs`: 19/19 checks PASS (exit code 0).
+  - `python scripts/validate_static.py`: 10/10 PASS.
+  - `node scripts/regression_party_mode.cjs`: 66/66 checks PASS.
+  - `node scripts/regression_export_busy.js`: 29/29 checks PASS.
+  - `node scripts/regression_scan_id.js`: 52/52 checks PASS.
+  - Real PDF sanity: Original File 01 (`86ac6f...`) 12/12 PASS, File 02 11/11 PASS, source mutation = 0.
+
 ## [2026-09-03] Fix Party PDF parser cho MediaBox dictionary + compressed /ObjStm
 - **Agent:** Codex
 - **Thay đổi:**
