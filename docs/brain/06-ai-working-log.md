@@ -16,6 +16,44 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-03] Fix Party PDF parser cho MediaBox dictionary + compressed /ObjStm
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Fix delimiter parser cho nested dictionaries (`balancedPdfValueEnd`, `pdfValueEnd`):**
+     - Thay thế vòng lặp giảm độ sâu 1-byte bằng stack-based delimiter parser (`stack = [open]`).
+     - Đọc và nhảy chính xác 2 byte cho `<<` và `>>`, giải quyết triệt để lỗi giảm nhầm depth khi gặp các token đóng liền kề không khoảng trắng như `>>>>/MediaBox` (gốc rễ lỗi "PDF page thiếu MediaBox/CropBox hợp lệ" ở File 01 `01.Ly_lich_nguoi_xin_vao_dang.pdf`).
+     - Hỗ trợ đầy đủ mảng lồng nhau `[...]`, chuỗi hex `<...>`, chuỗi literal `(...)` có ký tự escape `\` và đóng/mở ngoặc lồng, cùng dòng comment `%...`.
+  2. **Bộ giải nén pure JS RFC 1951 Deflate / RFC 1950 zlib đồng bộ (`inflateSync`):**
+     - Viết mới bộ giải nén pure JavaScript không dependency, chạy đồng bộ (synchronous) cả trên Node.js và mọi trình duyệt hiện đại.
+     - Khắc phục cơ chế bit packing của Huffman code (MSB-first: `(code << 1) | getBits(1)`), giải mã chính xác 100% byte-for-byte tương đương `zlib.inflateSync`.
+  3. **Hỗ trợ Object Streams nén (`/Type /ObjStm`, ISO 32000-1 §7.5.7):**
+     - Thêm `parseObjectStreams(bytes, text, objectIndex)`: Tự động phát hiện các stream `/Type /ObjStm`, đọc `/N` và `/First`, giải nén payload bằng `inflateSync`.
+     - Phân tích header gồm $N$ cặp số nguyên `[id, offset]`, cắt chính xác phần thân của từng compressed object và đưa vào bản đồ đối tượng.
+     - Nâng cấp `resolveIndirectLength`: Tìm kiếm `/Length` gián tiếp trong cả top-level objects và compressed objects từ `/ObjStm` (giải quyết lỗi Object 5 trỏ `/Length 6 0 R` nằm trong `/ObjStm 8` ở File 02 `02.Ly_lich_dang_vien.pdf`).
+     - Bảo toàn 100% các ràng buộc an toàn ngày 02/09: self-reference guard, cyclic reference guard, declared length authority, fake endstream guard, non-numeric guard, negative guard, out-of-bounds guard.
+  4. **Materialization khi xuất PDF (`copyPageObjects`):**
+     - Khi xuất tài liệu, các đối tượng trích xuất từ `/ObjStm` được ánh xạ ID mới và tự động vật chất hóa (materialize) thành các top-level object độc lập (`${outputId} 0 obj\n${body}\nendobj\n`). File PDF xuất ra hoàn toàn tự chứa, chuẩn PDF 1.4, không còn phụ thuộc vào `/ObjStm`.
+  5. **Bổ sung 4 bộ kiểm thử hồi quy synthetic cho CI:**
+     - Synthetic J: Adjacent nested close (`>> >> /MediaBox`).
+     - Synthetic K: Adjacent close không có khoảng trắng (`>> >>/MediaBox[...]`).
+     - Synthetic L: 4 cấp nested dictionary kết thúc bằng `>>>>>>>>/MediaBox`.
+     - Synthetic M: PDF có `/ObjStm` nén chứa indirect `/Length` và dictionary, kiểm tra export vật chất hóa thành top-level object thành công.
+- **File đã sửa:** `party-pdf.js`, `scripts/regression_party_mode.cjs`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Hồ sơ thực tế của cán bộ (Vũ Tiến Thọ) gồm 2 file PDF hợp lệ nhưng không tải được do parser bị lệch depth ở thẻ đóng dictionary liền kề và chưa đọc được đối tượng nén trong `/ObjStm` (Ghostscript 10.x).
+- **Kiểm tra:**
+  - `node --check party-pdf.js` & `node --check scripts/regression_party_mode.cjs`: PASS syntax.
+  - `python scripts/validate_static.py`: 10/10 PASS (zero external URLs, zero emojis, zero legacy brand, asset cache verified).
+  - `node scripts/regression_party_mode.cjs`: 59/59 checks PASS (tăng từ 53 lên 59 với 4 synthetic checks mới).
+  - `node scripts/regression_export_busy.js`: 29/29 checks PASS.
+  - `node scripts/regression_scan_id.js`: 52/52 checks PASS.
+  - **Kiểm thử trên 2 file thật bằng `pypdf`:**
+    - File 01 (12 trang, SHA256 `86ac6f1355bcaa8a94ff751761046c9d28252800c29e232e67de116e4e9a413f`): 12/12 trang đọc MediaBox hợp lệ, xuất 3 trang (0, 1, 2) thành công, `pypdf` xác nhận đủ 3 trang với MediaBox và rotation 270° chính xác, hash file nguồn không đổi 100%.
+    - File 02 (11 trang, SHA256 `d1f63be0bcfb182dafbfce32e81eb809a9b6e087851916c0aeacfbd36450deb6`): 11/11 trang đọc MediaBox hợp lệ, giải nén `/ObjStm` thành công, xuất 3 trang (0, 1, 2) thành công, `pypdf` xác nhận đủ 3 trang với MediaBox và rotation 0° chính xác, hash file nguồn không đổi 100%.
+  - **Browser Acceptance trên Chromium thật qua CDP:**
+    - File 01: Load thành công 12/12 thumbnails, mở dialog preview trang 1 thành công, chọn trang 1–3, tạo tài liệu, gán taxonomy 01, xuất file `01.Ly_lich_nguoi_xin_vao_dang.pdf`, `pypdf` kiểm tra file tải về có đủ 3 trang.
+    - File 02: Load thành công 11/11 thumbnails, mở dialog preview trang 1 thành công, chọn trang 1–3, tạo tài liệu, gán taxonomy 02, xuất file `02.Ly_lich_dang_vien.pdf`, `pypdf` kiểm tra file tải về có đủ 3 trang.
+
+
 ## [2026-09-02] Cập nhật Hướng dẫn sử dụng trong ứng dụng cho Scan tài liệu Đảng
 - **Agent:** Antigravity (Gemini 3.7 Flash)
 - **Thay đổi:**

@@ -1,6 +1,8 @@
 /* Dependency-free Party Mode regression checks. Run with Node 18+. */
 const fs = require('fs');
 const vm = require('vm');
+const zlib = require('zlib');
+
 
 const root = require('path').resolve(__dirname, '..');
 const context = { window: {}, TextEncoder, TextDecoder, Uint8Array, Blob, Math, Error, console };
@@ -295,6 +297,78 @@ function boundaryFixture({ nulHeader = false, streamFalsePositive = false, malfo
   let iFailed = false;
   try { PartyPdf.sourceFromBuffer(pdfI, 'pdfI.pdf'); } catch (err) { iFailed = /vượt quá kích thước tệp|bounds vượt quá|thiếu endobj/.test(err.message); }
   check('Synthetic I: out-of-bounds length fails closed', iFailed);
+
+  // J. Adjacent nested close: >> >> /MediaBox
+  const pdfJ = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /Resources << /XObject << /Im1 10 0 R >> >> /MediaBox [0 0 595 842] >>' },
+    { id: 10, body: '<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 /ColorSpace /DeviceRGB /Length 0 >>\nstream\nendstream' }
+  ]);
+  const srcJ = PartyPdf.sourceFromBuffer(pdfJ, 'pdfJ.pdf');
+  const infoJ = PartyPdf.pageInfo(srcJ, 0);
+  check('Synthetic J: adjacent nested close preserves MediaBox', infoJ.box[2] === 595 && infoJ.box[3] === 842);
+
+  // K. No whitespace between dictionary close tokens and /MediaBox
+  const pdfK = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /Resources << /XObject << >> >>/MediaBox[0 0 595 842] >>' }
+  ]);
+  const srcK = PartyPdf.sourceFromBuffer(pdfK, 'pdfK.pdf');
+  const infoK = PartyPdf.pageInfo(srcK, 0);
+  check('Synthetic K: adjacent close without whitespace preserves MediaBox', infoK.box[2] === 595 && infoK.box[3] === 842);
+
+  // L. Multiple nested levels (4 levels of >> without space)
+  const pdfL = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /Dict1 << /Dict2 << /Dict3 << /Dict4 << /Key 123 >>>>>>>>/MediaBox [0 0 612 792] >>' }
+  ]);
+  const srcL = PartyPdf.sourceFromBuffer(pdfL, 'pdfL.pdf');
+  const infoL = PartyPdf.pageInfo(srcL, 0);
+  check('Synthetic L: 4-level nested dictionary close preserves MediaBox', infoL.box[2] === 612 && infoL.box[3] === 792);
+
+  // M. Compressed Object Stream (/ObjStm) resolving indirect /Length and page objects
+  const contentM = 'q 1 0 0 1 cm\n';
+  const body6M = `${contentM.length}\n`;
+  const body7M = '<< /TestKey (TestVal) >>\n';
+  const firstM = '6 0 7 ' + body6M.length + ' ';
+  const decompM = firstM + body6M + body7M;
+  const compM = zlib.deflateSync(Buffer.from(decompM, 'latin1'));
+
+  const partsM = [
+    '%PDF-1.5\n',
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R >>\nendobj\n',
+    `4 0 obj\n<< /Length 6 0 R >>\nstream\n${contentM}endstream\nendobj\n`,
+    `5 0 obj\n<< /Type /ObjStm /N 2 /First ${firstM.length} /Filter /FlateDecode /Length ${compM.length} >>\nstream\n`,
+    compM,
+    '\nendstream\nendobj\n',
+    '%%EOF\n'
+  ];
+  const totalM = partsM.reduce((acc, p) => acc + (typeof p === 'string' ? Buffer.byteLength(p, 'latin1') : p.length), 0);
+  const pdfM = Buffer.alloc(totalM);
+  let offM = 0;
+  for (const p of partsM) {
+    if (typeof p === 'string') {
+      const b = Buffer.from(p, 'latin1');
+      b.copy(pdfM, offM);
+      offM += b.length;
+    } else {
+      p.copy(pdfM, offM);
+      offM += p.length;
+    }
+  }
+  const srcM = PartyPdf.sourceFromBuffer(pdfM, 'pdfM.pdf');
+  check('Synthetic M: ObjStm extracts compressed objects', srcM.objects.has(6) && srcM.objects.has(7));
+  const infoM = PartyPdf.pageInfo(srcM, 0);
+  check('Synthetic M: Page with indirect /Length in ObjStm parses MediaBox', infoM.box[2] === 595 && infoM.box[3] === 842);
+  const expM = await PartyPdf.buildPdf([srcM.page(0)]).arrayBuffer();
+  const reparseM = PartyPdf.sourceFromBuffer(new Uint8Array(expM), 'reparseM.pdf');
+  check('Synthetic M: Export materializes compressed object as top-level object', reparseM.pageCount === 1);
+
 
   // --- Real PDF Acceptance: Scan2026-08-24_150131.pdf ---
   const realPdfPath = require('path').join(root, 'Scan2026-08-24_150131.pdf');

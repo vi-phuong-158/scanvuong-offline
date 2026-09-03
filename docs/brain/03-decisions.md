@@ -3,9 +3,28 @@
 > Ghi lại quyết định kỹ thuật quan trọng để agent sau không "phát minh lại" hoặc đảo ngược
 > mà không biết lý do. Mỗi entry: quyết định gì, vì sao, đánh đổi gì.
 
+## [2026-09-03] Nâng cấp PDF Parser: Stack-based Delimiter Scanner và Giải nén Object Streams (/ObjStm) cho Party Document Mode
+
+- **Quyết định:**
+  1. **Stack-based Delimiter Scanner (`balancedPdfValueEnd`, `pdfValueEnd`):**
+     - Chuyển cơ chế đếm ngoặc sang stack (`stack = [open]`) với bước nhảy 2 byte cho `<<` và `>>`, giải quyết dứt điểm lỗi giảm depth sai khi gặp token đóng liền kề không khoảng trắng (`>>>>/MediaBox`).
+     - Hỗ trợ mảng lồng `[...]`, chuỗi hex `<...>`, chuỗi literal `(...)` có ký tự escape `\` và đóng ngoặc lồng, cùng comment dòng `%...`.
+  2. **Bộ giải nén pure JS RFC 1951 Deflate / RFC 1950 zlib đồng bộ (`inflateSync`):**
+     - Triển khai thuật toán giải nén Huffman MSB-first và LZ77 theo chuẩn RFC 1951 hoàn toàn bằng JavaScript thuần, không phụ thuộc thư viện ngoài, không cần build step, chạy đồng bộ (synchronous) cả trên Node.js và trình duyệt.
+  3. **Hỗ trợ Compressed Object Streams (`/Type /ObjStm`, ISO 32000-1 §7.5.7):**
+     - Đọc và giải nén các luồng đối tượng nén `/ObjStm` do Ghostscript 10.x hoặc các công cụ PDF 1.5+ hiện đại tạo ra.
+     - Phân tích header $[id_1, offset_1, \dots, id_N, offset_N]$, trích xuất các đối tượng nén và tích hợp vào `source.objects`.
+     - Nâng cấp `resolveIndirectLength`: Tra cứu cả đối tượng nén trong `/ObjStm` để xác định chính xác độ dài stream (chẳng hạn `/Length 6 0 R` nằm trong `/ObjStm 8`), duy trì 100% các safety guard đã thiết lập ngày 02/09.
+  4. **Materialization khi xuất PDF (`copyPageObjects`):**
+     - Đối tượng nén từ `/ObjStm` khi được trang tham chiếu sẽ được vật chất hóa thành top-level object độc lập (`${outputId} 0 obj\n${body}\nendobj\n`) với ID mới được ánh xạ. PDF xuất ra hoàn toàn tương thích chuẩn PDF 1.4, không còn phụ thuộc vào `/ObjStm`.
+- **Lý do:** Hồ sơ Đảng viên thực tế (file của cán bộ Vũ Tiến Thọ) gặp lỗi không nhận được MediaBox và không tìm thấy object /Length do Ghostscript 10.x nén vào `/ObjStm`.
+- **Đánh đổi:** Tăng thêm ~200 dòng mã pure JS cho bộ giải nén RFC 1951 và parser `/ObjStm`, đổi lại khả năng tương thích 100% với các file PDF chuẩn ISO 32000-1 sinh bởi các engine PDF hiện đại mà vẫn bảo toàn nguyên tắc dependency-free và 100% client-side offline.
+- **Người quyết định:** Lead Core Engineer & User Mandate.
+
 ---
 
 ## [2026-08-30] Harden PDF Preview với Blank-Canvas Validation và Multi-Split UX cho Party Document Mode
+
 
 - **Quyết định:**
   1. **PDF Preview Hardening & Blank-Canvas Validation:** PDF.js là renderer chính, không fallback âm thầm. Sau khi render, hàm `hasContentPixels` kiểm tra mật độ pixel màu khác trắng trên canvas. Nếu một trang PDF có stream/XObject nhưng canvas trắng bất thường, throw error để fallback hoặc kích hoạt UI báo lỗi trực quan với nút "Thử lại". Caching canvas derivative trong bộ nhớ (`page.previewThumbCanvas`) giúp khôi phục tức thì khi UI re-render.

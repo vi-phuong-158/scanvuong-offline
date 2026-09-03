@@ -85,7 +85,7 @@
     return index;
   }
 
-  function resolveIndirectLength(text, objectIndex, refId, refGen, currentObjId, cache, visited) {
+  function resolveIndirectLength(text, objectIndex, refId, refGen, currentObjId, cache, visited, compressedObjects) {
     if (refId === currentObjId) {
       throw new Error(`PDF stream tham chiếu /Length object ${refId} bị lặp chính nó (self reference).`);
     }
@@ -96,6 +96,22 @@
 
     const candidates = objectIndex.get(refId);
     if (!candidates || !candidates.length) {
+      if (compressedObjects && compressedObjects.has(refId)) {
+        const comp = compressedObjects.get(refId);
+        const cleaned = comp.text.replace(/%[^\r\n]*[\r\n]?/g, '').trim();
+        if (!/^[+-]?\d+$/.test(cleaned)) {
+          throw new Error(`PDF stream tham chiếu /Length object ${refId} nhưng không đọc được giá trị hợp lệ.`);
+        }
+        const val = Number(cleaned);
+        if (!Number.isSafeInteger(val) || val < 0) {
+          throw new Error(`PDF stream tham chiếu /Length object ${refId} có giá trị âm hoặc không hợp lệ.`);
+        }
+        if (val > text.length) {
+          throw new Error(`PDF stream tham chiếu /Length object ${refId} vượt quá kích thước tệp.`);
+        }
+        cache.set(refId, val);
+        return val;
+      }
       throw new Error(`PDF stream tham chiếu /Length object ${refId} nhưng không tìm thấy object.`);
     }
 
@@ -141,7 +157,7 @@
     return -1;
   }
 
-  function resolveStreamLength(text, bodyStart, streamIndex, objectIndex, currentObjId, lengthCache) {
+  function resolveStreamLength(text, bodyStart, streamIndex, objectIndex, currentObjId, lengthCache, compressedObjects) {
     const dictionary = text.slice(bodyStart, streamIndex);
     const directM = dictionary.match(/\/Length\s+([+-]?\d+)\b(?!\s+\d+\s+R)/);
     if (directM) {
@@ -155,12 +171,12 @@
     if (indirectM) {
       const refId = Number(indirectM[1]);
       const refGen = Number(indirectM[2]);
-      return resolveIndirectLength(text, objectIndex, refId, refGen, currentObjId, lengthCache, new Set([currentObjId]));
+      return resolveIndirectLength(text, objectIndex, refId, refGen, currentObjId, lengthCache, new Set([currentObjId]), compressedObjects);
     }
     return null;
   }
 
-  function findObjectEnd(text, bodyStart, objectIndex, currentObjId, lengthCache) {
+  function findObjectEnd(text, bodyStart, objectIndex, currentObjId, lengthCache, compressedObjects) {
     const firstEndObj = findToken(text, 'endobj', bodyStart);
     const streamIndex = streamMarker(text, bodyStart);
     if (firstEndObj >= 0 && (streamIndex < 0 || firstEndObj < streamIndex)) {
@@ -171,7 +187,7 @@
       if (text[dataStart] === '\r' && text[dataStart + 1] === '\n') dataStart += 2;
       else if (text[dataStart] === '\n' || text[dataStart] === '\r') dataStart += 1;
 
-      const length = resolveStreamLength(text, bodyStart, streamIndex, objectIndex, currentObjId, lengthCache);
+      const length = resolveStreamLength(text, bodyStart, streamIndex, objectIndex, currentObjId, lengthCache, compressedObjects);
       let endStream = -1;
       let streamDataEnd = -1;
       if (length !== null) {
@@ -204,9 +220,255 @@
     return { end: findToken(text, 'endobj', bodyStart), streamInfo: null };
   }
 
+  function inflateSync(data, maxBytes = MAX_DECODED_BYTES) {
+    if (typeof process !== 'undefined' && typeof require === 'function') {
+      try {
+        return new Uint8Array(require('zlib').inflateSync(data));
+      } catch (_) {}
+    }
+    let pos = 0;
+    if (data.length >= 2 && (data[0] & 0x0f) === 8 && ((data[0] << 8) | data[1]) % 31 === 0) {
+      pos = 2;
+    }
+    let bitBuf = 0, bitCnt = 0;
+    function needBits(n) {
+      while (bitCnt < n) {
+        if (pos >= data.length) throw new Error('Dữ liệu PDF nén bị cắt ngắn (unexpected EOF).');
+        bitBuf |= data[pos++] << bitCnt;
+        bitCnt += 8;
+      }
+    }
+    function getBits(n) {
+      needBits(n);
+      const val = bitBuf & ((1 << n) - 1);
+      bitBuf >>>= n;
+      bitCnt -= n;
+      return val;
+    }
+    function dropToByte() { bitBuf = 0; bitCnt = 0; }
+
+    function buildHuffman(lengths) {
+      const maxLen = Math.max(...lengths);
+      if (maxLen === 0) return { maxLen: 0, map: new Map() };
+      const blCount = new Uint16Array(maxLen + 1);
+      for (let i = 0; i < lengths.length; i++) blCount[lengths[i]]++;
+      blCount[0] = 0;
+      const nextCode = new Uint32Array(maxLen + 1);
+      let codeVal = 0;
+      for (let i = 1; i <= maxLen; i++) {
+        codeVal = (codeVal + blCount[i - 1]) << 1;
+        nextCode[i] = codeVal;
+      }
+      const map = new Map();
+      for (let i = 0; i < lengths.length; i++) {
+        const len = lengths[i];
+        if (len === 0) continue;
+        const c = nextCode[len]++;
+        map.set((len << 16) | c, i);
+      }
+      return { maxLen, map };
+    }
+
+    function decodeSymbol(huff) {
+      let codeVal = 0;
+      for (let len = 1; len <= huff.maxLen; len++) {
+        codeVal = (codeVal << 1) | getBits(1);
+        const sym = huff.map.get((len << 16) | codeVal);
+        if (sym !== undefined) return sym;
+      }
+      throw new Error('Mã Huffman PDF không hợp lệ.');
+    }
+
+    const fixedLitLens = new Uint8Array(288);
+    for (let i = 0; i <= 143; i++) fixedLitLens[i] = 8;
+    for (let i = 144; i <= 255; i++) fixedLitLens[i] = 9;
+    for (let i = 256; i <= 279; i++) fixedLitLens[i] = 7;
+    for (let i = 280; i <= 287; i++) fixedLitLens[i] = 8;
+    const fixedLitTree = buildHuffman(fixedLitLens);
+    const fixedDistLens = new Uint8Array(32); fixedDistLens.fill(5);
+    const fixedDistTree = buildHuffman(fixedDistLens);
+
+    const LENS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258];
+    const LEXT = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+    const DISTS = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577];
+    const DEXT = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+    const CLEN_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+
+    let out = new Uint8Array(Math.min(data.length * 3 + 1024, maxBytes));
+    let outLen = 0;
+    function ensureCapacity(need) {
+      if (outLen + need > maxBytes) throw new Error('Kích thước giải nén vượt quá giới hạn tối đa.');
+      if (outLen + need > out.length) {
+        let newSize = Math.max(out.length * 2, outLen + need);
+        if (newSize > maxBytes) newSize = maxBytes;
+        const next = new Uint8Array(newSize);
+        next.set(out);
+        out = next;
+      }
+    }
+
+    let isFinal = 0;
+    while (!isFinal) {
+      isFinal = getBits(1);
+      const btype = getBits(2);
+      if (btype === 0) {
+        dropToByte();
+        if (pos + 4 > data.length) throw new Error('Block uncompressed không hợp lệ.');
+        const len = data[pos] | (data[pos + 1] << 8);
+        const nlen = data[pos + 2] | (data[pos + 3] << 8);
+        pos += 4;
+        if ((len ^ 0xffff) !== nlen) throw new Error('Checksum uncompressed block sai.');
+        if (pos + len > data.length) throw new Error('Uncompressed block vượt quá kích thước.');
+        ensureCapacity(len);
+        out.set(data.subarray(pos, pos + len), outLen);
+        outLen += len;
+        pos += len;
+      } else if (btype === 1 || btype === 2) {
+        let litTree, distTree;
+        if (btype === 1) {
+          litTree = fixedLitTree; distTree = fixedDistTree;
+        } else {
+          const hlit = getBits(5) + 257;
+          const hdist = getBits(5) + 1;
+          const hclen = getBits(4) + 4;
+          const clenTable = new Uint8Array(19);
+          for (let i = 0; i < hclen; i++) clenTable[CLEN_ORDER[i]] = getBits(3);
+          const clenTree = buildHuffman(clenTable);
+          const totalCodes = hlit + hdist;
+          const codeLens = new Uint8Array(totalCodes);
+          let codeIdx = 0;
+          while (codeIdx < totalCodes) {
+            const sym = decodeSymbol(clenTree);
+            if (sym < 16) codeLens[codeIdx++] = sym;
+            else if (sym === 16) {
+              const repeat = getBits(2) + 3;
+              const prev = codeLens[codeIdx - 1];
+              for (let r = 0; r < repeat; r++) codeLens[codeIdx++] = prev;
+            } else if (sym === 17) {
+              const repeat = getBits(3) + 3;
+              for (let r = 0; r < repeat; r++) codeLens[codeIdx++] = 0;
+            } else if (sym === 18) {
+              const repeat = getBits(7) + 11;
+              for (let r = 0; r < repeat; r++) codeLens[codeIdx++] = 0;
+            }
+          }
+          litTree = buildHuffman(codeLens.subarray(0, hlit));
+          distTree = buildHuffman(codeLens.subarray(hlit));
+        }
+        while (true) {
+          const sym = decodeSymbol(litTree);
+          if (sym < 256) {
+            ensureCapacity(1);
+            out[outLen++] = sym;
+          } else if (sym === 256) {
+            break;
+          } else {
+            const lenIdx = sym - 257;
+            let matchLen = LENS[lenIdx];
+            const ext = LEXT[lenIdx];
+            if (ext > 0) matchLen += getBits(ext);
+            const distSym = decodeSymbol(distTree);
+            let dist = DISTS[distSym];
+            const dext = DEXT[distSym];
+            if (dext > 0) dist += getBits(dext);
+            if (dist > outLen) throw new Error('Khoảng cách tham chiếu vượt quá dữ liệu đã giải nén.');
+            ensureCapacity(matchLen);
+            let from = outLen - dist;
+            for (let m = 0; m < matchLen; m++) out[outLen++] = out[from++];
+          }
+        }
+      } else {
+        throw new Error('Block type PDF Deflate không hợp lệ: ' + btype);
+      }
+    }
+    return out.subarray(0, outLen);
+  }
+
+  function parseObjectStreams(bytes, text, objectIndex) {
+    const compressedObjects = new Map();
+    const pattern = /(\d+)\s+(\d+)\s+obj\b/g;
+    let match;
+    while ((match = pattern.exec(text))) {
+      if (match.index > 0 && !isPdfWhitespace(text[match.index - 1])) continue;
+      const id = Number(match[1]);
+      const bodyStart = pattern.lastIndex;
+      const streamIdx = streamMarker(text, bodyStart);
+      if (streamIdx < 0) continue;
+      const dictText = text.slice(bodyStart, streamIdx);
+      if (!/\/Type\s*\/ObjStm\b/.test(dictText)) continue;
+
+      const nM = dictText.match(/\/N\s+(\d+)\b/);
+      const firstM = dictText.match(/\/First\s+(\d+)\b/);
+      if (!nM || !firstM) throw new Error(`PDF ObjStm ${id} thiếu /N hoặc /First.`);
+      const N = Number(nM[1]);
+      const first = Number(firstM[1]);
+      if (!Number.isSafeInteger(N) || N <= 0 || !Number.isSafeInteger(first) || first < 0) {
+        throw new Error(`PDF ObjStm ${id} có /N hoặc /First không hợp lệ.`);
+      }
+
+      let dataStart = streamIdx + 6;
+      if (text[dataStart] === '\r' && text[dataStart + 1] === '\n') dataStart += 2;
+      else if (text[dataStart] === '\n' || text[dataStart] === '\r') dataStart += 1;
+
+      const directLenM = dictText.match(/\/Length\s+(\d+)\b(?!\s+\d+\s+R)/);
+      let streamBytes;
+      if (directLenM) {
+        const len = Number(directLenM[1]);
+        if (!Number.isSafeInteger(len) || len < 0 || dataStart + len > bytes.length) {
+          throw new Error(`PDF ObjStm ${id} có /Length không hợp lệ.`);
+        }
+        streamBytes = bytes.subarray(dataStart, dataStart + len);
+      } else {
+        const endStream = findToken(text, 'endstream', dataStart);
+        if (endStream < 0) throw new Error(`PDF ObjStm ${id} không tìm thấy endstream.`);
+        streamBytes = bytes.subarray(dataStart, endStream);
+      }
+
+      const filterMatch = dictText.match(/\/Filter\s*\/([A-Za-z0-9]+)\b/);
+      const filter = filterMatch ? filterMatch[1] : null;
+      let decodedBytes;
+      if (!filter) {
+        decodedBytes = streamBytes;
+      } else if (filter === 'FlateDecode' || filter === 'Fl') {
+        decodedBytes = inflateSync(streamBytes);
+      } else {
+        throw new Error(`PDF ObjStm ${id} có bộ lọc chưa hỗ trợ: ${filter}.`);
+      }
+
+      const decodedText = decoder.decode(decodedBytes);
+      if (first > decodedBytes.length) {
+        throw new Error(`PDF ObjStm ${id} có /First vượt quá kích thước stream.`);
+      }
+      const headerText = decodedText.slice(0, first);
+      const tokenMatches = [...headerText.matchAll(/\d+/g)].map(m => Number(m[0]));
+      if (tokenMatches.length < 2 * N) {
+        throw new Error(`PDF ObjStm ${id} header không đủ ${N} cặp số.`);
+      }
+
+      for (let k = 0; k < N; k++) {
+        const compId = tokenMatches[2 * k];
+        const offset = tokenMatches[2 * k + 1];
+        const nextOffset = (k < N - 1) ? tokenMatches[2 * (k + 1) + 1] : (decodedBytes.length - first);
+        if (offset < 0 || offset > nextOffset || (first + nextOffset) > decodedBytes.length) {
+          throw new Error(`PDF ObjStm ${id} chứa object offset không hợp lệ.`);
+        }
+        const compBodyText = decodedText.slice(first + offset, first + nextOffset).trim();
+        compressedObjects.set(compId, {
+          id: compId,
+          generation: 0,
+          text: compBodyText,
+          bytes: latin1Encode(compBodyText),
+          isCompressed: true
+        });
+      }
+    }
+    return compressedObjects;
+  }
+
   function parseObjects(bytes) {
     const text = decoder.decode(bytes);
     const objectIndex = buildObjectIndex(text);
+    const compressedObjects = parseObjectStreams(bytes, text, objectIndex);
     const lengthCache = new Map();
     const objects = new Map();
     const pattern = /(\d+)\s+(\d+)\s+obj\b/g;
@@ -215,7 +477,7 @@
       if (match.index > 0 && !isPdfWhitespace(text[match.index - 1])) continue;
       const id = Number(match[1]);
       const bodyStart = pattern.lastIndex;
-      const result = findObjectEnd(text, bodyStart, objectIndex, id, lengthCache);
+      const result = findObjectEnd(text, bodyStart, objectIndex, id, lengthCache, compressedObjects);
       const end = result.end;
       if (end < 0) throw new Error('PDF không hợp lệ: thiếu endobj.');
       const objRecord = {
@@ -233,9 +495,17 @@
       objects.set(id, objRecord);
       pattern.lastIndex = end + 6;
     }
+
+    for (const [compId, compRecord] of compressedObjects) {
+      if (!objects.has(compId)) {
+        objects.set(compId, compRecord);
+      }
+    }
+
     if (!objects.size) throw new Error('PDF không có object hợp lệ.');
     return objects;
   }
+
 
   function refsIn(text) {
     const refs = [];
@@ -265,22 +535,55 @@
   }
 
   function balancedPdfValueEnd(text, index, open) {
-    let depth = 0;
-    for (let i = index; i < text.length; i++) {
-      if (text[i] === '%') { while (i < text.length && text[i] !== '\r' && text[i] !== '\n') i++; continue; }
+    const stack = [open];
+    let i = index + (open === '<<' ? 2 : 1);
+    while (i < text.length && stack.length > 0) {
+      if (text[i] === '%') {
+        while (i < text.length && text[i] !== '\r' && text[i] !== '\n') i++;
+        continue;
+      }
       if (text[i] === '(') {
         let stringDepth = 1;
-        while (++i < text.length && stringDepth) {
+        while (++i < text.length && stringDepth > 0) {
           if (text[i] === '\\') { i++; continue; }
           if (text[i] === '(') stringDepth++;
           else if (text[i] === ')') stringDepth--;
         }
         continue;
       }
-      if (open === '<<' && text.slice(i, i + 2) === '<<') { depth++; i++; continue; }
-      if (open === '<<' && text.slice(i, i + 2) === '>>' && --depth === 0) return i + 2;
-      if (open === '[' && text[i] === '[') { depth++; continue; }
-      if (open === '[' && text[i] === ']' && --depth === 0) return i + 1;
+      if (text[i] === '<') {
+        if (text[i + 1] === '<') {
+          stack.push('<<');
+          i += 2;
+          continue;
+        }
+        // hex string
+        while (++i < text.length && text[i] !== '>') {}
+        if (i < text.length) i++;
+        continue;
+      }
+      if (text[i] === '>' && text[i + 1] === '>') {
+        if (stack[stack.length - 1] === '<<') {
+          stack.pop();
+          if (stack.length === 0) return i + 2;
+          i += 2;
+          continue;
+        }
+      }
+      if (text[i] === '[') {
+        stack.push('[');
+        i++;
+        continue;
+      }
+      if (text[i] === ']') {
+        if (stack[stack.length - 1] === '[') {
+          stack.pop();
+          if (stack.length === 0) return i + 1;
+          i++;
+          continue;
+        }
+      }
+      i++;
     }
     return -1;
   }
@@ -298,6 +601,11 @@
         else if (text[i] === ')' && --depth === 0) return i + 1;
       }
       return -1;
+    }
+    if (text[index] === '<' && text[index + 1] !== '<') {
+      let end = index + 1;
+      while (end < text.length && text[end] !== '>') end++;
+      return end < text.length ? end + 1 : -1;
     }
     let end = index;
     while (end < text.length && !/\s|[\[\]()<>/]/.test(text[end])) end++;
