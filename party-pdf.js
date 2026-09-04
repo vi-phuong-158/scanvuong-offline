@@ -674,7 +674,15 @@
       inherited.forEach(key => {
         if (!valueForKey(text, key)) {
           const value = valueForKey(parent.text, key);
-          if (value) text = text.replace(/>>\s*$/, ` /${key} ${value} >>`);
+          if (value) {
+            const dictStart = text.indexOf('<<');
+            const dictEnd = dictStart >= 0 ? balancedPdfValueEnd(text, dictStart, '<<') : -1;
+            if (dictEnd > 2) {
+              text = text.slice(0, dictEnd - 2) + ` /${key} ${value} >>` + text.slice(dictEnd);
+            } else {
+              text = text.replace(/>>\s*$/, ` /${key} ${value} >>`);
+            }
+          }
         }
       });
       parentId = Number((parent.text.match(/\/Parent\s+(\d+)\s+\d+\s+R\b/) || [])[1] || 0);
@@ -714,12 +722,36 @@
     return String(value || '').match(/-?(?:\d+\.?\d*|\.\d+)/g)?.map(Number) || [];
   }
 
+  function resolveIndirectValue(objects, value) {
+    if (!value) return '';
+    const trimmed = String(value).trim();
+    const m = trimmed.match(/^(\d+)\s+\d+\s+R$/);
+    if (!m) return trimmed;
+    const refId = Number(m[1]);
+    const obj = objects.get(refId);
+    if (!obj) return '';
+    return obj.text.trim();
+  }
+
+  function parseBox(objects, value) {
+    if (!value) return null;
+    let resolved = resolveIndirectValue(objects, value);
+    if (!resolved || resolved === 'null') return null;
+    const nums = numberArray(resolved);
+    if (nums.length >= 4 && nums[2] > nums[0] && nums[3] > nums[1]) {
+      return nums;
+    }
+    return null;
+  }
+
   function pageInfo(source, index) {
     const ref = source.page(index);
     const body = inheritedPageText(source.objects, ref.objectId);
-    const box = numberArray(valueForKey(body, 'CropBox') || valueForKey(body, 'MediaBox'));
-    if (box.length < 4 || !(box[2] > box[0]) || !(box[3] > box[1])) throw new Error('PDF page thiếu MediaBox/CropBox hợp lệ.');
-    const rotation = ((Number(valueForKey(body, 'Rotate')) || 0) % 360 + 360) % 360;
+    const box = parseBox(source.objects, valueForKey(body, 'CropBox')) ||
+                parseBox(source.objects, valueForKey(body, 'MediaBox'));
+    if (!box) throw new Error('PDF page thiếu MediaBox/CropBox hợp lệ.');
+    const rotVal = resolveIndirectValue(source.objects, valueForKey(body, 'Rotate'));
+    const rotation = ((Number(rotVal) || 0) % 360 + 360) % 360;
     const rawWidth = box[2] - box[0], rawHeight = box[3] - box[1];
     return { ref, body, box, rotation, rawWidth, rawHeight,
       width: rotation % 180 ? rawHeight : rawWidth,
@@ -1273,13 +1305,67 @@
     return concat([prefix, streamBytes, suffix]);
   }
 
-  function replaceResourceDict(body, newResText) {
-    const start = body.indexOf('/Resources');
-    if (start < 0) return body;
-    const valueStart = skipPdfSpace(body, start + 10);
-    const valueEnd = pdfValueEnd(body, valueStart);
-    if (valueEnd < 0) return body;
-    return body.slice(0, valueStart) + newResText + body.slice(valueEnd);
+  function cleanResourceDict(source, pageBody, wmNames) {
+    const resVal = valueForKey(pageBody, 'Resources');
+    if (!resVal) return pageBody;
+
+    let resDictText = '';
+    const resRef = resVal.match(/^(\d+)\s+\d+\s+R$/);
+    if (resRef) {
+      const resObj = source.objects.get(Number(resRef[1]));
+      if (!resObj) return pageBody;
+      resDictText = resObj.text;
+    } else {
+      resDictText = resVal;
+    }
+
+    const dictStart = resDictText.indexOf('<<');
+    const dictEnd = dictStart >= 0 ? balancedPdfValueEnd(resDictText, dictStart, '<<') : -1;
+    if (dictEnd < 0) return pageBody;
+    let insideRes = resDictText.slice(dictStart, dictEnd);
+
+    const xobjVal = valueForKey(insideRes, 'XObject');
+    if (!xobjVal) return pageBody;
+
+    let xobjDictText = '';
+    const xobjRef = xobjVal.match(/^(\d+)\s+\d+\s+R$/);
+    if (xobjRef) {
+      const xobjObj = source.objects.get(Number(xobjRef[1]));
+      if (!xobjObj) return pageBody;
+      xobjDictText = xobjObj.text;
+    } else {
+      xobjDictText = xobjVal;
+    }
+
+    const xobjStart = xobjDictText.indexOf('<<');
+    const xobjEnd = xobjStart >= 0 ? balancedPdfValueEnd(xobjDictText, xobjStart, '<<') : -1;
+    if (xobjEnd < 0) return pageBody;
+    let cleanXobj = xobjDictText.slice(xobjStart, xobjEnd);
+
+    wmNames.forEach(name => {
+      const esc = name.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
+      cleanXobj = cleanXobj.replace(new RegExp(`\\/${esc}\\s+\\d+\\s+\\d+\\s+R`, 'g'), '');
+    });
+
+    const xobjKeyPos = insideRes.search(/\/XObject\b/);
+    if (xobjKeyPos >= 0) {
+      const vStart = skipPdfSpace(insideRes, xobjKeyPos + 8);
+      const vEnd = pdfValueEnd(insideRes, vStart);
+      if (vEnd > vStart) {
+        insideRes = insideRes.slice(0, vStart) + cleanXobj + insideRes.slice(vEnd);
+      }
+    }
+
+    const resKeyPos = pageBody.search(/\/Resources\b/);
+    if (resKeyPos >= 0) {
+      const rvStart = skipPdfSpace(pageBody, resKeyPos + 10);
+      const rvEnd = pdfValueEnd(pageBody, rvStart);
+      if (rvEnd > rvStart) {
+        pageBody = pageBody.slice(0, rvStart) + insideRes + pageBody.slice(rvEnd);
+      }
+    }
+
+    return pageBody;
   }
 
   function stripWatermarkFromContentStream(streamText, watermarkNames) {
@@ -1321,8 +1407,9 @@
 
       let box = [0, 0, 595.28, 841.89];
       try {
-        const boxVal = numberArray(valueForKey(body, 'CropBox') || valueForKey(body, 'MediaBox'));
-        if (boxVal.length >= 4 && boxVal[2] > boxVal[0] && boxVal[3] > boxVal[1]) box = boxVal;
+        const boxVal = parseBox(source.objects, valueForKey(body, 'CropBox')) ||
+                       parseBox(source.objects, valueForKey(body, 'MediaBox'));
+        if (boxVal) box = boxVal;
       } catch (_) {}
       const pageHeight = box[3] - box[1];
 
@@ -1341,13 +1428,15 @@
         }
       }
 
-      // Phải tồn tại ít nhất 1 ảnh quét văn bản chính có độ phân giải lớn
+      const maxScanArea = Math.max(0, ...images.map(img => img.width * img.height));
+      // Phải tồn tại ít nhất 1 ảnh quét văn bản chính có độ phân giải lớn (>= 500,000 px)
       const hasMainImage = images.some(img => (img.width >= 500 && img.height >= 500) || (img.width * img.height >= 500000));
-      if (!hasMainImage) continue;
+      if (!hasMainImage || maxScanArea < 500000) continue;
 
       // Nhận diện ứng viên logo CamScanner theo đặc tả heuristic:
       // (w in [240, 166, 160, 200, 180]) hoặc (140 <= w <= 270 && 45 <= h <= 110)
-      // Tỷ lệ w / h nằm trong khoảng 1.8 đến 4.0
+      // Tỷ lệ w / h nằm trong khoảng 2.3 đến 3.2
+      // Diện tích ảnh chính phải gấp ít nhất 8 lần diện tích ứng viên
       const candidates = images.filter(img => {
         const isCsCommonSize = (img.width === 240 && img.height === 90) ||
                                (img.width === 166 && img.height === 62) ||
@@ -1356,8 +1445,9 @@
                                (img.width === 180 && img.height === 68);
         const isSizeInRange = (img.width >= 140 && img.width <= 270 && img.height >= 45 && img.height <= 110);
         const ratio = img.width / img.height;
-        const isRatioMatch = ratio >= 1.8 && ratio <= 4.0;
-        return (isCsCommonSize || (isSizeInRange && isRatioMatch));
+        const isRatioMatch = ratio >= 2.3 && ratio <= 3.2;
+        const hasValidAreaRatio = maxScanArea >= (img.width * img.height * 8);
+        return (isCsCommonSize || (isSizeInRange && isRatioMatch)) && hasValidAreaRatio;
       });
 
       if (!candidates.length) continue;
@@ -1379,20 +1469,40 @@
 
       for (const candidate of candidates) {
         const esc = candidate.name.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
-        const doMatch = new RegExp(`(?:[-+]?(?:\\d+\\.?\\d*|\\.\\d+)\\s+){6}cm\\s*\\/${esc}\\s+Do\\b`).exec(combinedContent);
-        let placement = null;
+        const doRegex = new RegExp(`\\/${esc}\\s+Do\\b`, 'g');
+        let doMatch;
         let isBottomRegion = false;
-        if (doMatch) {
-          const nums = doMatch[0].match(/[-+]?(?:\d+\.?\d*|\.\d+)/g)?.map(Number);
-          if (nums && nums.length >= 6) {
-            const [a, b, c, d, e, f] = nums;
-            placement = { a, b, c, d, x: e, y: f };
-            if (f <= box[1] + pageHeight * 0.25) {
-              isBottomRegion = true;
+        let placement = null;
+
+        while ((doMatch = doRegex.exec(combinedContent))) {
+          const doIndex = doMatch.index;
+          const lookbackStart = Math.max(0, doIndex - 250);
+          const lookbackText = combinedContent.slice(lookbackStart, doIndex);
+
+          const cmRegex = /([-+]?(?:\d+\.?\d*|\.\d+)\s+){6}cm\b/g;
+          let cmMatch;
+          let lastCmMatch = null;
+          while ((cmMatch = cmRegex.exec(lookbackText))) {
+            lastCmMatch = cmMatch;
+          }
+
+          if (lastCmMatch) {
+            const nums = lastCmMatch[0].match(/[-+]?(?:\d+\.?\d*|\.\d+)/g)?.map(Number);
+            if (nums && nums.length >= 6) {
+              const [a, b, c, d, e, f] = nums;
+              const renderW = Math.hypot(a, b);
+              const renderH = Math.hypot(c, d);
+              const isBottomY = (f <= box[1] + pageHeight * 0.20) && (f >= box[1] - 50);
+              const isRenderWValid = renderW >= 20 && renderW <= 220;
+              const isRenderHValid = renderH >= 5 && renderH <= 70;
+
+              if (isBottomY && isRenderWValid && isRenderHValid) {
+                isBottomRegion = true;
+                placement = { a, b, c, d, x: e, y: f, renderW, renderH };
+                break;
+              }
             }
           }
-        } else if (new RegExp(`\\/${esc}\\s+Do\\b`).test(combinedContent)) {
-          isBottomRegion = true;
         }
 
         if (isBottomRegion) {
@@ -1475,14 +1585,8 @@
         const wmInfo = pageWmMap.get(wmKey);
 
         if (wmInfo && wmInfo.wmNames.size > 0) {
-          // Bóc tách đối tượng XObject watermark khỏi từ điển Resources
-          const resText = directResourceDict(ref.source, body);
-          let cleanResText = resText;
-          wmInfo.wmNames.forEach(name => {
-            const esc = name.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
-            cleanResText = cleanResText.replace(new RegExp(`\\/${esc}\\s+\\d+\\s+\\d+\\s+R`, 'g'), '');
-          });
-          body = replaceResourceDict(body, cleanResText);
+          // Bóc tách đối tượng XObject watermark khỏi từ điển Resources và inline từ điển đã làm sạch
+          body = cleanResourceDict(ref.source, body, wmInfo.wmNames);
 
           // Bóc tách khối lệnh vẽ watermark khỏi luồng Content Stream
           const contentIds = refsAfter(body, 'Contents');
@@ -1496,13 +1600,15 @@
               }
               const text = decoder.decode(rawBytes);
               const cleanedText = stripWatermarkFromContentStream(text, wmInfo.wmNames);
-              const newContentBytes = bytesFor(cleanedText);
-              const outputCid = nextId++;
-              mapFor(ref.source).set(cId, outputCid);
-              records.set(outputCid, {
-                kind: 'text',
-                text: `<< /Length ${newContentBytes.length} >>\nstream\n${cleanedText}\nendstream`
-              });
+              if (cleanedText !== text) {
+                const newContentBytes = bytesFor(cleanedText);
+                const outputCid = nextId++;
+                mapFor(ref.source).set(cId, outputCid);
+                records.set(outputCid, {
+                  kind: 'text',
+                  text: `<< /Length ${newContentBytes.length} >>\nstream\n${cleanedText}\nendstream`
+                });
+              }
             } catch (_) {}
           });
         }

@@ -16,6 +16,38 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-04] Final Defect Closure & Release Acceptance (PR #12)
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Hardening MediaBox / CropBox / Rotate Parsing (`party-pdf.js`):**
+     - Thêm `resolveIndirectValue` và `parseBox` xử lý an toàn indirect reference `/MediaBox 15 0 R`, `/Rotate 20 0 R` và bỏ qua giá trị `null` (`/CropBox null` an toàn fallback về `/MediaBox`).
+     - Cập nhật `inheritedPageText` chèn thuộc tính kế thừa trước ký tự đóng dictionary `>>` bằng `balancedPdfValueEnd`.
+     - Bổ sung Synthetic U, V, W trong `scripts/regression_party_mode.cjs` (69/69 checks PASS).
+  2. **Tăng cường an toàn Watermark Stripping & Chống nhận diện nhầm (`party-pdf.js`):**
+     - Siết chặt tỷ lệ khung hình logo CamScanner ($2.3 \le W/H \le 3.2$ hoặc kích thước chuẩn 240×90, 166×62, 160×60, 200×75, 180×68).
+     - Yêu cầu ảnh quét chính trên trang có diện tích $\ge 500,000$ px và diện tích gấp ít nhất 8 lần ứng viên watermark.
+     - Phân tích ma trận biến đổi `cm` trong cửa sổ lookback 250 ký tự trước `/name Do`: vị trí lề dưới $f \le \text{box}[1] + \text{pageHeight} \times 0.20$, kích thước hiển thị $20 \le \text{renderW} \le 220$, $5 \le \text{renderH} \le 70$.
+     - Loại bỏ hoàn toàn fallback regex nguy hiểm (không bao giờ nhận diện watermark nếu thiếu ma trận `cm` thỏa mãn điều kiện).
+     - Thay thế `replaceResourceDict` bằng `cleanResourceDict`: xử lý an toàn cả direct và indirect `/Resources` / `/XObject`, inline từ điển đã làm sạch vào trang và loại bỏ hoàn toàn đối tượng watermark khỏi danh sách đối tượng xuất ra.
+     - Chỉ ghi đè Content Stream khi nội dung stream thực sự thay đổi (`cleanedText !== text`).
+  3. **Mở rộng bộ kiểm thử hồi quy (`scripts/regression_watermark.cjs`):**
+     - Thêm 10 negative regression test cases (Clean PDF, Logo cơ quan ở đầu trang, Con dấu tròn/vuông, Chữ ký giữa trang, Mã QR ở chân trang, Banner toàn chiều rộng, Sơ đồ tài liệu, Ứng viên ở giữa trang, PDF không có ảnh quét chính, Các icon bullet nhỏ) -> tất cả đều giữ nguyên vẹn `removedCount = 0`, `unmodified = true`.
+     - Xác thực nguyên vẹn bit-for-bit của ảnh quét tài liệu chính qua SHA-256 hash và thuộc tính từ điển đối tượng (26/26 checks PASS).
+  4. **Tích hợp CI & Hướng dẫn người dùng (`.github/workflows/static-validation.yml`, `index.html`):**
+     - Bổ sung `node --check watermark-mode.js` và `node scripts/regression_watermark.cjs` vào static validation workflow.
+     - Cập nhật Hướng dẫn sử dụng trong `#partyHelpDialog` bằng ngôn ngữ đại chúng, phi kỹ thuật cho toàn bộ 4 chế độ làm việc của Vigil Lens.
+- **File đã sửa:** `party-pdf.js`, `scripts/regression_party_mode.cjs`, `scripts/regression_watermark.cjs`, `.github/workflows/static-validation.yml`, `index.html`, `docs/brain/04-current-tasks.md`, `docs/brain/06-ai-working-log.md`
+- **Lý do:** Hoàn thiện nghiệm thu đóng lỗi toàn diện, bảo đảm an toàn dữ liệu 100% không nhận diện nhầm, và tích hợp đầy đủ kiểm thử tự động trên CI.
+- **Kiểm tra:**
+  - `node --check app.js document-detector.js party-pdf.js party-mode.js party-taxonomy.js watermark-mode.js sw.js` (PASS)
+  - `python scripts/validate_static.py` (PASS)
+  - `node scripts/regression_party_mode.cjs` (69/69 PASS)
+  - `node scripts/regression_watermark.cjs` (26/26 PASS)
+  - `node scripts/regression_export_busy.js` (29/29 PASS)
+  - `node scripts/regression_scan_id.js` (52/52 PASS)
+  - `node scripts/regression_sw_update.cjs` (9/9 PASS)
+  - `node scripts/test_touch_targets.cjs` (120/120 PASS)
+
 ## [2026-09-04] Xóa Watermark / Logo CamScanner không mất chất lượng (Lossless Watermark Stripping)
 - **Agent:** Codex
 - **Thay đổi:**

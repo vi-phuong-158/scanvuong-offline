@@ -479,6 +479,41 @@ function boundaryFixture({ nulHeader = false, streamFalsePositive = false, malfo
   const infoT = PartyPdf.pageInfo(srcT, 0);
   check('Synthetic T: delimiter parser ignores >> inside literal and hex strings', infoT.box[2] === 595 && infoT.box[3] === 842);
 
+  // U. Indirect /MediaBox 15 0 R resolves correctly
+  const pdfU = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /MediaBox 15 0 R /Contents 4 0 R >>' },
+    { id: 4, body: '<< /Length 12 >>\nstream\nq 1 0 0 1 cm\nendstream' },
+    { id: 15, body: '[0 0 595.28 841.89]' }
+  ]);
+  const srcU = PartyPdf.sourceFromBuffer(pdfU, 'pdfU.pdf');
+  const infoU = PartyPdf.pageInfo(srcU, 0);
+  check('Synthetic U: indirect MediaBox resolves dimensions', infoU.box[2] === 595.28 && infoU.box[3] === 841.89);
+
+  // V. /CropBox null with valid /MediaBox does not fail or use null
+  const pdfV = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /CropBox null /MediaBox [0 0 595.28 841.89] /Contents 4 0 R >>' },
+    { id: 4, body: '<< /Length 12 >>\nstream\nq 1 0 0 1 cm\nendstream' }
+  ]);
+  const srcV = PartyPdf.sourceFromBuffer(pdfV, 'pdfV.pdf');
+  const infoV = PartyPdf.pageInfo(srcV, 0);
+  check('Synthetic V: CropBox null falls back safely to MediaBox', infoV.box[2] === 595.28 && infoV.box[3] === 841.89);
+
+  // W. Indirect /Rotate 20 0 R resolves correctly
+  const pdfW = makeSyntheticPdf([
+    { id: 1, body: '<< /Type /Catalog /Pages 2 0 R >>' },
+    { id: 2, body: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>' },
+    { id: 3, body: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 500 700] /Rotate 20 0 R /Contents 4 0 R >>' },
+    { id: 4, body: '<< /Length 12 >>\nstream\nq 1 0 0 1 cm\nendstream' },
+    { id: 20, body: '90' }
+  ]);
+  const srcW = PartyPdf.sourceFromBuffer(pdfW, 'pdfW.pdf');
+  const infoW = PartyPdf.pageInfo(srcW, 0);
+  check('Synthetic W: indirect Rotate resolves to 90 degrees', infoW.rotation === 90 && infoW.width === 700 && infoW.height === 500);
+
 
   // --- Real PDF Acceptance: Scan2026-08-24_150131.pdf ---
   const realPdfPath = require('path').join(root, 'Scan2026-08-24_150131.pdf');

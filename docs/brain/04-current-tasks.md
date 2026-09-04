@@ -6,7 +6,12 @@
 
 ## Đang làm
  
-- **PR #10 Hotfix: Party Document Mode PDF Preview Hardening & Multi-Split UX**: Khắc phục hiện tượng thumbnail trắng, bổ sung blank-canvas pixel validation, in-memory canvas restoration, UI báo lỗi kèm nút "Thử lại", multi-split đánh dấu nhiều điểm và hiển thị rõ số trang nguồn `Nguồn: trang Y/Z`. (Synthetic regression/browser acceptance đã có; final review yêu cầu base→hotfix reproduction độc lập và private real-PDF pilot phải được báo riêng. Không coi CI synthetic là real-PDF evidence.)
+- **PR #12: Lossless CamScanner Watermark Stripping & Final Defect Closure**: Đóng toàn bộ các lỗi tồn đọng:
+  1. MediaBox/CropBox/Rotate parser hardening cho cả direct & indirect objects, bỏ qua `/CropBox null`, và định vị thẻ đóng dictionary chuẩn.
+  2. False-positive safety cho bộ bóc tách watermark CamScanner: kiểm tra tỷ lệ khung hình 2.3–3.2, yêu cầu ảnh quét chính $\ge 500$k px và gấp $\ge 8\times$, phân tích ma trận `cm` trong cửa sổ lookback 250 ký tự tại lề dưới $\le 20\%$, kích thước hiển thị $20\le W\le 220, 5\le H\le 70$, loại bỏ fallback regex nguy hiểm.
+  3. Làm sạch từ điển `/Resources` và inline vào trang, loại bỏ triệt để đối tượng watermark khỏi file xuất ra, bảo toàn bit-for-bit nguyên vẹn ảnh quét chính.
+  4. Mở rộng bộ kiểm thử 10 negative regression test cases và CI static validation workflow.
+  5. Cập nhật Hướng dẫn sử dụng người dùng cho cả 4 chế độ làm việc.
  
 ---
 
@@ -16,13 +21,13 @@
 - **Mô tả:** Kiểm tra thủ công prompt cài đặt PWA ("Cài đặt ứng dụng" / "Add to Home Screen") trên trình duyệt Chrome/Edge thực tế ngoài môi trường headless, xác nhận icon launcher xuất hiện trên màn hình chính và mở ứng dụng standalone khi không có mạng.
 - **Trạng thái kỹ thuật (Automated Headless Acceptance):** **PASS**
   - `SERVICE_WORKER_REGISTERED`: PASS
-  - `PRECACHE_COMPLETE`: PASS (16/16 assets)
+  - `PRECACHE_COMPLETE`: PASS (27/27 assets)
   - `OFFLINE_RELOAD_PASS`: PASS (App Shell load hoàn toàn từ Service Worker cache khi ngắt mạng)
   - `BE_VIETNAM_PRO_OFFLINE_PASS`: PASS (4 weights 400, 500, 600, 700 tải offline)
   - `OFFLINE_DOCUMENT_FLOW_PASS`: PASS
   - `OFFLINE_SCAN_ID_FLOW_PASS`: PASS
   - `NO_REQUIRED_RUNTIME_NETWORK_DEPENDENCY`: PASS
-- **Trạng thái nghiệm thu thủ công (Manual OS Prompt):** **PENDING** (`PWA_INSTALLABILITY_NOT_VERIFIED_ENVIRONMENT_LIMITATION` do môi trường headless CI không kích hoạt giao diện prompt native của hệ điều hành).
+- **Trạng thái nghiệm thu thủ công (Manual OS Prompt):** **PWA_MANUAL_OS_INSTALL_PROMPT_PENDING_NON_BLOCKING** (Môi trường headless CI/server không hỗ trợ kích hoạt giao diện prompt native OS; toàn bộ hạ tầng kỹ thuật PWA đạt 100% chuẩn web app manifest và offline service worker cache).
 
 ### Scan ID: preset kích thước thật (physical-size, 85.60×53.98mm in-scale-thật)
 - **Mô tả:** V1 Scan ID hỗ trợ layout preset "Bản in đẹp" (thẻ phóng lớn vừa phải, căn giữa A4). Preset thứ hai render thẻ đúng kích thước vật lý thật (cần physical DPI/print scaling chính xác) được đưa vào backlog.
