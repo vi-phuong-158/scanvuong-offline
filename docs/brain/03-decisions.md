@@ -347,3 +347,23 @@
 - **Đánh đổi:**
   Tốn thêm ~2.2ms cho một lượt quét regex lập chỉ mục vị trí các object lúc nạp tệp (1097 objects trong 1.1MB chỉ mất 2.2ms). Đổi lại, parser đạt độ chính xác 100%, không phụ thuộc thứ tự xuất hiện của object độ dài, xử lý an toàn mọi tệp scan MRC/đa lớp.
 - **Người quyết định:** Codex (theo yêu cầu DEV TASK của người dùng).
+
+## [2026-09-04] Watermark Stripper: Hỗ trợ dải chữ CamScanner toàn cảnh, ma trận cm ghép và dọn dẹp Link Annotation
+
+- **Quyết định:**
+  1. **Bỏ qua mặt nạ 1-bit (`/ImageMask true`):** Loại trừ triệt để các phân đoạn văn bản MRC đen trắng (CCITTFaxDecode/JBIG2Decode) khỏi danh sách ứng viên watermark.
+  2. **Hỗ trợ 2 nhóm hình học watermark CamScanner:**
+     - Type 1 (Huy hiệu nhỏ / Badge): $140 \le W \le 270\text{px}$, $45 \le H \le 110\text{px}$, tỷ lệ $2.3 \le W/H \le 3.2$.
+     - Type 2 (Dải chữ toàn cảnh / Wide Banner): $350 \le W \le 1600\text{px}$, $30 \le H \le 180\text{px}$, tỷ lệ $5.5 \le W/H \le 13.0$ (chuyên biệt cho banner *"Được quét bằng CamScanner"* / *"Scanned with CamScanner"*, thực tế $888 \times 92\text{px}$, tỷ lệ 9.65).
+  3. **Tích lũy ma trận biến đổi Affine (`cm` compounding):**
+     Thay vì chỉ đọc lệnh `cm` đơn lẻ cuối cùng, bộ phân tích duyệt toàn bộ chuỗi lệnh `cm` từ lệnh `q` mở đầu tới `/name Do` và thực hiện nhân dồn ma trận 2D ($CTM_{new} = cm \times CTM_{old}$). Đảm bảo xác định chính xác tọa độ $(x, y)$ và kích thước render $(renderW, renderH)$ kể cả khi CamScanner tách riêng lệnh dịch chuyển tọa độ và lệnh co giãn kích thước.
+  4. **Nâng cấp regex bóc tách Content Stream:**
+     Cho phép mẫu chuẩn `q ... cm ... /ImX Do Q` khớp 1 hoặc nhiều lệnh `cm` liên tiếp `(?:(?:[-+]?(?:\d+\.?\d*|\.\d+)\s+){6}cm\s*)+`.
+  5. **Dọn dẹp Link Annotation CamScanner (`cleanCamScannerAnnotations`):**
+     Quét và loại bỏ các đối tượng `/Subtype /Link` trỏ tới `camscanner.com` hoặc có `/Rect` trùng khớp với khung watermark đã bóc tách, dọn sạch khóa `/Annots` nếu không còn annotation nào khác, loại bỏ hoàn toàn bẫy click chuột vô hình trên tệp xuất ra.
+- **Lý do:**
+  Tệp tài liệu scan thực tế 9 trang của người dùng chứa dải chữ CamScanner 888×92px và cặp ma trận `1 0 0 1 700 10 cm` + `126 0 0 13 0 0 cm` kèm link annotation `https://v3.camscanner.com/user/download`. Cơ chế cũ bỏ sót do vượt quá dải tỷ lệ badge và mất tọa độ gốc.
+- **Đánh đổi:**
+  Không có. Thuật toán nhân ma trận Affine 6 tham số chạy tức thì ($<0.01\text{ms}$/trang), bảo toàn 100% bit stream JPEG của ảnh scan gốc và hoàn toàn không có âm tính giả trên các bộ kiểm thử hồi quy.
+- **Người quyết định:** Codex (theo yêu cầu người dùng).
+

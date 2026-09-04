@@ -1305,6 +1305,68 @@
     return concat([prefix, streamBytes, suffix]);
   }
 
+  function cleanCamScannerAnnotations(source, pageBody, placements = []) {
+    const annotVal = valueForKey(pageBody, 'Annots');
+    if (!annotVal) return pageBody;
+
+    let annotRefs = [];
+    const directRef = annotVal.match(/^(\d+)\s+\d+\s+R$/);
+    if (directRef) {
+      const annotObj = source.objects.get(Number(directRef[1]));
+      if (annotObj) annotRefs = refsIn(annotObj.text);
+    } else {
+      annotRefs = refsIn(annotVal);
+    }
+    if (!annotRefs.length) return pageBody;
+
+    const keptRefs = [];
+    for (const refId of annotRefs) {
+      const annotObj = source.objects.get(refId);
+      let isCamScannerAnnot = false;
+      if (annotObj) {
+        const aText = annotObj.text;
+        if (/camscanner\.com/i.test(aText)) {
+          isCamScannerAnnot = true;
+        } else if (/\/Subtype\s*\/Link\b/.test(aText)) {
+          const rectVal = valueForKey(aText, 'Rect');
+          const rect = rectVal?.match(/[-+]?(?:\d+\.?\d*|\.\d+)/g)?.map(Number);
+          if (rect && rect.length >= 4) {
+            const [rx1, ry1, rx2, ry2] = rect;
+            for (const pl of placements) {
+              if (!pl) continue;
+              const px1 = pl.x, py1 = pl.y;
+              if (Math.abs(rx1 - px1) < 30 && Math.abs(ry1 - py1) < 30 &&
+                  Math.abs((rx2 - rx1) - pl.renderW) < 30 && Math.abs((ry2 - ry1) - pl.renderH) < 30) {
+                isCamScannerAnnot = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+      if (!isCamScannerAnnot) {
+        keptRefs.push(refId);
+      }
+    }
+
+    if (keptRefs.length === annotRefs.length) return pageBody;
+
+    const annotKeyPos = pageBody.search(/\/Annots\b/);
+    if (annotKeyPos >= 0) {
+      const vStart = skipPdfSpace(pageBody, annotKeyPos + 7);
+      const vEnd = pdfValueEnd(pageBody, vStart);
+      if (vEnd > vStart) {
+        if (keptRefs.length > 0) {
+          const newAnnotStr = `[ ${keptRefs.map(id => `${id} 0 R`).join(' ')} ]`;
+          pageBody = pageBody.slice(0, vStart) + newAnnotStr + pageBody.slice(vEnd);
+        } else {
+          pageBody = pageBody.slice(0, annotKeyPos) + pageBody.slice(vEnd);
+        }
+      }
+    }
+    return pageBody;
+  }
+
   function cleanResourceDict(source, pageBody, wmNames) {
     const resVal = valueForKey(pageBody, 'Resources');
     if (!resVal) return pageBody;
@@ -1377,8 +1439,8 @@
     for (const rawName of names) {
       const name = rawName.startsWith('/') ? rawName.slice(1) : rawName;
       const esc = name.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
-      // 1. Standard pattern: q ... cm /ImX Do Q (với /Perceptual ri hoặc toán tử khác trước cm)
-      const p1 = new RegExp(`q\\s*(?:\\/[A-Za-z0-9]+\\s+ri\\s*)?(?:[-+]?(?:\\d+\\.?\\d*|\\.\\d+)\\s+){6}cm\\s*\\/${esc}\\s+Do\\s*Q\\s*`, 'g');
+      // 1. Standard pattern: q ... cm /ImX Do Q (hỗ trợ nhiều lệnh cm và ri)
+      const p1 = new RegExp(`q\\s*(?:\\/[A-Za-z0-9]+\\s+ri\\s*)?(?:(?:[-+]?(?:\\d+\\.?\\d*|\\.\\d+)\\s+){6}cm\\s*)+\\/${esc}\\s+Do\\s*Q\\s*`, 'g');
       cleaned = cleaned.replace(p1, '');
       // 2. Fallback: khối q ... /ImX Do ... Q
       const p2 = new RegExp(`q\\s*[^qQ]*?\\/${esc}\\s+Do\\s*[^qQ]*?Q\\s*`, 'g');
@@ -1421,6 +1483,7 @@
         const stream = streamMarker(obj.text, 0);
         const dict = stream < 0 ? obj.text : obj.text.slice(0, stream);
         if (!/\/Subtype\s*\/Image\b/.test(dict)) continue;
+        if (/\/ImageMask\s+true\b/.test(dict)) continue;
         const w = Number((dict.match(/\/Width\s+(\d+)/) || [])[1]);
         const h = Number((dict.match(/\/Height\s+(\d+)/) || [])[1]);
         if (Number.isSafeInteger(w) && Number.isSafeInteger(h) && w > 0 && h > 0) {
@@ -1433,21 +1496,22 @@
       const hasMainImage = images.some(img => (img.width >= 500 && img.height >= 500) || (img.width * img.height >= 500000));
       if (!hasMainImage || maxScanArea < 500000) continue;
 
-      // Nhận diện ứng viên logo CamScanner theo đặc tả heuristic:
-      // (w in [240, 166, 160, 200, 180]) hoặc (140 <= w <= 270 && 45 <= h <= 110)
-      // Tỷ lệ w / h nằm trong khoảng 2.3 đến 3.2
-      // Diện tích ảnh chính phải gấp ít nhất 8 lần diện tích ứng viên
+      // Nhận diện ứng viên logo / banner CamScanner theo đặc tả heuristic:
+      // Type 1: Logo nhỏ/badge CamScanner (w in [240, 166, 160, 200, 180] hoặc 140 <= w <= 270, 45 <= h <= 110, tỷ lệ 2.3 - 3.2)
+      // Type 2: Dải chữ watermark toàn cảnh CamScanner ("Được quét bằng CamScanner" / "Scanned with CamScanner",
+      //         w từ 350 - 1600, h từ 30 - 180, tỷ lệ w/h từ 5.5 - 13.0)
+      // Cả hai loại đều yêu cầu: diện tích ảnh chính >= 8 lần diện tích ứng viên
       const candidates = images.filter(img => {
-        const isCsCommonSize = (img.width === 240 && img.height === 90) ||
-                               (img.width === 166 && img.height === 62) ||
-                               (img.width === 160 && img.height === 60) ||
-                               (img.width === 200 && img.height === 75) ||
-                               (img.width === 180 && img.height === 68);
-        const isSizeInRange = (img.width >= 140 && img.width <= 270 && img.height >= 45 && img.height <= 110);
         const ratio = img.width / img.height;
-        const isRatioMatch = ratio >= 2.3 && ratio <= 3.2;
+        const isCsCommonBadge = (img.width === 240 && img.height === 90) ||
+                                (img.width === 166 && img.height === 62) ||
+                                (img.width === 160 && img.height === 60) ||
+                                (img.width === 200 && img.height === 75) ||
+                                (img.width === 180 && img.height === 68);
+        const isType1Badge = isCsCommonBadge || (img.width >= 140 && img.width <= 270 && img.height >= 45 && img.height <= 110 && ratio >= 2.3 && ratio <= 3.2);
+        const isType2Banner = (img.width >= 350 && img.width <= 1600 && img.height >= 30 && img.height <= 180 && ratio >= 5.5 && ratio <= 13.0);
         const hasValidAreaRatio = maxScanArea >= (img.width * img.height * 8);
-        return (isCsCommonSize || (isSizeInRange && isRatioMatch)) && hasValidAreaRatio;
+        return (isType1Badge || isType2Banner) && hasValidAreaRatio;
       });
 
       if (!candidates.length) continue;
@@ -1476,31 +1540,44 @@
 
         while ((doMatch = doRegex.exec(combinedContent))) {
           const doIndex = doMatch.index;
-          const lookbackStart = Math.max(0, doIndex - 250);
+          const lookbackStart = Math.max(0, doIndex - 400);
           const lookbackText = combinedContent.slice(lookbackStart, doIndex);
+          const qIndex = lookbackText.lastIndexOf('q');
+          const chunk = qIndex >= 0 ? lookbackText.slice(qIndex) : lookbackText;
 
           const cmRegex = /([-+]?(?:\d+\.?\d*|\.\d+)\s+){6}cm\b/g;
+          let ctm = [1, 0, 0, 1, 0, 0];
+          let cmCount = 0;
           let cmMatch;
-          let lastCmMatch = null;
-          while ((cmMatch = cmRegex.exec(lookbackText))) {
-            lastCmMatch = cmMatch;
+          while ((cmMatch = cmRegex.exec(chunk))) {
+            const nums = cmMatch[0].match(/[-+]?(?:\d+\.?\d*|\.\d+)/g)?.map(Number);
+            if (nums && nums.length >= 6) {
+              cmCount++;
+              const [a1, b1, c1, d1, e1, f1] = nums;
+              const [a2, b2, c2, d2, e2, f2] = ctm;
+              ctm = [
+                a1 * a2 + b1 * c2,
+                a1 * b2 + b1 * d2,
+                c1 * a2 + d1 * c2,
+                c1 * b2 + d1 * d2,
+                e1 * a2 + f1 * c2 + e2,
+                e1 * b2 + f1 * d2 + f2
+              ];
+            }
           }
 
-          if (lastCmMatch) {
-            const nums = lastCmMatch[0].match(/[-+]?(?:\d+\.?\d*|\.\d+)/g)?.map(Number);
-            if (nums && nums.length >= 6) {
-              const [a, b, c, d, e, f] = nums;
-              const renderW = Math.hypot(a, b);
-              const renderH = Math.hypot(c, d);
-              const isBottomY = (f <= box[1] + pageHeight * 0.20) && (f >= box[1] - 50);
-              const isRenderWValid = renderW >= 20 && renderW <= 220;
-              const isRenderHValid = renderH >= 5 && renderH <= 70;
+          if (cmCount > 0) {
+            const [a, b, c, d, e, f] = ctm;
+            const renderW = Math.hypot(a, b);
+            const renderH = Math.hypot(c, d);
+            const isBottomY = (f <= box[1] + pageHeight * 0.20) && (f >= box[1] - 50);
+            const isRenderWValid = renderW >= 20 && renderW <= 280;
+            const isRenderHValid = renderH >= 5 && renderH <= 70;
 
-              if (isBottomY && isRenderWValid && isRenderHValid) {
-                isBottomRegion = true;
-                placement = { a, b, c, d, x: e, y: f, renderW, renderH };
-                break;
-              }
+            if (isBottomY && isRenderWValid && isRenderHValid) {
+              isBottomRegion = true;
+              placement = { a, b, c, d, x: e, y: f, renderW, renderH };
+              break;
             }
           }
         }
@@ -1565,10 +1642,11 @@
           if (detected.hasWatermarks) {
             detected.watermarkPages.forEach(wp => {
               const key = `${entry.ref.source.id}:${wp.pageId}`;
-              if (!pageWmMap.has(key)) pageWmMap.set(key, { wmNames: new Set(), wmObjIds: new Set() });
+              if (!pageWmMap.has(key)) pageWmMap.set(key, { wmNames: new Set(), wmObjIds: new Set(), placements: [] });
               const info = pageWmMap.get(key);
               info.wmNames.add(wp.watermarkName);
               info.wmObjIds.add(wp.xobjectId);
+              if (wp.placement) info.placements.push(wp.placement);
             });
           }
         }
@@ -1587,6 +1665,8 @@
         if (wmInfo && wmInfo.wmNames.size > 0) {
           // Bóc tách đối tượng XObject watermark khỏi từ điển Resources và inline từ điển đã làm sạch
           body = cleanResourceDict(ref.source, body, wmInfo.wmNames);
+          // Bóc tách link annotation CamScanner
+          body = cleanCamScannerAnnotations(ref.source, body, wmInfo.placements);
 
           // Bóc tách khối lệnh vẽ watermark khỏi luồng Content Stream
           const contentIds = refsAfter(body, 'Contents');

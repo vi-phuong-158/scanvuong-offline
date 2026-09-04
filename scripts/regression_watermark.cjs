@@ -94,24 +94,32 @@ function buildCamScannerSyntheticPdf() {
   return Buffer.concat(parts.map(p => typeof p === 'string' ? Buffer.from(p) : p));
 }
 
-function makeSinglePagePdf({ images = [], contentStream = '', mediaBox = [0, 0, 595.32, 841.92] } = {}) {
+function makeSinglePagePdf({ images = [], contentStream = '', mediaBox = [0, 0, 595.32, 841.92], annots = '', extraObjects = [] } = {}) {
   const xobjEntries = images.map(img => `/${img.name} ${img.objId} 0 R`).join(' ');
   const contentBytes = zlib.deflateSync(Buffer.from(contentStream));
+  const annotsEntry = annots ? ` /Annots ${annots}` : '';
   const parts = [
     '%PDF-1.4\n',
     '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
     '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
-    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [${mediaBox.join(' ')}] /Resources << /XObject << ${xobjEntries} >> >> /Contents 4 0 R >>\nendobj\n`,
+    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [${mediaBox.join(' ')}] /Resources << /XObject << ${xobjEntries} >> >>${annotsEntry} /Contents 4 0 R >>\nendobj\n`,
     `4 0 obj\n<< /Length ${contentBytes.length} /Filter /FlateDecode >>\nstream\n`,
     contentBytes,
     '\nendstream\nendobj\n'
   ];
   for (const img of images) {
+    const maskEntry = img.isMask ? ' /ImageMask true' : '';
+    const filterEntry = img.filter || '/DCTDecode';
+    const csEntry = img.isMask ? '' : ' /ColorSpace /DeviceRGB';
+    const bpc = img.isMask ? 1 : 8;
     parts.push(
-      `${img.objId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${img.width} /Height ${img.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.data.length} >>\nstream\n`,
+      `${img.objId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${img.width} /Height ${img.height}${csEntry} /BitsPerComponent ${bpc}${maskEntry} /Filter ${filterEntry} /Length ${img.data.length} >>\nstream\n`,
       img.data,
       '\nendstream\nendobj\n'
     );
+  }
+  for (const extra of extraObjects) {
+    parts.push(extra);
   }
   parts.push('%%EOF');
   return Buffer.concat(parts.map(p => typeof p === 'string' ? Buffer.from(p) : p));
@@ -299,6 +307,65 @@ function makeSinglePagePdf({ images = [], contentStream = '', mediaBox = [0, 0, 
   const neg10Det = PartyPdf.detectCamScannerWatermarks(neg10Src);
   const neg10Strip = await PartyPdf.stripWatermarks(new Uint8Array(neg10Buf));
   check('Neg 10 (Multiple 32x32 icons): dimensions rejected', neg10Det.hasWatermarks === false && neg10Strip.unmodified === true);
+
+  // Neg 11: MRC scan 1-bit ImageMask (152x52 at bottom) rejected
+  const neg11Buf = makeSinglePagePdf({
+    images: [
+      { name: 'Im1', objId: 5, width: 2000, height: 3000, data: docImg },
+      { name: 'Ma4', objId: 6, width: 152, height: 52, data: Buffer.alloc(152 * 7), isMask: true, filter: '/CCITTFaxDecode' }
+    ],
+    contentStream: 'q 595.32 0 0 841.92 0 0 cm /Im1 Do Q q 100 0 0 35 400 15 cm /Ma4 Do Q'
+  });
+  const neg11Src = PartyPdf.sourceFromBuffer(new Uint8Array(neg11Buf), 'neg11.pdf');
+  const neg11Det = PartyPdf.detectCamScannerWatermarks(neg11Src);
+  const neg11Strip = await PartyPdf.stripWatermarks(new Uint8Array(neg11Buf));
+  check('Neg 11 (MRC 1-bit ImageMask): rejected via /ImageMask true check', neg11Det.hasWatermarks === false && neg11Strip.unmodified === true);
+
+  // === PART 3: POSITIVE TYPE 2 WIDE BANNER (888x92, multi-cm, Link Annotation) ===
+  const bannerImg = makeDummyJpeg(888, 92);
+  const type2Buf = makeSinglePagePdf({
+    images: [
+      { name: 'ImScan', objId: 5, width: 3187, height: 2116, data: docImg },
+      { name: 'X1', objId: 6, width: 888, height: 92, data: bannerImg }
+    ],
+    mediaBox: [0, 0, 842, 595],
+    annots: '[ 7 0 R ]',
+    extraObjects: [
+      '7 0 obj\n<< /Rect [ 686 10 812 23 ] /Type /Annot /Subtype /Link /A << /Type /Action /S /URI /URI (https://v3.camscanner.com/user/download) >> >>\nendobj\n'
+    ],
+    contentStream: 'q 1 0 0 1 700 10 cm 126 0 0 13 0 0 cm /X1 Do Q q 1 0 0 1 0 30 cm 842 0 0 559 0 0 cm /ImScan Do Q'
+  });
+  const type2Src = PartyPdf.sourceFromBuffer(new Uint8Array(type2Buf), 'type2.pdf');
+  const type2Det = PartyPdf.detectCamScannerWatermarks(type2Src);
+  check('Positive Type 2: Wide text banner detected', type2Det.hasWatermarks === true && type2Det.watermarkPages.length === 1);
+  check('Positive Type 2: Detected candidate is X1 (888x92)', type2Det.watermarkPages[0].watermarkName === 'X1' && type2Det.watermarkPages[0].width === 888);
+  check('Positive Type 2: Placement compounded correctly', type2Det.watermarkPages[0].placement.x === 700 && type2Det.watermarkPages[0].placement.renderW === 126);
+
+  const type2Strip = await PartyPdf.stripWatermarks(new Uint8Array(type2Buf));
+  check('Positive Type 2: Strip succeeded', type2Strip.unmodified === false && type2Strip.removedCount === 1);
+
+  const type2CleanBytes = new Uint8Array(await type2Strip.blob.arrayBuffer());
+  const type2CleanSrc = PartyPdf.sourceFromBuffer(type2CleanBytes, 'type2-clean.pdf');
+  const type2CleanDet = PartyPdf.detectCamScannerWatermarks(type2CleanSrc);
+  check('Positive Type 2: Clean re-detection finds 0 watermarks', type2CleanDet.hasWatermarks === false);
+
+  const type2CleanText = new TextDecoder('latin1').decode(type2CleanBytes);
+  check('Positive Type 2: Clean PDF does not reference /X1', !/\/X1\b/.test(type2CleanText));
+  check('Positive Type 2: CamScanner Link Annotation stripped', !/camscanner\.com/i.test(type2CleanText));
+
+  // Extract scan image from clean output and verify SHA-256
+  let type2DocStreamFound = false;
+  for (const [, obj] of type2CleanSrc.objects) {
+    if (obj.text.includes('/Subtype /Image') && obj.text.includes('/Width 3187')) {
+      const streamData = obj.bytes.slice(obj.streamDataStart, obj.streamDataEnd);
+      const hash = crypto.createHash('sha256').update(Buffer.from(streamData)).digest('hex');
+      if (hash === docHash) {
+        type2DocStreamFound = true;
+        break;
+      }
+    }
+  }
+  check('Positive Type 2: Main scan image is 100% bit-for-bit preserved (SHA-256 match)', type2DocStreamFound);
 
   console.log('\nLossless Watermark Stripping regression: ' + pass + '/' + pass + ' checks PASS');
 })().catch(err => { console.error(err.stack || err); process.exit(1); });

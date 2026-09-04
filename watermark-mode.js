@@ -1,4 +1,4 @@
-/* VPH Vigil Lens — Lossless CamScanner Watermark Stripper (offline, in-browser). */
+/* VPH Vigil Lens — Lossless Watermark Stripper (offline, in-browser). */
 (() => {
   'use strict';
 
@@ -90,16 +90,16 @@
     els.result.classList.remove('hidden');
 
     if (result.removedCount > 0) {
-      els.statusTitle.textContent = `Đã bóc tách thành công ${result.removedCount} logo CamScanner`;
-      els.statusDesc.textContent = `Phát hiện và loại bỏ watermark trên ${result.removedPages.length}/${result.totalPages} trang. Dữ liệu ảnh quét gốc được bảo toàn 100% (bit-for-bit lossless).`;
+      els.statusTitle.textContent = `Đã làm sạch thành công vùng chân trang (${result.removedCount} vị trí)`;
+      els.statusDesc.textContent = `Xử lý trên ${result.removedPages.length}/${result.totalPages} trang. Dữ liệu ảnh quét gốc được bảo toàn 100% (bit-for-bit lossless).`;
       els.statusIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="icon-success"><path d="M20 6 9 17l-5-5"/></svg>`;
-      els.metaRemoved.textContent = `${result.removedCount} watermark`;
+      els.metaRemoved.textContent = `${result.removedCount} vị trí đã xử lý`;
       els.metaRemoved.className = 'watermark-meta-value text-success';
     } else {
-      els.statusTitle.textContent = 'Không tìm thấy watermark CamScanner';
-      els.statusDesc.textContent = 'Tài liệu không có logo CamScanner hoặc đã là tệp sạch. Tệp được giữ nguyên vẹn 100%.';
+      els.statusTitle.textContent = 'Vùng chân trang đã sạch';
+      els.statusDesc.textContent = 'Tài liệu không có nội dung thừa ở chân trang hoặc đã là tệp sạch. Tệp được giữ nguyên vẹn 100%.';
       els.statusIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="icon-info"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
-      els.metaRemoved.textContent = '0 watermark (Tệp sạch)';
+      els.metaRemoved.textContent = '0 (Tệp sạch)';
       els.metaRemoved.className = 'watermark-meta-value';
     }
 

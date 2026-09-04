@@ -16,6 +16,61 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-04] Cập nhật mục giới thiệu tính năng: "Làm sạch chân trang"
+- **Agent:** Antigravity (Gemini)
+- **Thay đổi:**
+  1. Thay thế tiêu đề và toàn bộ câu chữ giới thiệu của chế độ thứ 4 thành "Làm sạch chân trang" / "Làm sạch vùng chân trang" (`index.html`, `watermark-mode.js`, `README.md`).
+  2. Tại thẻ chọn chế độ và modal hướng dẫn sử dụng: Đặt tên tính năng là **Làm sạch chân trang**, mô tả ngắn gọn: *"Làm sạch vùng chân trang mà không làm giảm chất lượng ảnh quét (giữ nguyên 100% dữ liệu gốc)"*.
+  3. Khu vực làm việc: Đổi tiêu đề `<h2>Làm sạch chân trang</h2>`, mô tả *"Làm sạch vùng chân trang · Giữ nguyên 100% dữ liệu và chất lượng ảnh quét gốc."*
+  4. Thông báo kết quả (`watermark-mode.js`): Cập nhật thành *"Đã làm sạch thành công vùng chân trang (N vị trí)"* và *"Vùng chân trang đã sạch"*.
+- **File đã sửa:** `index.html`, `watermark-mode.js`, `README.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Yêu cầu người dùng phần mục giới thiệu chỉ ghi là "Làm sạch vùng chân trang", diễn đạt trung tính, bảo mật và phù hợp môi trường hành chính.
+- **Kiểm tra:** `python scripts/validate_static.py` PASS 10/10; `node scripts/regression_watermark.cjs` PASS 35/35; `node --check watermark-mode.js` PASS.
+
+## [2026-09-04] Chuẩn hóa giao diện: Khái quát hóa tính năng Xóa Watermark (không nhắc tên thương hiệu)
+- **Agent:** Antigravity (Gemini)
+- **Thay đổi:**
+  1. Loại bỏ toàn bộ từ khóa tên thương hiệu "CamScanner" khỏi các thành phần giao diện người dùng (UI), màn hình chọn chế độ, modal hướng dẫn sử dụng và workspace xóa watermark (`index.html`).
+  2. Chuẩn hóa tiêu đề tính năng thành "Xóa Watermark" và "Xóa Watermark / Logo", mô tả khái quát: "Tự động phát hiện và bóc tách hoàn toàn watermark / logo phần mềm quét mà không làm giảm chất lượng ảnh quét".
+  3. Cập nhật các thông báo trạng thái kết quả trong `watermark-mode.js` ("Đã bóc tách thành công N watermark", "Không tìm thấy watermark trong tài liệu").
+  4. Cập nhật tài liệu giới thiệu `README.md`.
+- **File đã sửa:** `index.html`, `watermark-mode.js`, `README.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Yêu cầu người dùng diễn đạt chung là tính năng xóa Watermark, không nhắc đích danh ứng dụng cụ thể nào trên giao diện.
+- **Kiểm tra:**
+  - `python scripts/validate_static.py`: PASS (10/10 checks).
+  - `node --check watermark-mode.js`: PASS.
+  - `node scripts/regression_watermark.cjs`: PASS (35/35 checks).
+
+## [2026-09-04] Mở rộng Watermark Stripper: Hỗ trợ dải chữ CamScanner Type 2 và Link Annotations
+- **Agent:** Antigravity (Gemini)
+- **Thay đổi:**
+  1. **Bổ sung nhận diện dải chữ CamScanner góc phải dưới (Type 2):**
+     - Mở rộng heuristic trong `detectCamScannerWatermarks`: bên cạnh Type 1 (badge chữ nhật nhỏ $140 \le W \le 270$, $45 \le H \le 110$, tỷ lệ $2.3 - 3.2$), hỗ trợ thêm dải chữ dài *"Được quét bằng CamScanner"* Type 2 ($350 \le W \le 1600$, $30 \le H \le 180$, tỷ lệ khung hình $5.5 \le W/H \le 13.0$, điển hình $888 \times 92\text{px}$ aspect ratio 9.65).
+     - Loại bỏ dứt điểm các ảnh mặt nạ phân tầng MRC (`/ImageMask true`) khỏi ứng viên watermark nhằm tránh xóa nhầm dữ liệu tài liệu scan.
+  2. **Ghép dồn chuỗi ma trận biến đổi toạ độ (`cm` compounding):**
+     - Hỗ trợ phân tích chuỗi nhiều lệnh `cm` liên tiếp (ví dụ `1 0 0 1 700 10 cm` dịch chuyển kết hợp `126 0 0 13 0 0 cm` co giãn) trong content stream trước khi vẽ `/Do`.
+     - Tích lũy tích ma trận affine 2D ($CTM = cm \times CTM$) để tính toán chính xác toạ độ thực tế và kích thước hiển thị rendered ($20 \le \text{renderW} \le 280\text{pt}$, $5 \le \text{renderH} \le 70\text{pt}$, $y \le \text{box}[1] + \text{pageHeight} \times 0.20$).
+     - Cập nhật biểu thức chính quy xóa khối lệnh trong content stream (`stripWatermarkFromContentStream`) để xóa sạch toàn bộ chuỗi lệnh `cm` liên tiếp trong block `q ... Q`.
+  3. **Làm sạch Link Annotations (`/Subtype /Link`):**
+     - Thêm hàm `cleanCamScannerAnnotations(source, pageBody, placements)`: quét mảng `/Annots` của trang và loại bỏ triệt để các annotation link vô hình trỏ tới `camscanner.com` hoặc đè lên toạ độ bounding box của watermark. Tự động lược bỏ hoàn toàn key `/Annots` nếu không còn annotation nào khác.
+     - Tích hợp vào luồng copy đối tượng `copyPageObjects`, xóa sạch link trap tương tác trên PDF sau khi bóc watermark.
+  4. **Bảo toàn 100% chất lượng ảnh gốc và an toàn tài liệu:**
+     - Giữ nguyên vẹn bit-for-bit toàn bộ luồng DCTDecode của ảnh quét chính (SHA-256 hash trùng khớp 100%).
+     - Đạt 0 false-positive trên tập kiểm thử âm tính (con dấu, chữ ký, QR code, logo cơ quan, và tài liệu MRC).
+  5. **Mở rộng Test Suite & Service Worker:**
+     - Nâng cấp `scripts/regression_watermark.cjs` từ 26 lên 35 checks (bổ sung Neg 11 cho MRC 1-bit ImageMask, Type 2 detection, multi-cm compounding, link annotation stripping, SHA-256 match).
+     - Bump cache Service Worker lên `vigil-lens-v2.8.1` trong `sw.js`.
+- **File đã sửa:** `party-pdf.js`, `sw.js`, `scripts/regression_watermark.cjs`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Đáp ứng yêu cầu bóc watermark dải chữ mới của CamScanner ("Được quét bằng CamScanner") trong file PDF 9 trang do người dùng cung cấp mà không làm giảm chất lượng ảnh quét hay để lại link trap.
+- **Kiểm tra:**
+  - `python scripts/validate_static.py`: PASS (10/10 checks).
+  - `node scripts/regression_watermark.cjs`: PASS (35/35 checks).
+  - `node scripts/regression_party_mode.cjs`: PASS (69/69 checks).
+  - `node scripts/regression_export_busy.js`: PASS (29/29 checks).
+  - `node scripts/regression_scan_id.js`: PASS (52/52 checks).
+  - `node scripts/acceptance_party_ui.cjs`: PASS (19/19 checks, 5 viewports).
+  - Xác minh thực tế trên PDF 9 trang của người dùng: bóc sạch 9/9 watermark và 9/9 link annotations, dung lượng giảm từ 3.92 MB xuống 3.62 MB, SHA-256 ảnh gốc giữ nguyên vẹn 100%.
+
 ## [2026-09-04] Hotfix: SW Controllerchange Reload Guard & CDP Acceptance Race Elimination
 - **Agent:** Codex
 - **Thay đổi:**

@@ -339,13 +339,13 @@ The fourth workflow provides automated, bit-for-bit lossless removal of CamScann
 
 2. **Structural Surgery (XObject & Content Stream):**
    CamScanner places watermarks as separate image XObjects rendered via content stream operators in the lower margin.
-   - **Detection (`detectCamScannerWatermarks`):** Scans each page's `/Resources/XObject` dictionary. Evaluates candidate images against heuristic rules:
-     - Dimension bounds: $140\text{px} \le \text{width} \le 270\text{px}$, $45\text{px} \le \text{height} \le 110\text{px}$ (matching standard CamScanner sizes: 240×90, 166×62, 160×60, 200×75).
-     - Aspect ratio $W/H$: $1.8 \le \text{ratio} \le 4.0$.
-     - Accompanied by a primary document scan image of significantly greater resolution on the same page.
-     - Content stream verification: Decompresses streams via `inflateSync` (if `/FlateDecode`) and verifies transformation matrix `cm` places the image at the bottom band ($y \le 0.25 \times \text{page height}$).
-   - **Content Stream Stripping (`stripWatermarkFromContentStream`):** Bóc tách sạch sẽ các lệnh vẽ watermark:
-     `q ... cm /ImX Do Q` hoặc standalone `/ImX Do`.
-   - **Object Pruning & Serialization (`copyPageObjects`):** Removes the watermark reference `/ImX <id> 0 R` from the page's `/Resources/XObject` dictionary (direct or indirect). Because the watermark XObject is no longer reachable from the page dictionary, it is excluded from object copying, reducing the output file size by the exact byte length of the watermark asset.
-   - **Fail-Safe Integrity:** If 0 watermarks are detected, `stripWatermarks` immediately returns the original PDF buffer unmodified (`unmodified: true`).
-
+    - **Detection (`detectCamScannerWatermarks`):** Scans each page's `/Resources/XObject` dictionary. Ignores 1-bit ImageMasks (`/ImageMask true`). Evaluates candidate images against heuristic rules:
+      - **Type 1 (Compact Badge):** $140\text{px} \le \text{width} \le 270\text{px}$, $45\text{px} \le \text{height} \le 110\text{px}$, aspect ratio $2.3 \le W/H \le 3.2$ (standard CamScanner sizes: 240×90, 166×62, 160×60, 200×75, 180×68).
+      - **Type 2 (Wide Text Banner):** $350\text{px} \le \text{width} \le 1600\text{px}$, $30\text{px} \le \text{height} \le 180\text{px}$, aspect ratio $5.5 \le W/H \le 13.0$ (e.g. "Được quét bằng CamScanner" / "Scanned with CamScanner", $888\times 92\text{px}$, $W/H=9.65$).
+      - **Accompaniment & Area Ratio:** Accompanied by a primary document scan image of significantly greater resolution on the same page ($\ge 500,000\text{px}$ and $\ge 8\times$ candidate area).
+      - **Content stream & Affine Matrix Compounding:** Decompresses streams via `inflateSync` (if `/FlateDecode`), accumulates multiple consecutive `cm` transformations inside the enclosing `q ... Q` block ($CTM = cm \times CTM$) to resolve true coordinates and dimensions ($20\le renderW \le 280\text{pt}$, $5\le renderH \le 70\text{pt}$, $y \le box_1 + pageHeight \times 0.20$).
+    - **Content Stream Stripping (`stripWatermarkFromContentStream`):** Bóc tách sạch sẽ các lệnh vẽ watermark:
+      `q ... cm ... cm /ImX Do Q`, `q ... /ImX Do ... Q` hoặc standalone `/ImX Do`.
+    - **Object Pruning & Serialization (`copyPageObjects`):** Removes the watermark reference `/ImX <id> 0 R` from the page's `/Resources/XObject` dictionary (direct or indirect). Because the watermark XObject is no longer reachable from the page dictionary, it is excluded from object copying, reducing the output file size by the exact byte length of the watermark asset.
+    - **Annotation Sanitization (`cleanCamScannerAnnotations`):** Removes `/Subtype /Link` annotations pointing to `camscanner.com` or positioned directly over the watermark rectangle, pruning the `/Annots` key when empty to prevent invisible click traps.
+    - **Fail-Safe Integrity:** If 0 watermarks are detected, `stripWatermarks` immediately returns the original PDF buffer unmodified (`unmodified: true`).
