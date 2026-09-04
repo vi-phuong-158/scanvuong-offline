@@ -17,6 +17,7 @@
     marginToggle: $('#marginToggle'), exportBtn: $('#exportBtn'), exportProgress: $('#exportProgress'),
     progressBar: $('#progressBar'), progressLabel: $('#progressLabel'), exportSummary: $('#exportSummary'),
     exportNotice: $('#exportNotice'), toast: $('#toast'), installBtn: $('#installBtn'), offlineBadge: $('#offlineBadge'),
+    helpNavBtn: $('#helpNavBtn'), helpCenterDialog: $('#helpCenterDialog'), helpCenterClose: $('#helpCenterClose'),
     // Mode select + Scan ID (front/back → single A4 PDF)
     modeSelect: $('#modeSelect'), modeDocBtn: $('#modeDocBtn'), modeIdBtn: $('#modeIdBtn'), modePartyBtn: $('#modePartyBtn'), modeWatermarkBtn: $('#modeWatermarkBtn'), switchModeBtn: $('#switchModeBtn'),
     idWorkspace: $('#idWorkspace'), idStepBadge: $('#idStepBadge'), idStepHint: $('#idStepHint'),
@@ -1260,6 +1261,29 @@
     state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';
     state.mode = null;
     renderModeShell();
+  });
+
+  // Global Help Center: contextual to the mode the user is currently in.
+  // scrollIntoView() is unreliable for content scrolled inside a <dialog>
+  // shown via showModal() in some Chromium builds, so scroll the content
+  // pane directly instead.
+  function jumpToHelpSection(anchorId) {
+    const content = els.helpCenterDialog?.querySelector('.help-center-content');
+    const target = content?.querySelector(`#${anchorId}`);
+    if (!content || !target) return;
+    content.scrollTop = target.offsetTop;
+  }
+  function openHelpCenter() {
+    if (!els.helpCenterDialog?.showModal) return;
+    if (!els.helpCenterDialog.open) els.helpCenterDialog.showModal();
+    const anchorId = state.mode === 'party' ? 'help-party' : state.mode === 'watermark' ? 'help-watermark' : 'help-quickstart';
+    requestAnimationFrame(() => jumpToHelpSection(anchorId));
+  }
+  els.helpNavBtn?.addEventListener('click', openHelpCenter);
+  els.helpCenterClose?.addEventListener('click', () => els.helpCenterDialog.close());
+  els.helpCenterDialog?.addEventListener('click', event => { if (event.target === els.helpCenterDialog) els.helpCenterDialog.close(); });
+  els.helpCenterDialog?.querySelectorAll('[data-help-jump]').forEach(btn => {
+    btn.addEventListener('click', () => jumpToHelpSection(btn.dataset.helpJump.replace('#', '')));
   });
 
   els.idChooseBtn.addEventListener('click', () => { if (state.busy) return; els.idFileInput.click(); });

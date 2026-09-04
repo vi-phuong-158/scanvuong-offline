@@ -1,4 +1,4 @@
-const CACHE = 'vigil-lens-v2.8.1';
+const CACHE = 'vigil-lens-v2.9.1';
 const ASSETS = [
   './',
   './index.html',
@@ -26,7 +26,19 @@ const ASSETS = [
   './assets/ml/doccornernet_lean.ort',
   './assets/ml/ort-wasm-simd-threaded.wasm',
   './assets/ml/ort-wasm-simd-threaded.mjs',
-  './assets/ml/scanic-ort.wasm.min.js'
+  './assets/ml/scanic-ort.wasm.min.js',
+  './docs/user-guide/assets/annotated/01-trang-chu.png',
+  './docs/user-guide/assets/annotated/02-scan-ho-so-dang.png',
+  './docs/user-guide/assets/annotated/03-nhap-pdf-ho-so.png',
+  './docs/user-guide/assets/annotated/04-xem-truoc-trang.png',
+  './docs/user-guide/assets/annotated/05-chon-tach-trang.png',
+  './docs/user-guide/assets/annotated/06-gan-loai-tai-lieu.png',
+  './docs/user-guide/assets/annotated/07-ket-qua-scan-dang.png',
+  './docs/user-guide/assets/annotated/08-lam-sach-chan-trang.png',
+  './docs/user-guide/assets/annotated/09-truoc-lam-sach.png',
+  './docs/user-guide/assets/annotated/10-sau-lam-sach.png',
+  './docs/user-guide/assets/annotated/11-ket-qua-lam-sach.png',
+  './docs/user-guide/assets/annotated/12-so-sanh-truoc-sau.png'
 ];
 
 self.addEventListener('install', e => e.waitUntil(

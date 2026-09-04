@@ -3,6 +3,42 @@
 > Ghi lại quyết định kỹ thuật quan trọng để agent sau không "phát minh lại" hoặc đảo ngược
 > mà không biết lý do. Mỗi entry: quyết định gì, vì sao, đánh đổi gì.
 
+## [2026-09-05] Global in-app Help Center: `<dialog>` thay vì trang riêng, ảnh đặt trong `docs/user-guide/`
+
+- **Quyết định:**
+  1. **Một `<dialog id="helpCenterDialog">` toàn cục** (`index.html`) thay vì route/trang riêng —
+     giữ đúng kiến trúc single-file, không router, mở qua `#helpNavBtn` luôn hiển thị trong topbar
+     (`.top-actions`) ở mọi màn hình, kể cả mode-select.
+  2. **Không sửa/hợp nhất với `#partyHelpDialog` đã có sẵn.** Dialog cũ (nội dung text-only, mở qua
+     `[data-party-help]`) giữ nguyên — `scripts/acceptance_party_ui.cjs` đã assert đúng hành vi của
+     nó. Help Center mới là một điểm vào bổ sung, có ảnh chụp thật, nội dung không mâu thuẫn với
+     `docs/user-guide/HUONG_DAN_SU_DUNG.md` (cùng nguồn nội dung).
+  3. **Điều hướng theo ngữ cảnh dùng gán trực tiếp `scrollTop`, không dùng `scrollIntoView()`.**
+     `scrollIntoView()` không đáng tin cậy cho nội dung cuộn bên trong một `<dialog>` mở bằng
+     `showModal()` trên một số bản Chromium — quan sát được khi debug: gọi hàm không báo lỗi nhưng
+     `scrollTop` không đổi. Thay bằng `content.scrollTop = target.offsetTop` (hàm
+     `jumpToHelpSection()` trong `app.js`), luôn hoạt động đúng.
+  4. **Ảnh chụp màn hình dùng lại nguyên vẹn `docs/user-guide/assets/annotated/*.png`** (không copy
+     sang `assets/help/`) — tránh nhân đôi ảnh nhị phân, đảm bảo nội dung trong app và trong
+     `HUONG_DAN_SU_DUNG.md` luôn khớp nhau vì cùng trỏ tới một file. 12 đường dẫn này đã được thêm
+     vào mảng `ASSETS` trong `sw.js` để tải offline (xem mục "Khi thay đổi kiến trúc" trong
+     `CLAUDE.md`/`AGENTS.md` — thay đổi danh sách asset của `sw.js` bắt buộc cập nhật doc này).
+  5. **Cache version bump `vigil-lens-v2.9.1`** để trình duyệt tải lại toàn bộ asset mới.
+- **Lý do:** Yêu cầu thêm mục Hướng dẫn sử dụng trực quan ngay trong app, dùng ảnh thật, hoạt động
+  100% offline, không phá vỡ thiết kế dependency-free / không router hiện có.
+- **Đánh đổi:**
+  - Repo giờ có một phụ thuộc runtime (không chỉ tài liệu) vào thư mục `docs/user-guide/assets/`;
+    xoá hoặc đổi tên ảnh trong thư mục đó sẽ làm hỏng Help Center trong app — phải sửa đồng thời
+    `index.html` và `sw.js` nếu đổi tên/đường dẫn ảnh.
+  - Topbar giờ có 3 nút khả kiến đồng thời tại màn hình hẹp (badge + `#helpNavBtn` +
+    `#installBtn`/`#switchModeBtn` khi hiện) → đã thêm CSS ẩn nhãn chữ (`.top-actions .btn.ghost.compact span { display:none }`)
+    ở `≤768px` để tránh tràn ngang; phát hiện được nhờ `scripts/acceptance_party_ui.cjs` fail ở
+    viewport 390px trước khi fix (`#installBtn` — "Cài app" — là phần tử vượt mép, không phải nút
+    Hướng dẫn mới, nhưng cả ba nút cộng lại mới vượt ngưỡng 390px).
+- **Người quyết định:** Claude Code theo yêu cầu người dùng.
+
+---
+
 ## [2026-09-04] Xóa Watermark / Logo CamScanner bằng Can thiệp Cấu trúc PDF (Structural Surgery) thay vì Re-encoding / Inpainting
 
 - **Quyết định:**

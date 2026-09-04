@@ -16,6 +16,63 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-05] Mục "Hướng dẫn" trực quan ngay trong app (Help Center)
+- **Agent:** Claude Code
+- **Thay đổi:**
+  1. Thêm nút `#helpNavBtn` ("Hướng dẫn") luôn hiển thị trong topbar (`.top-actions`), mở
+     `#helpCenterDialog` — một `<dialog>` toàn cục mới, độc lập với `#partyHelpDialog` đã có sẵn
+     (không sửa/không xoá dialog cũ, `data-party-help` vẫn trỏ về dialog cũ như trước).
+  2. Nội dung Help Center gồm 3 mục có tab điều hướng: Bắt đầu nhanh, Scan hồ sơ Đảng (7 bước,
+     dùng lại 6 ảnh annotated có sẵn), Làm sạch chân trang (giải thích + before/after + kết quả,
+     dùng lại 5 ảnh annotated có sẵn) — cùng nội dung với `docs/user-guide/HUONG_DAN_SU_DUNG.md`,
+     không tạo bản sao mâu thuẫn.
+  3. Mở Hướng dẫn từ trong Party mode hoặc Watermark mode tự cuộn đúng tới mục tương ứng
+     (`state.mode` → `jumpToHelpSection()`); mở từ mode-select vào thẳng "Bắt đầu nhanh".
+  4. Thêm CSS `.help-center-*` (dùng lại design token `--primary`/`--ink`/`--line`/`--radius-*` sẵn
+     có, không thêm framework/dependency).
+  5. Thêm 12 đường dẫn `docs/user-guide/assets/annotated/*.png` vào `ASSETS` trong `sw.js`, bump
+     `CACHE` lên `vigil-lens-v2.9.1` để precache offline.
+  6. Sửa lỗi tràn ngang topbar ở viewport hẹp (≤768px, phát hiện bởi
+     `scripts/acceptance_party_ui.cjs` tại 390px): ẩn nhãn chữ của mọi nút `.top-actions .btn.ghost.compact`
+     (giữ icon + `aria-label`), vì badge + tối đa 3 nút topbar cộng lại có thể vượt 390px khi
+     `#installBtn` cũng đang hiện.
+- **File đã sửa:** `index.html` (nút + dialog mới), `styles.css` (`.help-center-*` + fix overflow
+  topbar), `app.js` (wiring mở/đóng/điều hướng), `sw.js` (ASSETS + cache version), `docs/brain/01-architecture.md`,
+  `docs/brain/03-decisions.md`. Không sửa `party-pdf.js`, `party-mode.js`, `watermark-mode.js`,
+  `document-detector.js` — không đụng logic xử lý PDF/ML.
+- **Lý do:** Yêu cầu bổ sung mục Hướng dẫn sử dụng trực quan ngay trong ứng dụng (không phải chỉ
+  tài liệu ngoài), dùng screenshot thật, hoạt động 100% offline, cho hai tính năng quan trọng nhất:
+  Scan hồ sơ Đảng và Làm sạch chân trang.
+- **Kiểm tra:**
+  - `node --check app.js`/`sw.js` PASS; `python scripts/validate_static.py` PASS (39/39 asset tồn
+    tại trên đĩa, không CDN/emoji/legacy-brand, ranh giới riêng tư app.js vẫn sạch).
+  - Toàn bộ regression hiện có PASS không đổi: `regression_export_busy.js` 29/29,
+    `regression_scan_id.js` 52/52, `regression_party_mode.cjs` 69/69, `regression_watermark.cjs`
+    35/35, `regression_ml_detector.js` 53/53, `regression_sw_update.cjs` 9/9 (xác nhận đúng 39 asset
+    precache theo đúng thứ tự atomic install/activate).
+  - `scripts/acceptance_party_ui.cjs`: FAIL ban đầu tại 390px (tràn ngang do `#installBtn`), PASS
+    sau khi sửa CSS — toàn bộ 18 acceptance case còn lại không bị ảnh hưởng, kể cả case dùng
+    `#partyHelpDialog` (dialog cũ không đổi).
+  - `scripts/acceptance_offline_pwa.cjs`: PASS cả Phase A (39/39 precache) và Phase B (reload thật
+    khi cắt mạng, mở được Document mode và Scan ID mode offline, 0 request ra ngoài origin).
+  - Xác minh thủ công bằng trình duyệt thật (Chromium qua Browser pane + CDP độc lập): mở Hướng dẫn
+    từ mode-select (vào "Bắt đầu nhanh"), từ Party mode (nhảy đúng "Scan hồ sơ Đảng"), từ Watermark
+    mode (nhảy đúng "Làm sạch chân trang"); không lỗi console; kiểm tra responsive tại 1280px và
+    1440px, không tràn ngang, không chữ bị cắt.
+  - Phát hiện và né đúng một cạm bẫy: `scrollIntoView()` không đáng tin cậy bên trong `<dialog>`
+    mở bằng `showModal()` ở Chromium headless dùng trong test — đã đổi sang gán trực tiếp
+    `content.scrollTop = target.offsetTop`.
+
+## [2026-09-04] Bộ tài liệu hướng dẫn sử dụng bằng hình ảnh (screenshot walkthrough)
+- **Agent:** Claude Code
+- **Thay đổi:**
+  1. Tạo `docs/user-guide/HUONG_DAN_SU_DUNG.md` và `docs/user-guide/GIOI_THIEU_SAN_PHAM.md` — không sửa business logic, chỉ tài liệu.
+  2. Tự chạy ứng dụng qua `server.py` + trình duyệt thật (headless Chrome, CDP), tự thao tác UI thật của Scan tài liệu Đảng và Làm sạch chân trang bằng dữ liệu demo, chụp 12 ảnh gốc vào `docs/user-guide/assets/raw/`, chú thích (số bước, mũi tên, khung highlight, nhãn trước/sau) bằng Pillow vào `docs/user-guide/assets/annotated/`.
+  3. Tạo tạm 3 file PDF/demo fixture an toàn dữ liệu (không phải hồ sơ Đảng viên thật) tại `docs/user-guide/fixtures/` để dùng làm nguồn chụp ảnh: `HO_SO_DEMO_01.pdf` (4 trang, dùng cho luồng tách/gán loại tài liệu), `Tai_lieu_mau_watermark.pdf` (có watermark CamScanner giả lập, dùng cho ảnh "trước"), `Tai_lieu_mau_watermark_no_wm.pdf` (sinh bằng chính `PartyPdf.stripWatermarks()` thật, dùng cho ảnh "sau"). Đã xoá cả thư mục `fixtures/` sau khi chụp xong (2026-09-04, theo yêu cầu người dùng) — chỉ còn `assets/raw/` và `assets/annotated/` làm deliverable; muốn tái tạo lại ảnh cần dựng lại fixture theo mô tả trên.
+- **File đã sửa:** `docs/user-guide/HUONG_DAN_SU_DUNG.md`, `docs/user-guide/GIOI_THIEU_SAN_PHAM.md`, `docs/user-guide/assets/raw/*.png`, `docs/user-guide/assets/annotated/*.png` (tất cả file mới, không sửa `app.js`/`party-mode.js`/`party-pdf.js`/`watermark-mode.js`). `docs/user-guide/fixtures/*.pdf` được tạo tạm rồi xoá, không còn trong repo.
+- **Lý do:** Yêu cầu tạo bộ tài liệu giới thiệu/hướng dẫn sử dụng bằng hình ảnh cho 2 tính năng Scan tài liệu Đảng và Làm sạch chân trang, dùng cho báo cáo sáng kiến/thuyết minh.
+- **Kiểm tra:** Toàn bộ screenshot chụp từ UI thật (không dựng ảnh giả); không có lỗi console trong quá trình chạy (`preview_logs` level error rỗng); watermark demo được xác nhận phát hiện đúng bằng `PartyPdf.detectCamScannerWatermarks()` thật trước khi dùng, và ảnh "sau" được xuất bằng chính `PartyPdf.stripWatermarks()` thật (không phải dựng tay); mọi link ảnh trong 2 file `.md` đã đối chiếu tồn tại trên đĩa. Không có dữ liệu hồ sơ Đảng viên thật trong bất kỳ ảnh hay fixture nào. Không phát hiện lỗi UI trong quá trình thao tác — không cần tạo `UI_ISSUES_FOUND.md`.
+
 ## [2026-09-04] Cập nhật mục giới thiệu tính năng: "Làm sạch chân trang"
 - **Agent:** Antigravity (Gemini)
 - **Thay đổi:**

@@ -39,7 +39,7 @@ scanvuong-offline/
 │   ├── party/              # Danh mục tài liệu Đảng JSON canonical
 │   │   └── document_types.json
 │   └── vendor/pdfjs/       # PDF.js 5.7.284 vendor nội bộ để render thumbnail PDF
-├── sw.js                   # Service Worker — cache app shell, assets ML và font, phục vụ offline
+├── sw.js                   # Service Worker — cache app shell, assets ML/font/ảnh Help Center, phục vụ offline
 ├── manifest.webmanifest    # Khai báo PWA (tên, icon, display mode, start_url)
 ├── icons/
 │   ├── icon-192.png
@@ -50,7 +50,13 @@ scanvuong-offline/
 ├── vercel.json               # Header khi deploy lên host tĩnh (không bắt buộc để chạy local)
 ├── THIRD_PARTY_NOTICES.md   # Giấy phép và xuất xứ các thành phần bên thứ ba (MIT)
 ├── AGENTS.md / CLAUDE.md      # Hướng dẫn cho AI agent — trỏ tới docs/brain/
-└── docs/brain/                 # Bộ nhớ dự án dùng chung (thư mục này)
+├── docs/brain/                 # Bộ nhớ dự án dùng chung (thư mục này)
+└── docs/user-guide/            # Hướng dẫn sử dụng: HUONG_DAN_SU_DUNG.md, GIOI_THIEU_SAN_PHAM.md,
+                                 # assets/raw + assets/annotated (screenshot thật, có chú thích).
+                                 # 12 ảnh trong assets/annotated/ được index.html#helpCenterDialog
+                                 # tham chiếu trực tiếp (không copy) và nằm trong ASSETS của sw.js —
+                                 # đây KHÔNG chỉ là tài liệu, mà là runtime dependency của app. Xem
+                                 # quyết định [2026-09-05] trong 03-decisions.md.
 ```
 
 Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm phẳng ở gốc vì đây là static site không build.

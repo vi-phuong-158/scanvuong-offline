@@ -39,6 +39,14 @@
         </svg>
         <span>100% Offline</span>
       </span>
+      <button class="btn ghost compact" id="helpNavBtn" type="button" aria-haspopup="dialog" aria-label="Mở hướng dẫn sử dụng">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M9.5 9a2.5 2.5 0 0 1 4.9.8c0 1.7-2.4 2-2.4 3.5"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <span>Hướng dẫn</span>
+      </button>
       <button class="btn ghost compact hidden" id="switchModeBtn" type="button" aria-label="Đổi chế độ quét">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="m16 3 4 4-4 4"/>
@@ -1026,6 +1034,140 @@
     </section>
 
   </main>
+
+  <!-- Global Help Center: same content as docs/user-guide/HUONG_DAN_SU_DUNG.md, works fully offline -->
+  <dialog id="helpCenterDialog" class="help-center-dialog" aria-labelledby="helpCenterTitle">
+    <div class="help-center-sheet">
+      <header class="help-center-head">
+        <div>
+          <span class="help-center-kicker">TRỢ GIÚP</span>
+          <h2 id="helpCenterTitle">Hướng dẫn sử dụng</h2>
+        </div>
+        <button id="helpCenterClose" class="btn ghost small" type="button">Đóng</button>
+      </header>
+      <nav class="help-center-tabs" aria-label="Mục lục hướng dẫn">
+        <button type="button" class="help-center-tab" data-help-jump="#help-quickstart">Bắt đầu nhanh</button>
+        <button type="button" class="help-center-tab" data-help-jump="#help-party">Scan hồ sơ Đảng</button>
+        <button type="button" class="help-center-tab" data-help-jump="#help-watermark">Làm sạch chân trang</button>
+      </nav>
+      <div class="help-center-content">
+
+        <section id="help-quickstart">
+          <h3>Bắt đầu nhanh</h3>
+          <ol class="help-center-quicklist">
+            <li>Chọn PDF hoặc ảnh cần xử lý</li>
+            <li>Xem lại tài liệu</li>
+            <li>Chọn chức năng cần dùng</li>
+            <li>Kiểm tra kết quả</li>
+            <li>Xuất PDF</li>
+          </ol>
+        </section>
+
+        <section id="help-party">
+          <h3>Scan hồ sơ Đảng</h3>
+
+          <div class="help-center-step">
+            <div class="help-center-step-num">1</div>
+            <div class="help-center-step-body">
+              <strong>Mở Scan hồ sơ Đảng và chọn nguồn</strong>
+              <p>Từ trang chính, chọn thẻ <span class="help-center-tag">Scan tài liệu Đảng</span>, sau đó chọn nguồn: chụp ảnh, chọn ảnh có sẵn, hoặc nhập file PDF.</p>
+              <img src="docs/user-guide/assets/annotated/02-scan-ho-so-dang.png" alt="Chọn nguồn tài liệu: chụp ảnh, chọn ảnh hoặc nhập PDF" loading="lazy">
+            </div>
+          </div>
+
+          <div class="help-center-step">
+            <div class="help-center-step-num">2</div>
+            <div class="help-center-step-body">
+              <strong>Kiểm tra danh sách trang nguồn</strong>
+              <p>Sau khi nạp file, toàn bộ trang hiển thị dạng thumbnail kèm số thứ tự. Thanh tiến trình cho biết đã có bao nhiêu trang được xếp vào tài liệu.</p>
+              <img src="docs/user-guide/assets/annotated/03-nhap-pdf-ho-so.png" alt="Danh sách trang nguồn sau khi nạp PDF" loading="lazy">
+            </div>
+          </div>
+
+          <div class="help-center-step">
+            <div class="help-center-step-num">3</div>
+            <div class="help-center-step-body">
+              <strong>Xem trước từng trang</strong>
+              <p>Bấm vào thumbnail bất kỳ để mở cửa sổ xem trước cỡ lớn, kiểm tra nội dung trước khi quyết định tách trang.</p>
+              <img src="docs/user-guide/assets/annotated/04-xem-truoc-trang.png" alt="Xem trước một trang tài liệu" loading="lazy">
+            </div>
+          </div>
+
+          <div class="help-center-step">
+            <div class="help-center-step-num">4</div>
+            <div class="help-center-step-body">
+              <strong>Chọn các trang thuộc cùng một tài liệu</strong>
+              <p>Tích chọn từng trang, hoặc nhập khoảng trang rồi bấm <span class="help-center-tag">Chọn khoảng</span>. Sau đó bấm <span class="help-center-tag">Tạo tài liệu từ trang đã chọn</span> để tách các trang đó thành một tài liệu độc lập.</p>
+              <img src="docs/user-guide/assets/annotated/05-chon-tach-trang.png" alt="Chọn các trang để tách thành tài liệu riêng" loading="lazy">
+            </div>
+          </div>
+
+          <div class="help-center-step">
+            <div class="help-center-step-num">5</div>
+            <div class="help-center-step-body">
+              <strong>Chọn loại tài liệu</strong>
+              <p>Gõ mã số hoặc tên loại tài liệu vào ô nhập, phần mềm sẽ gợi ý danh sách khớp để chọn. Tên file PDF khi xuất được đặt tự động theo loại đã chọn.</p>
+              <img src="docs/user-guide/assets/annotated/06-gan-loai-tai-lieu.png" alt="Chọn loại tài liệu từ danh mục gợi ý" loading="lazy">
+            </div>
+          </div>
+
+          <div class="help-center-step">
+            <div class="help-center-step-num">6</div>
+            <div class="help-center-step-body">
+              <strong>Kiểm tra lại trước khi xuất</strong>
+              <p>Kiểm tra thanh tiến trình đã đủ 100% (không sót trang nào) và mọi tài liệu đã có loại.</p>
+              <img src="docs/user-guide/assets/annotated/07-ket-qua-scan-dang.png" alt="Kiểm tra đủ trang nguồn trước khi xuất" loading="lazy">
+            </div>
+          </div>
+
+          <div class="help-center-step">
+            <div class="help-center-step-num">7</div>
+            <div class="help-center-step-body">
+              <strong>Xuất kết quả</strong>
+              <p>Bấm <span class="help-center-tag">Xuất tất cả tài liệu</span> để xuất toàn bộ tài liệu ra PDF cùng lúc, mỗi tài liệu một file với tên đã chuẩn hoá.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="help-watermark">
+          <h3>Làm sạch chân trang</h3>
+          <p>Làm sạch chân trang giúp loại bỏ phần chữ, logo hoặc nội dung thừa nằm ở mép dưới trang scan (ví dụ watermark của phần mềm scan khác), đồng thời giữ nguyên phần nội dung chính của tài liệu.</p>
+
+          <div class="help-center-step">
+            <div class="help-center-step-num">1</div>
+            <div class="help-center-step-body">
+              <strong>Mở Làm sạch chân trang và chọn tệp PDF</strong>
+              <p>Từ trang chính, chọn thẻ <span class="help-center-tag">Làm sạch chân trang</span>, sau đó bấm <span class="help-center-tag">Chọn tệp PDF</span> hoặc kéo-thả tệp cần xử lý.</p>
+              <img src="docs/user-guide/assets/annotated/08-lam-sach-chan-trang.png" alt="Bắt đầu làm sạch chân trang" loading="lazy">
+            </div>
+          </div>
+
+          <div class="help-center-beforeafter">
+            <figure>
+              <img src="docs/user-guide/assets/annotated/09-truoc-lam-sach.png" alt="Trước khi làm sạch — còn watermark ở chân trang" loading="lazy">
+            </figure>
+            <figure>
+              <img src="docs/user-guide/assets/annotated/10-sau-lam-sach.png" alt="Sau khi làm sạch — chân trang sạch, nội dung chính giữ nguyên" loading="lazy">
+            </figure>
+          </div>
+
+          <div class="help-center-step">
+            <div class="help-center-step-num">2</div>
+            <div class="help-center-step-body">
+              <strong>Kiểm tra kết quả và tải về</strong>
+              <p>Xử lý xong chỉ trong vài mili-giây. Kiểm tra số vị trí đã xử lý rồi bấm <span class="help-center-tag">Tải PDF sạch</span> để lưu file kết quả về máy.</p>
+              <img src="docs/user-guide/assets/annotated/11-ket-qua-lam-sach.png" alt="Kết quả sau khi làm sạch chân trang" loading="lazy">
+            </div>
+          </div>
+
+          <figure class="help-center-hero">
+            <img src="docs/user-guide/assets/annotated/12-so-sanh-truoc-sau.png" alt="So sánh chân trang trước và sau khi làm sạch" loading="lazy">
+          </figure>
+        </section>
+
+      </div>
+    </div>
+  </dialog>
 
   <!-- Hidden Native Inputs -->
   <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />
