@@ -3,6 +3,30 @@
 > Ghi lại quyết định kỹ thuật quan trọng để agent sau không "phát minh lại" hoặc đảo ngược
 > mà không biết lý do. Mỗi entry: quyết định gì, vì sao, đánh đổi gì.
 
+## [2026-09-04] Xóa Watermark / Logo CamScanner bằng Can thiệp Cấu trúc PDF (Structural Surgery) thay vì Re-encoding / Inpainting
+
+- **Quyết định:**
+  1. **Structural Surgery thay vì Raster Inpainting:**
+     - Không chuyển đổi trang PDF sang canvas/ảnh raster để xoá đè pixel (inpainting) rồi nén lại thành JPEG.
+     - Can thiệp trực tiếp cấu trúc nhị phân PDF: bóc tách khối lệnh `q ... cm /ImX Do Q` trong Content Stream và loại bỏ XObject watermark `/ImX` khỏi từ điển `Resources/XObject`.
+  2. **Bảo toàn Bit-for-bit dữ liệu ảnh scan gốc:**
+     - Giữ nguyên 100% byte stream JPEG gốc (`DCTDecode`), hash SHA-256 hoàn toàn trùng khớp trước và sau khi xử lý.
+     - Không suy hao chất lượng quang học, không nén lại ảnh, không vỡ nét chữ.
+  3. **Nhận diện Heuristic thông minh:**
+     - Phân tích kích thước logo CamScanner (240×90, 166×62, 160×60, 200×75, v.v.), tỷ lệ khung hình $W/H$ từ 1.8 đến 4.0.
+     - Giải nén Content Stream (qua bộ giải nén RFC 1951 `inflateSync` đồng bộ) để kiểm tra toạ độ đặt logo ở dải lề dưới ($y \le 0.25 \times \text{chiều cao trang}$).
+     - Đối chiếu với ảnh tài liệu chính có độ phân giải lớn hơn đáng kể trong cùng trang để tránh xoá nhầm tem/chữ ký/hình minh hoạ.
+  4. **Fail-Safe Integrity:**
+     - Nếu tệp không chứa logo CamScanner hoặc là PDF sạch, trả về nguyên bản tệp ban đầu 100%, không thay đổi byte nào.
+  5. **100% Client-Side & Dependency-Free:**
+     - Chạy hoàn toàn bằng pure JavaScript trong trình duyệt, không cần Python backend, không thêm bất kỳ package/thư viện ngoài nào.
+- **Lý do:**
+  - CamScanner chèn watermark dưới dạng một ảnh XObject riêng biệt vẽ chồng lên ảnh scan chính ở góc dưới trang. Can thiệp cấu trúc cho phép loại bỏ hoàn toàn logo mà không chạm vào một pixel nào của văn bản tài liệu gốc, tốc độ xử lý tức thì (vài mili-giây/trang) và dung lượng file giảm đúng bằng kích thước logo.
+- **Đánh đổi:** Chỉ áp dụng cho các tài liệu mà logo được chèn dưới dạng lớp vector/XObject độc lập (như CamScanner chuẩn). Không áp dụng cho ảnh đã bị burn-in/nướng chết logo trực tiếp vào pixel ảnh scan trước khi đóng gói PDF.
+- **Người quyết định:** Lead Core Engineer & User Mandate.
+
+---
+
 ## [2026-09-03] Nâng cấp PDF Parser: Stack-based Delimiter Scanner và Giải nén Object Streams (/ObjStm) cho Party Document Mode
 
 - **Quyết định:**

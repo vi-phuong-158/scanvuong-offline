@@ -147,6 +147,28 @@
             </div>
             <div class="mode-card-arrow" aria-hidden="true">›</div>
           </button>
+
+          <button id="modeWatermarkBtn" class="mode-card watermark-mode-card" type="button">
+            <div class="mode-card-visual">
+              <div class="mode-icon-box watermark-box" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m14 3 6.5 6.5a2.12 2.12 0 0 1 0 3l-8 8a2.12 2.12 0 0 1-3 0l-5-5a2.12 2.12 0 0 1 0-3L11 3a2.12 2.12 0 0 1 3 0Z" />
+                  <line x1="9.5" y1="8.5" x2="15.5" y2="14.5" />
+                  <path d="M7 21h10" />
+                </svg>
+              </div>
+              <span class="mode-pill">Lossless</span>
+            </div>
+            <div class="mode-card-content">
+              <strong>Xóa Watermark CamScanner</strong>
+              <p>Bóc logo không mất chất lượng · Giữ nguyên 100% ảnh scan gốc</p>
+            </div>
+            <div class="mode-card-arrow" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 4l6 6-6 6" />
+              </svg>
+            </div>
+          </button>
         </div>
         <div class="mode-footer-privacy">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -872,6 +894,98 @@
       <p id="idExportNotice" class="notice hidden"></p>
     </section>
 
+    <!-- 4. Watermark Stripper Workspace -->
+    <section id="watermarkWorkspace" class="watermark-workspace hidden" aria-label="Xóa Watermark CamScanner">
+      <div class="watermark-card card">
+        <div class="watermark-header">
+          <div class="watermark-badge">BIT-FOR-BIT LOSSLESS</div>
+          <h2>Xóa Watermark / Logo CamScanner</h2>
+          <p class="muted">Tự động bóc tách logo "Scanned with CS CamScanner" khỏi PDF · Giữ nguyên 100% dữ liệu và chất lượng ảnh quét gốc.</p>
+        </div>
+
+        <!-- Dropzone state -->
+        <div id="watermarkDropZone" class="drop-zone watermark-drop-zone" tabindex="0" role="button" aria-label="Chọn tệp PDF có logo CamScanner">
+          <div class="drop-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m14 3 6.5 6.5a2.12 2.12 0 0 1 0 3l-8 8a2.12 2.12 0 0 1-3 0l-5-5a2.12 2.12 0 0 1 0-3L11 3a2.12 2.12 0 0 1 3 0Z" />
+              <line x1="9.5" y1="8.5" x2="15.5" y2="14.5" />
+              <path d="M7 21h10" />
+            </svg>
+          </div>
+          <h3>Thêm tệp PDF cần xóa logo</h3>
+          <p class="drop-subtitle">Kéo thả tệp PDF vào đây hoặc bấm để chọn tệp</p>
+          <div class="empty-buttons">
+            <button id="watermarkChooseBtn" class="btn primary touch-lg" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="12" y1="18" x2="12" y2="12" />
+                <line x1="9" y1="15" x2="15" y2="15" />
+              </svg>
+              <span>Chọn tệp PDF</span>
+            </button>
+          </div>
+          <div class="watermark-features">
+            <span class="watermark-feat-pill">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 10l3 3 7-7"/></svg>
+              Không nén lại ảnh (SHA-256 gốc)
+            </span>
+            <span class="watermark-feat-pill">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 10l3 3 7-7"/></svg>
+              Xử lý tức thì vài mili-giây
+            </span>
+            <span class="watermark-feat-pill">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 10l3 3 7-7"/></svg>
+              100% Offline bảo mật
+            </span>
+          </div>
+        </div>
+
+        <!-- Result / Processing state -->
+        <div id="watermarkResult" class="watermark-result hidden">
+          <div id="watermarkStatusBanner" class="watermark-status-banner">
+            <div class="watermark-status-icon" id="watermarkStatusIcon"></div>
+            <div class="watermark-status-text">
+              <strong id="watermarkStatusTitle">Đã bóc tách thành công</strong>
+              <p id="watermarkStatusDesc" class="muted"></p>
+            </div>
+          </div>
+
+          <div class="watermark-meta-grid">
+            <div class="watermark-meta-item">
+              <span class="watermark-meta-label">Tên tệp:</span>
+              <strong id="watermarkMetaName" class="watermark-meta-value">-</strong>
+            </div>
+            <div class="watermark-meta-item">
+              <span class="watermark-meta-label">Số trang:</span>
+              <strong id="watermarkMetaPages" class="watermark-meta-value">-</strong>
+            </div>
+            <div class="watermark-meta-item">
+              <span class="watermark-meta-label">Logo đã bóc tách:</span>
+              <strong id="watermarkMetaRemoved" class="watermark-meta-value">-</strong>
+            </div>
+            <div class="watermark-meta-item">
+              <span class="watermark-meta-label">Dung lượng:</span>
+              <strong id="watermarkMetaSize" class="watermark-meta-value">-</strong>
+            </div>
+          </div>
+
+          <div class="watermark-actions">
+            <button id="watermarkDownloadBtn" class="btn primary touch-lg" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>Tải PDF sạch</span>
+            </button>
+            <button id="watermarkResetBtn" class="btn secondary touch-lg" type="button">Chọn tệp khác</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
   </main>
 
   <!-- Hidden Native Inputs -->
@@ -882,6 +996,7 @@
   <input id="partyFileInput" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.pdf" multiple hidden />
   <input id="partyCameraInput" type="file" accept="image/*" capture="environment" hidden />
   <input id="partyPdfInput" type="file" accept="application/pdf,.pdf" hidden />
+  <input id="watermarkFileInput" type="file" accept="application/pdf,.pdf" hidden />
 
   <footer class="app-footer">
     <span>Vigil Lens by VPH</span><span class="app-footer-separator" aria-hidden="true">·</span>
@@ -898,5 +1013,6 @@
   <script src="party-taxonomy.js" defer></script>
   <script src="party-pdf.js" defer></script>
   <script src="party-mode.js" defer></script>
+  <script src="watermark-mode.js" defer></script>
 </body>
 </html>

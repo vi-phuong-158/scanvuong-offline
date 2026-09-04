@@ -1273,7 +1273,150 @@
     return concat([prefix, streamBytes, suffix]);
   }
 
-  function copyPageObjects(pageRefs, imageItems = [], mixedItems = null) {
+  function replaceResourceDict(body, newResText) {
+    const start = body.indexOf('/Resources');
+    if (start < 0) return body;
+    const valueStart = skipPdfSpace(body, start + 10);
+    const valueEnd = pdfValueEnd(body, valueStart);
+    if (valueEnd < 0) return body;
+    return body.slice(0, valueStart) + newResText + body.slice(valueEnd);
+  }
+
+  function stripWatermarkFromContentStream(streamText, watermarkNames) {
+    if (!streamText || !watermarkNames) return streamText || '';
+    const names = Array.isArray(watermarkNames) || (watermarkNames instanceof Set)
+      ? Array.from(watermarkNames)
+      : [watermarkNames];
+    let cleaned = streamText;
+    for (const rawName of names) {
+      const name = rawName.startsWith('/') ? rawName.slice(1) : rawName;
+      const esc = name.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
+      // 1. Standard pattern: q ... cm /ImX Do Q (với /Perceptual ri hoặc toán tử khác trước cm)
+      const p1 = new RegExp(`q\\s*(?:\\/[A-Za-z0-9]+\\s+ri\\s*)?(?:[-+]?(?:\\d+\\.?\\d*|\\.\\d+)\\s+){6}cm\\s*\\/${esc}\\s+Do\\s*Q\\s*`, 'g');
+      cleaned = cleaned.replace(p1, '');
+      // 2. Fallback: khối q ... /ImX Do ... Q
+      const p2 = new RegExp(`q\\s*[^qQ]*?\\/${esc}\\s+Do\\s*[^qQ]*?Q\\s*`, 'g');
+      cleaned = cleaned.replace(p2, '');
+      // 3. Fallback: lệnh đơn lẻ /ImX Do
+      const p3 = new RegExp(`\\/${esc}\\s+Do\\b`, 'g');
+      cleaned = cleaned.replace(p3, '');
+    }
+    return cleaned.trim();
+  }
+
+  function detectCamScannerWatermarks(source) {
+    const watermarkPages = [];
+    for (let index = 0; index < source.pageIds.length; index++) {
+      const pageId = source.pageIds[index];
+      const page = source.objects.get(pageId);
+      if (!page) continue;
+      let body;
+      try {
+        body = inheritedPageText(source.objects, pageId);
+      } catch (_) {
+        continue;
+      }
+      const xobjs = xObjectRefs(source, body);
+      if (!xobjs || xobjs.size < 2) continue;
+
+      let box = [0, 0, 595.28, 841.89];
+      try {
+        const boxVal = numberArray(valueForKey(body, 'CropBox') || valueForKey(body, 'MediaBox'));
+        if (boxVal.length >= 4 && boxVal[2] > boxVal[0] && boxVal[3] > boxVal[1]) box = boxVal;
+      } catch (_) {}
+      const pageHeight = box[3] - box[1];
+
+      // Tìm tất cả đối tượng ảnh XObject trên trang
+      const images = [];
+      for (const [name, objId] of xobjs) {
+        const obj = source.objects.get(objId);
+        if (!obj) continue;
+        const stream = streamMarker(obj.text, 0);
+        const dict = stream < 0 ? obj.text : obj.text.slice(0, stream);
+        if (!/\/Subtype\s*\/Image\b/.test(dict)) continue;
+        const w = Number((dict.match(/\/Width\s+(\d+)/) || [])[1]);
+        const h = Number((dict.match(/\/Height\s+(\d+)/) || [])[1]);
+        if (Number.isSafeInteger(w) && Number.isSafeInteger(h) && w > 0 && h > 0) {
+          images.push({ name, objId, width: w, height: h, dict });
+        }
+      }
+
+      // Phải tồn tại ít nhất 1 ảnh quét văn bản chính có độ phân giải lớn
+      const hasMainImage = images.some(img => (img.width >= 500 && img.height >= 500) || (img.width * img.height >= 500000));
+      if (!hasMainImage) continue;
+
+      // Nhận diện ứng viên logo CamScanner theo đặc tả heuristic:
+      // (w in [240, 166, 160, 200, 180]) hoặc (140 <= w <= 270 && 45 <= h <= 110)
+      // Tỷ lệ w / h nằm trong khoảng 1.8 đến 4.0
+      const candidates = images.filter(img => {
+        const isCsCommonSize = (img.width === 240 && img.height === 90) ||
+                               (img.width === 166 && img.height === 62) ||
+                               (img.width === 160 && img.height === 60) ||
+                               (img.width === 200 && img.height === 75) ||
+                               (img.width === 180 && img.height === 68);
+        const isSizeInRange = (img.width >= 140 && img.width <= 270 && img.height >= 45 && img.height <= 110);
+        const ratio = img.width / img.height;
+        const isRatioMatch = ratio >= 1.8 && ratio <= 4.0;
+        return (isCsCommonSize || (isSizeInRange && isRatioMatch));
+      });
+
+      if (!candidates.length) continue;
+
+      // Giải mã content stream của trang để kiểm tra vị trí vẽ
+      const contentIds = refsAfter(body, 'Contents');
+      let combinedContent = '';
+      for (const cid of contentIds) {
+        try {
+          const stream = streamFor(source, cid);
+          const filters = streamFilters(stream.dict);
+          let rawBytes = stream.bytes;
+          if (filters.some(f => f === 'FlateDecode' || f === 'Fl')) {
+            rawBytes = inflateSync(rawBytes);
+          }
+          combinedContent += ' ' + decoder.decode(rawBytes);
+        } catch (_) {}
+      }
+
+      for (const candidate of candidates) {
+        const esc = candidate.name.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
+        const doMatch = new RegExp(`(?:[-+]?(?:\\d+\\.?\\d*|\\.\\d+)\\s+){6}cm\\s*\\/${esc}\\s+Do\\b`).exec(combinedContent);
+        let placement = null;
+        let isBottomRegion = false;
+        if (doMatch) {
+          const nums = doMatch[0].match(/[-+]?(?:\d+\.?\d*|\.\d+)/g)?.map(Number);
+          if (nums && nums.length >= 6) {
+            const [a, b, c, d, e, f] = nums;
+            placement = { a, b, c, d, x: e, y: f };
+            if (f <= box[1] + pageHeight * 0.25) {
+              isBottomRegion = true;
+            }
+          }
+        } else if (new RegExp(`\\/${esc}\\s+Do\\b`).test(combinedContent)) {
+          isBottomRegion = true;
+        }
+
+        if (isBottomRegion) {
+          watermarkPages.push({
+            pageIndex: index,
+            pageId,
+            watermarkName: candidate.name,
+            xobjectId: candidate.objId,
+            width: candidate.width,
+            height: candidate.height,
+            placement
+          });
+        }
+      }
+    }
+
+    return {
+      hasWatermarks: watermarkPages.length > 0,
+      totalPages: source.pageCount,
+      watermarkPages
+    };
+  }
+
+  function copyPageObjects(pageRefs, imageItems = [], mixedItems = null, options = {}) {
     const records = new Map();
     const sourceMaps = new Map();
     let nextId = 3;
@@ -1299,12 +1442,71 @@
       ...pageRefs.map(ref => ({ kind: 'pdf', ref })),
       ...imageItems.map(item => ({ kind: 'image', item }))
     ];
+
+    // Nhận diện watermark nếu được yêu cầu bóc tách
+    const stripWm = !!options.stripWatermarks;
+    const pageWmMap = new Map();
+    if (stripWm) {
+      const checkedSources = new Set();
+      inputItems.forEach(entry => {
+        if (entry.kind === 'pdf' && entry.ref?.source && !checkedSources.has(entry.ref.source)) {
+          checkedSources.add(entry.ref.source);
+          const detected = detectCamScannerWatermarks(entry.ref.source);
+          if (detected.hasWatermarks) {
+            detected.watermarkPages.forEach(wp => {
+              const key = `${entry.ref.source.id}:${wp.pageId}`;
+              if (!pageWmMap.has(key)) pageWmMap.set(key, { wmNames: new Set(), wmObjIds: new Set() });
+              const info = pageWmMap.get(key);
+              info.wmNames.add(wp.watermarkName);
+              info.wmObjIds.add(wp.xobjectId);
+            });
+          }
+        }
+      });
+    }
+
     const pageRecords = [];
     inputItems.forEach(entry => {
       if (entry.kind === 'pdf') {
         const ref = entry.ref;
         if (!ref || !ref.source) throw new Error('Page reference không hợp lệ.');
-        const body = inheritedPageText(ref.source.objects, ref.objectId);
+        let body = inheritedPageText(ref.source.objects, ref.objectId);
+        const wmKey = `${ref.source.id}:${ref.objectId}`;
+        const wmInfo = pageWmMap.get(wmKey);
+
+        if (wmInfo && wmInfo.wmNames.size > 0) {
+          // Bóc tách đối tượng XObject watermark khỏi từ điển Resources
+          const resText = directResourceDict(ref.source, body);
+          let cleanResText = resText;
+          wmInfo.wmNames.forEach(name => {
+            const esc = name.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
+            cleanResText = cleanResText.replace(new RegExp(`\\/${esc}\\s+\\d+\\s+\\d+\\s+R`, 'g'), '');
+          });
+          body = replaceResourceDict(body, cleanResText);
+
+          // Bóc tách khối lệnh vẽ watermark khỏi luồng Content Stream
+          const contentIds = refsAfter(body, 'Contents');
+          contentIds.forEach(cId => {
+            try {
+              const stream = streamFor(ref.source, cId);
+              const filters = streamFilters(stream.dict);
+              let rawBytes = stream.bytes;
+              if (filters.some(f => f === 'FlateDecode' || f === 'Fl')) {
+                rawBytes = inflateSync(rawBytes);
+              }
+              const text = decoder.decode(rawBytes);
+              const cleanedText = stripWatermarkFromContentStream(text, wmInfo.wmNames);
+              const newContentBytes = bytesFor(cleanedText);
+              const outputCid = nextId++;
+              mapFor(ref.source).set(cId, outputCid);
+              records.set(outputCid, {
+                kind: 'text',
+                text: `<< /Length ${newContentBytes.length} >>\nstream\n${cleanedText}\nendstream`
+              });
+            } catch (_) {}
+          });
+        }
+
         refsIn(body).forEach(id => assignSourceObject(ref.source, id));
         pageRecords.push({ kind: 'page', source: ref.source, body, rotation: Number(entry.rotation) || 0 });
         return;
@@ -1376,16 +1578,54 @@
     return new Blob([concat(chunks)], { type: 'application/pdf' });
   }
 
-  function buildPdf(pageRefs, imageItems = []) {
+  function buildPdf(pageRefs, imageItems = [], options = {}) {
     if (!pageRefs.length && !imageItems.length) throw new Error('Không có trang để xuất.');
-    return copyPageObjects(pageRefs, imageItems);
+    return copyPageObjects(pageRefs, imageItems, null, options);
   }
 
-  function buildMixedPdf(items) {
+  function buildMixedPdf(items, options = {}) {
     if (!items?.length) throw new Error('Không có trang để xuất.');
-    return copyPageObjects([], [], items);
+    return copyPageObjects([], [], items, options);
   }
 
-  window.PartyPdf = { parse, sourceFromBuffer, pageInfo, renderThumbnail, previewCacheStats, releasePreviewCache, buildPdf, buildMixedPdf, _inflateSync: inflateSync };
+  function stripWatermarks(pdfBytes, options = {}) {
+    const bytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes);
+    const source = sourceFromBuffer(bytes, options.name || 'document.pdf');
+    const detected = detectCamScannerWatermarks(source);
+    if (!detected.hasWatermarks) {
+      return {
+        blob: new Blob([bytes], { type: 'application/pdf' }),
+        bytes,
+        totalPages: source.pageCount,
+        removedCount: 0,
+        removedPages: [],
+        unmodified: true
+      };
+    }
+    const pageRefs = source.pageIds.map((_, i) => source.page(i));
+    const blob = copyPageObjects(pageRefs, [], null, { stripWatermarks: true });
+    return {
+      blob,
+      totalPages: source.pageCount,
+      removedCount: detected.watermarkPages.length,
+      removedPages: detected.watermarkPages,
+      unmodified: false
+    };
+  }
+
+  window.PartyPdf = {
+    parse,
+    sourceFromBuffer,
+    pageInfo,
+    renderThumbnail,
+    previewCacheStats,
+    releasePreviewCache,
+    buildPdf,
+    buildMixedPdf,
+    detectCamScannerWatermarks,
+    stripWatermarkFromContentStream,
+    stripWatermarks,
+    _inflateSync: inflateSync
+  };
 })();
 

@@ -16,6 +16,54 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-04] Xóa Watermark / Logo CamScanner không mất chất lượng (Lossless Watermark Stripping)
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Core PDF Engine (`party-pdf.js`):**
+     - Thêm hàm `replaceResourceDict(body, newResText)`: Hỗ trợ thay thế từ điển `/Resources` an toàn kể cả khi inline hay indirect.
+     - Thêm hàm `stripWatermarkFromContentStream(streamText, watermarkNames)`: Phân tích cú pháp Content Stream dạng text, loại bỏ triệt để các khối lệnh vẽ `q ... cm /ImX Do Q`, `q ... /ImX Do ... Q`, và standalone `/ImX Do`.
+     - Thêm hàm `detectCamScannerWatermarks(source)`: Nhận diện heuristic logo CamScanner theo chuẩn kích thước ($140\le W\le 270$, $45\le H\le 110$, tỷ lệ $1.8\le W/H\le 4.0$, các cặp chuẩn 240×90, 166×62, 160×60, 200×75), kèm kiểm tra toạ độ ma trận `cm` trong dải lề dưới ($y \le 0.25\times \text{page height}$) sau khi giải nén bằng `inflateSync`, và đối chiếu kích thước ảnh quét tài liệu chính.
+     - Nâng cấp `copyPageObjects` hỗ trợ option `{ stripWatermarks: true }`: Loại bỏ watermark XObject khỏi từ điển `/Resources`, làm sạch Content Stream và tính lại `/Length`, không sao chép XObject watermark vào PDF xuất ra.
+     - Thêm hàm `stripWatermarks(pdfBytes, options)`: API 1-click nhận PDF bytes và trả về `{ blob, totalPages, removedCount, removedPages, unmodified }`, fail-safe trả về tệp gốc khi không có watermark.
+     - Expose vào `window.PartyPdf`: `detectCamScannerWatermarks`, `stripWatermarkFromContentStream`, `stripWatermarks`.
+  2. **Giao diện người dùng & Module UI (`watermark-mode.js`, `index.html`, `styles.css`, `app.js`):**
+     - Tạo module `watermark-mode.js` quản lý chế độ Xóa Watermark: Kéo thả/chọn tệp PDF, gọi `PartyPdf.stripWatermarks`, hiển thị thẻ trạng thái, bảng thống kê dung lượng và số watermark đã bóc tách, nút tải PDF sạch, nút reset, và thu hồi Object URL.
+     - Cập nhật `index.html`: Thêm nút `#modeWatermarkBtn` trên `#modeSelect`, thêm section `#watermarkWorkspace` (với dropzone, result banner, meta grid, download/reset buttons), thêm `<input id="watermarkFileInput">` và nạp script `watermark-mode.js`.
+     - Cập nhật `app.js`: Thêm `modeWatermarkBtn` vào `els`, định tuyến `enterMode('watermark')`, tích hợp reset và chuyển chế độ trong `#switchModeBtn`.
+     - Cập nhật `styles.css`: Thiết kế layout card chọn chế độ, visual badge `BIT-FOR-BIT LOSSLESS`, styling `#watermarkWorkspace`, dropzone, status banner, và responsive grid 2x2.
+     - Cập nhật `sw.js`: Đưa `'./watermark-mode.js'` vào mảng `ASSETS` precache và tăng cache version lên `vigil-lens-v2.8.0`.
+  3. **Kiểm thử hồi quy & Xác thực (`scripts/regression_watermark.cjs`):**
+     - Tạo bộ kiểm thử synthetic PDF mô phỏng tệp scan CamScanner chuẩn: 15/15 checks PASS, xác nhận mã băm SHA-256 của ảnh scan gốc giữ nguyên 100%, kích thước PDF giảm, không còn sót tham chiếu watermark nào, và fail-safe bảo toàn khi PDF không có watermark.
+     - Cập nhật `scripts/acceptance_party_ui.cjs` hỗ trợ 4 thẻ chọn chế độ.
+  4. **Tài liệu dự án:**
+     - Cập nhật `README.md`, `docs/brain/00-project-overview.md`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`.
+- **File đã sửa:**
+  - `party-pdf.js`
+  - `index.html`
+  - `styles.css`
+  - `app.js`
+  - `sw.js`
+  - `watermark-mode.js` (file mới)
+  - `scripts/regression_watermark.cjs` (file mới)
+  - `scripts/acceptance_party_ui.cjs`
+  - `README.md`
+  - `docs/brain/00-project-overview.md`
+  - `docs/brain/01-architecture.md`
+  - `docs/brain/03-decisions.md`
+  - `docs/brain/06-ai-working-log.md`
+- **Lý do:** Đáp ứng yêu cầu bổ sung tính năng xóa watermark / logo CamScanner không mất chất lượng bằng can thiệp cấu trúc PDF nhị phân, bảo vệ tính riêng tư và 100% offline.
+- **Kiểm tra:**
+  - `node --check app.js`: PASS
+  - `node --check party-pdf.js`: PASS
+  - `node --check party-mode.js`: PASS
+  - `node --check watermark-mode.js`: PASS
+  - `node --check sw.js`: PASS
+  - `python scripts/validate_static.py`: 10/10 PASS
+  - `node scripts/regression_watermark.cjs`: 15/15 PASS
+  - `node scripts/regression_party_mode.cjs`: 66/66 PASS
+  - `node scripts/regression_export_busy.js`: 29/29 PASS
+  - `node scripts/regression_scan_id.js`: 52/52 PASS
+
 ## [2026-09-03] Fix canonical Party UI acceptance timing race
 - **Agent:** Codex
 - **Thay đổi:**

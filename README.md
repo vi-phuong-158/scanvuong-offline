@@ -44,6 +44,13 @@ $$\text{Capture} \longrightarrow \text{Detect} \longrightarrow \text{Correct} \l
 - Export từng tài liệu dạng PDF; trang PDF nguồn được copy trực tiếp, ảnh mới chỉ qua canvas crop/filter do cán bộ kiểm soát. Party mode không gọi OCR, AI hoặc ML, không upload và không persistence.
 - Party Mode chỉ là công cụ scan và xuất tài liệu, không phải phần mềm quản lý hồ sơ.
 
+### 4. Xóa Watermark / Logo CamScanner không mất chất lượng (Lossless Watermark Stripping)
+- **Bóc tách cấu trúc (Structural Surgery):** Không dùng phương pháp inpainting hay nén lại ảnh gây mờ chữ. Hệ thống can thiệp trực tiếp cấu trúc PDF, loại bỏ khối chỉ lệnh vẽ `q ... cm /ImX Do Q` trong Content Stream và bóc tách đối tượng XObject watermark `/ImX` khỏi từ điển `Resources`.
+- **Bit-for-bit Lossless:** Giữ nguyên 100% byte stream của ảnh quét tài liệu gốc (`DCTDecode`/JPEG). Mã băm SHA-256 của ảnh scan trước và sau khi xử lý hoàn toàn trùng khớp, không re-encode, không suy giảm độ sắc nét.
+- **Nhận diện Heuristic thông minh:** Tự động phát hiện logo CamScanner dựa trên dải kích thước chuẩn (240×90, 166×62, 160×60, 200×75, v.v.), tỷ lệ khung hình $W/H$, toạ độ đặt ở dải lề dưới trang, đối chiếu với ảnh tài liệu chính lớn.
+- **Tốc độ mili-giây & Tối ưu dung lượng:** Xử lý xong trong vài mili-giây ngay trên trình duyệt client. Dung lượng file PDF sạch giảm đúng bằng kích thước logo được loại bỏ.
+- **Fail-safe an toàn:** Nếu tài liệu không chứa watermark hoặc đã là tệp sạch, hệ thống giữ nguyên vẹn tệp gốc 100%.
+
 ---
 
 ## Chạy ứng dụng
@@ -85,6 +92,7 @@ $$\text{Capture} \longrightarrow \text{Detect} \longrightarrow \text{Correct} \l
 | `party-mode.js` | Quản lý vòng đời và tương tác Party Document Mode |
 | `party-pdf.js` | Trình import, preview và copy trang PDF local không qua rasterization |
 | `party-taxonomy.js` | Mirror local danh mục 104 loại tài liệu Đảng |
+| `watermark-mode.js` | Module quản lý giao diện và quy trình Xóa Watermark CamScanner Lossless |
 | `document-detector.js` | Module nhận diện 4 góc tài liệu (ML inference + geometry validator + classical CV) |
 | `assets/fonts/` | Bộ font tiếng Việt Be Vietnam Pro tự host cục bộ (WOFF2) |
 | `assets/ml/` | Mô hình DocCornerNet Lean (`.ort`) và ONNX Runtime Web WASM |
@@ -106,6 +114,7 @@ node --check document-detector.js
 node --check party-pdf.js
 node --check party-mode.js
 node --check party-taxonomy.js
+node --check watermark-mode.js
 node --check sw.js
 
 # Kiểm tra tĩnh & bảo mật
@@ -115,6 +124,7 @@ python scripts/validate_static.py
 node scripts/test_touch_targets.cjs
 
 # Kiểm tra regression logic
+node scripts/regression_watermark.cjs
 node scripts/regression_export_busy.js
 node scripts/regression_scan_id.js
 node scripts/regression_ml_detector.js
