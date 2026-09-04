@@ -16,6 +16,20 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-04] Hotfix: SW Controllerchange Reload Guard & CDP Acceptance Race Elimination
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Bảo vệ Service Worker `controllerchange` (`app.js`):**
+     - Thêm cờ `let hadController = Boolean(navigator.serviceWorker.controller)` trước khi lắng nghe `controllerchange`.
+     - Ngăn ngừa reload trang đột ngột trong lần cài đặt đầu tiên khi Service Worker kích hoạt và gọi `self.clients.claim()`. Chỉ reload khi trang đã có controller từ trước và nhận update mới từ người dùng.
+  2. **Loại bỏ Race Condition trong CDP Test Suite (`scripts/acceptance_party_ui.cjs`):**
+     - Thêm helper `navigateAndEnterPartyMode(cdp)` sử dụng `waitFor` thay thế cho chuỗi gọi `Page.navigate` + timeout tĩnh (400-500ms).
+     - Loại bỏ hàm duplicate cũ `runLargePdfAcceptance` ở cuối file.
+     - Thay thế toàn bộ các timeout tĩnh dễ flaky bằng điều kiện `waitFor` chuẩn xác (chờ số trang tải về pool, chờ canvas render xong `ready >= 1` hoặc `ready >= 6`, chờ toast thông báo lỗi).
+- **File đã sửa:** `app.js`, `scripts/acceptance_party_ui.cjs`, `docs/brain/06-ai-working-log.md`
+- **Lý do:** Khắc phục triệt để hiện tượng tải lại trang ngẫu nhiên do Service Worker claim trong môi trường mới/CI và bảo đảm 100% độ ổn định của kiểm thử giao diện tự động.
+- **Kiểm tra:** `node scripts/acceptance_party_ui.cjs` đạt `PARTY_UI_BROWSER_ACCEPTANCE: PASS` trên toàn bộ 19 kịch bản và 5 viewports.
+
 ## [2026-09-04] Final Defect Closure & Release Acceptance (PR #12)
 - **Agent:** Codex
 - **Thay đổi:**

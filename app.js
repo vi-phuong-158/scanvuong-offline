@@ -1320,8 +1320,12 @@
     if(els.updateDismiss)els.updateDismiss.addEventListener('click',()=>{
       if(els.updateBanner)els.updateBanner.classList.add('hidden');
     });
-    // When the new SW takes over, reload the page to load new assets
-    navigator.serviceWorker.addEventListener('controllerchange',()=>{location.reload();});
+    // When the new SW takes over, reload the page to load new assets (only if an old SW was already controlling)
+    let hadController = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) { hadController = true; return; }
+      location.reload();
+    });
   }
 
   renderModeShell();
