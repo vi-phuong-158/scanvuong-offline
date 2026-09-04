@@ -5,7 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-jobs:
+
+jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
@@ -34,8 +35,14 @@ on:
       - name: node --check party-taxonomy.js
         run: node --check party-taxonomy.js
 
+      - name: node --check watermark-mode.js
+        run: node --check watermark-mode.js
+
       - name: Regression harness (Party Mode PDF copy / hybrid / taxonomy)
         run: node scripts/regression_party_mode.cjs
+
+      - name: Regression harness (Lossless Watermark Stripping)
+        run: node scripts/regression_watermark.cjs
 
       - name: node --check sw.js
         run: node --check sw.js

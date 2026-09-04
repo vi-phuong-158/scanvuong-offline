@@ -4,9 +4,11 @@
 
 **Vigil Lens** (VPH Vigil Lens — thuộc hệ sinh thái **VIGIL**, tagline: *See clearly. Capture precisely.*) biến ảnh chụp tài liệu giấy thành file PDF sạch, thẳng, có thể đọc được — hoàn toàn trên thiết bị của người dùng, không cần mạng, không cần tài khoản, không gửi tài liệu đi đâu cả.
 
-Ứng dụng có hai workflow độc lập, chọn ở màn hình bắt đầu (`state.mode`):
+Ứng dụng có bốn workflow độc lập, chọn ở màn hình bắt đầu (`state.mode`):
 - **Document mode** (mặc định lịch sử): nhiều trang → nhiều/1 trang PDF theo tỷ lệ tài liệu hoặc A4.
 - **ID mode** ("Scan ID"): đúng 2 ảnh (mặt trước/mặt sau một thẻ/căn cước) → ghép lên **một trang A4 duy nhất**. Xem [01-architecture.md](01-architecture.md) mục "ID mode" và quyết định trong [03-decisions.md](03-decisions.md).
+- **Party Document mode**: quét/nhập tài liệu Đảng, tách/ghép trang và chuẩn hoá tên file theo danh mục 104 loại.
+- **Watermark Stripper mode**: xóa watermark / logo CamScanner không mất chất lượng bằng bóc tách cấu trúc PDF (Structural Surgery), bảo toàn 100% bit stream JPEG gốc.
 
 ## Người dùng chính
 
@@ -26,6 +28,7 @@
 - Xuất PDF: khổ A4 tự xoay hoặc theo tỷ lệ tài liệu, nhiều mức chất lượng, chế độ "cố gắng dưới 2 MB".
 - Cài đặt như PWA và dùng offline sau lần tải đầu.
 - **Scan ID**: workflow riêng — mặt trước + mặt sau một thẻ/căn cước → auto-crop/phối cảnh từng mặt (tái dùng đúng pipeline trên) → ghép lên 1 trang A4 dọc ("Bản in đẹp": thẻ phóng lớn vừa phải, không phải kích thước thật) → xuất PDF 1 trang. Không thể xuất nếu thiếu một mặt.
+- **Xóa Watermark CamScanner (Lossless Watermark Stripper)**: workflow độc lập thứ tư — bóc tách logo "Scanned with CamScanner" bằng can thiệp cấu trúc PDF (loại bỏ khối lệnh `q ... cm /ImX Do Q` trong Content Stream và gỡ XObject khỏi Resources). Giữ nguyên 100% bit stream JPEG của ảnh quét gốc (SHA-256 không đổi), không re-compress, không inpainting, tốc độ tức thì vài mili-giây.
 
 ### Ngoài scope
 
@@ -50,3 +53,7 @@ Khác với các app scan phổ biến, Vigil Lens không có backend, không ph
 ## Party Document Mode (2026-08-30)
 
 Party Mode adds a third, session-only workflow for scanning and assembling Party documents. It keeps the operator in control of page boundaries and taxonomy selection; it does not manage cases, infer document types, OCR content, or report missing document categories. Imported PDF pages remain source page references until export.
+
+## Lossless Watermark Stripper (2026-09-04)
+
+Bổ sung workflow thứ tư: Chuyên gia bóc tách logo / watermark CamScanner không mất chất lượng bằng can thiệp cấu trúc PDF nhị phân client-side (bóc tách Content Stream và XObject). Bảo toàn 100% byte dữ liệu JPEG của ảnh scan gốc, fail-safe khi không có watermark, zero external dependencies.

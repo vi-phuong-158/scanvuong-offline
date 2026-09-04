@@ -16,6 +16,158 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-04] Final Defect Closure & Release Acceptance (PR #12)
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Hardening MediaBox / CropBox / Rotate Parsing (`party-pdf.js`):**
+     - Thêm `resolveIndirectValue` và `parseBox` xử lý an toàn indirect reference `/MediaBox 15 0 R`, `/Rotate 20 0 R` và bỏ qua giá trị `null` (`/CropBox null` an toàn fallback về `/MediaBox`).
+     - Cập nhật `inheritedPageText` chèn thuộc tính kế thừa trước ký tự đóng dictionary `>>` bằng `balancedPdfValueEnd`.
+     - Bổ sung Synthetic U, V, W trong `scripts/regression_party_mode.cjs` (69/69 checks PASS).
+  2. **Tăng cường an toàn Watermark Stripping & Chống nhận diện nhầm (`party-pdf.js`):**
+     - Siết chặt tỷ lệ khung hình logo CamScanner ($2.3 \le W/H \le 3.2$ hoặc kích thước chuẩn 240×90, 166×62, 160×60, 200×75, 180×68).
+     - Yêu cầu ảnh quét chính trên trang có diện tích $\ge 500,000$ px và diện tích gấp ít nhất 8 lần ứng viên watermark.
+     - Phân tích ma trận biến đổi `cm` trong cửa sổ lookback 250 ký tự trước `/name Do`: vị trí lề dưới $f \le \text{box}[1] + \text{pageHeight} \times 0.20$, kích thước hiển thị $20 \le \text{renderW} \le 220$, $5 \le \text{renderH} \le 70$.
+     - Loại bỏ hoàn toàn fallback regex nguy hiểm (không bao giờ nhận diện watermark nếu thiếu ma trận `cm` thỏa mãn điều kiện).
+     - Thay thế `replaceResourceDict` bằng `cleanResourceDict`: xử lý an toàn cả direct và indirect `/Resources` / `/XObject`, inline từ điển đã làm sạch vào trang và loại bỏ hoàn toàn đối tượng watermark khỏi danh sách đối tượng xuất ra.
+     - Chỉ ghi đè Content Stream khi nội dung stream thực sự thay đổi (`cleanedText !== text`).
+  3. **Mở rộng bộ kiểm thử hồi quy (`scripts/regression_watermark.cjs`):**
+     - Thêm 10 negative regression test cases (Clean PDF, Logo cơ quan ở đầu trang, Con dấu tròn/vuông, Chữ ký giữa trang, Mã QR ở chân trang, Banner toàn chiều rộng, Sơ đồ tài liệu, Ứng viên ở giữa trang, PDF không có ảnh quét chính, Các icon bullet nhỏ) -> tất cả đều giữ nguyên vẹn `removedCount = 0`, `unmodified = true`.
+     - Xác thực nguyên vẹn bit-for-bit của ảnh quét tài liệu chính qua SHA-256 hash và thuộc tính từ điển đối tượng (26/26 checks PASS).
+  4. **Tích hợp CI & Hướng dẫn người dùng (`.github/workflows/static-validation.yml`, `index.html`):**
+     - Bổ sung `node --check watermark-mode.js` và `node scripts/regression_watermark.cjs` vào static validation workflow.
+     - Cập nhật Hướng dẫn sử dụng trong `#partyHelpDialog` bằng ngôn ngữ đại chúng, phi kỹ thuật cho toàn bộ 4 chế độ làm việc của Vigil Lens.
+- **File đã sửa:** `party-pdf.js`, `scripts/regression_party_mode.cjs`, `scripts/regression_watermark.cjs`, `.github/workflows/static-validation.yml`, `index.html`, `docs/brain/04-current-tasks.md`, `docs/brain/06-ai-working-log.md`
+- **Lý do:** Hoàn thiện nghiệm thu đóng lỗi toàn diện, bảo đảm an toàn dữ liệu 100% không nhận diện nhầm, và tích hợp đầy đủ kiểm thử tự động trên CI.
+- **Kiểm tra:**
+  - `node --check app.js document-detector.js party-pdf.js party-mode.js party-taxonomy.js watermark-mode.js sw.js` (PASS)
+  - `python scripts/validate_static.py` (PASS)
+  - `node scripts/regression_party_mode.cjs` (69/69 PASS)
+  - `node scripts/regression_watermark.cjs` (26/26 PASS)
+  - `node scripts/regression_export_busy.js` (29/29 PASS)
+  - `node scripts/regression_scan_id.js` (52/52 PASS)
+  - `node scripts/regression_sw_update.cjs` (9/9 PASS)
+  - `node scripts/test_touch_targets.cjs` (120/120 PASS)
+
+## [2026-09-04] Xóa Watermark / Logo CamScanner không mất chất lượng (Lossless Watermark Stripping)
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Core PDF Engine (`party-pdf.js`):**
+     - Thêm hàm `replaceResourceDict(body, newResText)`: Hỗ trợ thay thế từ điển `/Resources` an toàn kể cả khi inline hay indirect.
+     - Thêm hàm `stripWatermarkFromContentStream(streamText, watermarkNames)`: Phân tích cú pháp Content Stream dạng text, loại bỏ triệt để các khối lệnh vẽ `q ... cm /ImX Do Q`, `q ... /ImX Do ... Q`, và standalone `/ImX Do`.
+     - Thêm hàm `detectCamScannerWatermarks(source)`: Nhận diện heuristic logo CamScanner theo chuẩn kích thước ($140\le W\le 270$, $45\le H\le 110$, tỷ lệ $1.8\le W/H\le 4.0$, các cặp chuẩn 240×90, 166×62, 160×60, 200×75), kèm kiểm tra toạ độ ma trận `cm` trong dải lề dưới ($y \le 0.25\times \text{page height}$) sau khi giải nén bằng `inflateSync`, và đối chiếu kích thước ảnh quét tài liệu chính.
+     - Nâng cấp `copyPageObjects` hỗ trợ option `{ stripWatermarks: true }`: Loại bỏ watermark XObject khỏi từ điển `/Resources`, làm sạch Content Stream và tính lại `/Length`, không sao chép XObject watermark vào PDF xuất ra.
+     - Thêm hàm `stripWatermarks(pdfBytes, options)`: API 1-click nhận PDF bytes và trả về `{ blob, totalPages, removedCount, removedPages, unmodified }`, fail-safe trả về tệp gốc khi không có watermark.
+     - Expose vào `window.PartyPdf`: `detectCamScannerWatermarks`, `stripWatermarkFromContentStream`, `stripWatermarks`.
+  2. **Giao diện người dùng & Module UI (`watermark-mode.js`, `index.html`, `styles.css`, `app.js`):**
+     - Tạo module `watermark-mode.js` quản lý chế độ Xóa Watermark: Kéo thả/chọn tệp PDF, gọi `PartyPdf.stripWatermarks`, hiển thị thẻ trạng thái, bảng thống kê dung lượng và số watermark đã bóc tách, nút tải PDF sạch, nút reset, và thu hồi Object URL.
+     - Cập nhật `index.html`: Thêm nút `#modeWatermarkBtn` trên `#modeSelect`, thêm section `#watermarkWorkspace` (với dropzone, result banner, meta grid, download/reset buttons), thêm `<input id="watermarkFileInput">` và nạp script `watermark-mode.js`.
+     - Cập nhật `app.js`: Thêm `modeWatermarkBtn` vào `els`, định tuyến `enterMode('watermark')`, tích hợp reset và chuyển chế độ trong `#switchModeBtn`.
+     - Cập nhật `styles.css`: Thiết kế layout card chọn chế độ, visual badge `BIT-FOR-BIT LOSSLESS`, styling `#watermarkWorkspace`, dropzone, status banner, và responsive grid 2x2.
+     - Cập nhật `sw.js`: Đưa `'./watermark-mode.js'` vào mảng `ASSETS` precache và tăng cache version lên `vigil-lens-v2.8.0`.
+  3. **Kiểm thử hồi quy & Xác thực (`scripts/regression_watermark.cjs`):**
+     - Tạo bộ kiểm thử synthetic PDF mô phỏng tệp scan CamScanner chuẩn: 15/15 checks PASS, xác nhận mã băm SHA-256 của ảnh scan gốc giữ nguyên 100%, kích thước PDF giảm, không còn sót tham chiếu watermark nào, và fail-safe bảo toàn khi PDF không có watermark.
+     - Cập nhật `scripts/acceptance_party_ui.cjs` hỗ trợ 4 thẻ chọn chế độ.
+  4. **Tài liệu dự án:**
+     - Cập nhật `README.md`, `docs/brain/00-project-overview.md`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`.
+- **File đã sửa:**
+  - `party-pdf.js`
+  - `index.html`
+  - `styles.css`
+  - `app.js`
+  - `sw.js`
+  - `watermark-mode.js` (file mới)
+  - `scripts/regression_watermark.cjs` (file mới)
+  - `scripts/acceptance_party_ui.cjs`
+  - `README.md`
+  - `docs/brain/00-project-overview.md`
+  - `docs/brain/01-architecture.md`
+  - `docs/brain/03-decisions.md`
+  - `docs/brain/06-ai-working-log.md`
+- **Lý do:** Đáp ứng yêu cầu bổ sung tính năng xóa watermark / logo CamScanner không mất chất lượng bằng can thiệp cấu trúc PDF nhị phân, bảo vệ tính riêng tư và 100% offline.
+- **Kiểm tra:**
+  - `node --check app.js`: PASS
+  - `node --check party-pdf.js`: PASS
+  - `node --check party-mode.js`: PASS
+  - `node --check watermark-mode.js`: PASS
+  - `node --check sw.js`: PASS
+  - `python scripts/validate_static.py`: 10/10 PASS
+  - `node scripts/regression_watermark.cjs`: 15/15 PASS
+  - `node scripts/regression_party_mode.cjs`: 66/66 PASS
+  - `node scripts/regression_export_busy.js`: 29/29 PASS
+  - `node scripts/regression_scan_id.js`: 52/52 PASS
+
+## [2026-09-03] Fix canonical Party UI acceptance timing race
+- **Agent:** Codex
+- **Thay đổi:**
+  - Viết helper `waitFor(cdp, condition, timeoutMs)` trong `scripts/acceptance_party_ui.cjs` để đồng bộ theo trạng thái thật (DOM element, previewRendered, dimensions), loại bỏ triệt để các lệnh sleep cố định gây timing race trên Windows host.
+  - Đồng bộ trạng thái canvas trước và sau hành động rotate trong `runHelpUxAcceptance` và `runEventListenerAcceptance`.
+  - Phân định phạm vi đếm `.party-assigned-badge` thành `.party-source-pool .party-assigned-badge` để không bị đếm nhầm 2 thẻ nhãn tĩnh minh họa trong `#partyHelpDialog`.
+- **File đã sửa:** `scripts/acceptance_party_ui.cjs`
+- **Lý do:** Khắc phục lỗi assertion trong canonical UI acceptance gate do render async của PDF.js trên Windows.
+- **Kiểm tra:**
+  - `node scripts/acceptance_party_ui.cjs`: 19/19 checks PASS (exit code 0).
+  - `python scripts/validate_static.py`: 10/10 PASS.
+  - `node scripts/regression_party_mode.cjs`: 66/66 checks PASS.
+  - `node scripts/regression_export_busy.js`: 29/29 checks PASS.
+  - `node scripts/regression_scan_id.js`: 52/52 checks PASS.
+  - Real PDF sanity: Original File 01 (`86ac6f...`) 12/12 PASS, File 02 11/11 PASS, source mutation = 0.
+
+## [2026-09-03] Fix Party PDF parser cho MediaBox dictionary + compressed /ObjStm
+- **Agent:** Codex
+- **Thay đổi:**
+  1. **Fix delimiter parser cho nested dictionaries (`balancedPdfValueEnd`, `pdfValueEnd`):**
+     - Thay thế vòng lặp giảm độ sâu 1-byte bằng stack-based delimiter parser (`stack = [open]`).
+     - Đọc và nhảy chính xác 2 byte cho `<<` và `>>`, giải quyết triệt để lỗi giảm nhầm depth khi gặp các token đóng liền kề không khoảng trắng như `>>>>/MediaBox` (gốc rễ lỗi "PDF page thiếu MediaBox/CropBox hợp lệ" ở File 01 `01.Ly_lich_nguoi_xin_vao_dang.pdf`).
+     - Hỗ trợ đầy đủ mảng lồng nhau `[...]`, chuỗi hex `<...>`, chuỗi literal `(...)` có ký tự escape `\` và đóng/mở ngoặc lồng, cùng dòng comment `%...`.
+  2. **Bộ giải nén pure JS RFC 1951 Deflate / RFC 1950 zlib đồng bộ (`inflateSync`):**
+     - Viết mới bộ giải nén pure JavaScript không dependency, chạy đồng bộ (synchronous) cả trên Node.js và mọi trình duyệt hiện đại.
+     - Khắc phục cơ chế bit packing của Huffman code (MSB-first: `(code << 1) | getBits(1)`), giải mã chính xác 100% byte-for-byte tương đương `zlib.inflateSync`.
+  3. **Hỗ trợ Object Streams nén (`/Type /ObjStm`, ISO 32000-1 §7.5.7):**
+     - Thêm `parseObjectStreams(bytes, text, objectIndex)`: Tự động phát hiện các stream `/Type /ObjStm`, đọc `/N` và `/First`, giải nén payload bằng `inflateSync`.
+     - Phân tích header gồm $N$ cặp số nguyên `[id, offset]`, cắt chính xác phần thân của từng compressed object và đưa vào bản đồ đối tượng.
+     - Nâng cấp `resolveIndirectLength`: Tìm kiếm `/Length` gián tiếp trong cả top-level objects và compressed objects từ `/ObjStm` (giải quyết lỗi Object 5 trỏ `/Length 6 0 R` nằm trong `/ObjStm 8` ở File 02 `02.Ly_lich_dang_vien.pdf`).
+     - Bảo toàn 100% các ràng buộc an toàn ngày 02/09: self-reference guard, cyclic reference guard, declared length authority, fake endstream guard, non-numeric guard, negative guard, out-of-bounds guard.
+  4. **Materialization khi xuất PDF (`copyPageObjects`):**
+     - Khi xuất tài liệu, các đối tượng trích xuất từ `/ObjStm` được ánh xạ ID mới và tự động vật chất hóa (materialize) thành các top-level object độc lập (`${outputId} 0 obj\n${body}\nendobj\n`). File PDF xuất ra hoàn toàn tự chứa, chuẩn PDF 1.4, không còn phụ thuộc vào `/ObjStm`.
+  5. **Bổ sung 4 bộ kiểm thử hồi quy synthetic cho CI:**
+     - Synthetic J: Adjacent nested close (`>> >> /MediaBox`).
+     - Synthetic K: Adjacent close không có khoảng trắng (`>> >>/MediaBox[...]`).
+     - Synthetic L: 4 cấp nested dictionary kết thúc bằng `>>>>>>>>/MediaBox`.
+     - Synthetic M: PDF có `/ObjStm` nén chứa indirect `/Length` và dictionary, kiểm tra export vật chất hóa thành top-level object thành công.
+- **Lý do:** Hai file PDF thực tế hợp lệ nhưng không tải được do parser bị lệch depth ở thẻ đóng dictionary liền kề và chưa đọc được đối tượng nén trong `/ObjStm` (Ghostscript 10.x).
+
+- **Kiểm tra:**
+  - `node --check party-pdf.js` & `node --check scripts/regression_party_mode.cjs`: PASS syntax.
+  - `python scripts/validate_static.py`: 10/10 PASS (zero external URLs, zero emojis, zero legacy brand, asset cache verified).
+  - `node scripts/regression_party_mode.cjs`: 59/59 checks PASS (tăng từ 53 lên 59 với 4 synthetic checks mới).
+  - `node scripts/regression_export_busy.js`: 29/29 checks PASS.
+  - `node scripts/regression_scan_id.js`: 52/52 checks PASS.
+  - **Kiểm thử trên 2 file thật bằng `pypdf`:**
+    - File 01 (12 trang, SHA256 `86ac6f1355bcaa8a94ff751761046c9d28252800c29e232e67de116e4e9a413f`): 12/12 trang đọc MediaBox hợp lệ, xuất 3 trang (0, 1, 2) thành công, `pypdf` xác nhận đủ 3 trang với MediaBox và rotation 270° chính xác, hash file nguồn không đổi 100%.
+    - File 02 (11 trang, SHA256 `d1f63be0bcfb182dafbfce32e81eb809a9b6e087851916c0aeacfbd36450deb6`): 11/11 trang đọc MediaBox hợp lệ, giải nén `/ObjStm` thành công, xuất 3 trang (0, 1, 2) thành công, `pypdf` xác nhận đủ 3 trang với MediaBox và rotation 0° chính xác, hash file nguồn không đổi 100%.
+  - **Browser Acceptance trên Chromium thật qua CDP:**
+    - File 01: Load thành công 12/12 thumbnails, mở dialog preview trang 1 thành công, chọn trang 1–3, tạo tài liệu, gán taxonomy 01, xuất file `01.Ly_lich_nguoi_xin_vao_dang.pdf`, `pypdf` kiểm tra file tải về có đủ 3 trang.
+    - File 02: Load thành công 11/11 thumbnails, mở dialog preview trang 1 thành công, chọn trang 1–3, tạo tài liệu, gán taxonomy 02, xuất file `02.Ly_lich_dang_vien.pdf`, `pypdf` kiểm tra file tải về có đủ 3 trang.
+
+
+## [2026-09-02] Cập nhật Hướng dẫn sử dụng trong ứng dụng cho Scan tài liệu Đảng
+- **Agent:** Antigravity (Gemini 3.7 Flash)
+- **Thay đổi:**
+  1. Thiết kế lại toàn diện modal Hướng dẫn sử dụng (`#partyHelpDialog`) theo cấu trúc 2 tầng:
+     - **Tầng 1 (Quy trình nhanh 6 bước):** Đặt ngay đầu dialog với 6 thẻ bước trực quan: Nhập nguồn → Kiểm tra trang nguồn → Chọn trang tạo tài liệu → Sắp xếp & chỉnh trang → Chọn loại trong 104 loại → Kiểm tra & xuất PDF.
+     - **Tầng 2 (Hướng dẫn chi tiết theo nghiệp vụ):** 24 mục chi tiết giải thích rõ ràng khái niệm Trang nguồn vs Tài liệu, khu vực Danh sách trang nguồn, xem trước lớn & cảnh báo không mất trang, 3 cách chọn trang (tick/khoảng/rời/tất cả), cách chia 1 PDF thành nhiều tài liệu, đổi thứ tự trang (`← Trước`/`Sau →`), ghép với trước/sau, chuyển trang, xoay 90°, thay trang tại chỗ, thêm trang, xóa khỏi tài liệu (trả trang về pool chưa gán), xóa tài liệu, danh mục 104 loại & canonical filename, xử lý nhiều tài liệu cùng loại (`.1`, `.2`) kèm xác nhận thứ tự, thanh phân trang (coverage), xuất riêng từng tài liệu (`Xuất tài liệu này`), xuất tất cả, bảo toàn chất lượng PDF gốc (page-object copy, không rasterize), bảo mật 100% offline (không OCR, không AI, không upload), và ví dụ thực tế hoàn chỉnh xử lý file scan 36 trang.
+  2. Bổ sung styling responsive trong `styles.css`: Sheet layout với header cố định (nút Đóng luôn hiển thị khi cuộn), quickflow cards, numbered step badges, callout boxes (ghi chú/cảnh báo/bảo mật), visual button tags (`.party-help-btn-tag`), và tối ưu giao diện mobile 390×844.
+  3. Bảo toàn 100% logic xử lý PDF, parser, preview, split/create, merge, move, rotate, replace, insert, remove, taxonomy, filename canonical, export PDF.
+- **File đã sửa:** `index.html`, `styles.css`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Hướng dẫn trong app đã cũ, chưa phản ánh workflow chọn trang nguồn → tạo tài liệu → xuất riêng lẻ và danh mục 104 loại mới, cần cập nhật chi tiết cho cán bộ lần đầu sử dụng.
+- **Kiểm tra:**
+  - `node --check app.js`, `node --check party-mode.js`, `node --check party-pdf.js`: Cú pháp JavaScript hợp lệ 100%.
+  - `python scripts/validate_static.py`: 10/10 PASS (zero external URLs, zero UI emojis, zero legacy brand, asset cache verified).
+  - `node scripts/regression_party_mode.cjs`: 53/53 PASS.
+  - `node scripts/acceptance_offline_pwa.cjs`: 100% Offline Verified PASS.
+  - `node scripts/test_touch_targets.cjs`: 142/142 PASS.
+  - Headless Chrome CDP Help UX verification trên Desktop (1280×800) và Mobile (390×844): Dialog mở mượt mà, scroll riêng, không tràn màn hình ngang (`overflowX = false`), nút Đóng hoạt động tốt, hiển thị đầy đủ 13/13 required topics và 25/25 sections; bảo toàn 100% trạng thái Party Mode khi đóng/mở hướng dẫn.
+
 ## [2026-09-02] Chuyển đổi Party Document Mode: Chọn trang → Tạo tài liệu → Xuất riêng lẻ
 - **Agent:** Codex
 - **Thay đổi:**

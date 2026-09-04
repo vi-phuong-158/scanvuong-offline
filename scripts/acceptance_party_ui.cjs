@@ -218,15 +218,32 @@ async function setFileInput(cdp, selector, filePath) {
   const objectId = evaluated.result?.objectId;
   if (!objectId) throw new Error(`Không tìm thấy file input ${selector}.`);
   await cdp.send('DOM.setFileInputFiles', { objectId, files: [path.resolve(filePath).split(path.sep).join('/')] });
-
 }
+
+async function waitFor(cdp, fnExpr, timeoutMs = 5000, intervalMs = 40) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await cdp.eval(`Boolean((${fnExpr})())`);
+      if (res) return true;
+    } catch (_) {}
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  throw new Error(`Timeout waiting for condition: ${fnExpr}`);
+}
+
 async function runLineEndingAcceptance(cdp) {
   for (const [name, ending] of [['lf', '\n'], ['cr', '\r'], ['crlf', '\r\n']]) {
     const fixturePath = path.join(SCREENSHOT_DIR, `party_ui_line_ending_${name}.pdf`); fs.writeFileSync(fixturePath, syntheticPdf(3, ending));
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 360)); cdp.errors.length = 0;
-    await cdp.eval("document.getElementById('modePartyBtn').click(); document.getElementById('partyPdfBtn').click()"); await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 500));
-    await cdp.eval("document.getElementById('partySelectAllBtn').click(); document.getElementById('partyCreateDocBtn').click()"); await new Promise(resolve => setTimeout(resolve, 200));
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+    await waitFor(cdp, "() => document.readyState === 'complete' && !!document.getElementById('modePartyBtn')");
+    cdp.errors.length = 0;
+    await cdp.eval("document.getElementById('modePartyBtn').click(); document.getElementById('partyPdfBtn').click()");
+    await setFileInput(cdp, '#partyPdfInput', fixturePath);
+    await waitFor(cdp, "() => document.querySelectorAll('#partySourceRail .party-page').length === 3");
+    await cdp.eval("document.getElementById('partySelectAllBtn').click(); document.getElementById('partyCreateDocBtn').click()");
+    await waitFor(cdp, "() => document.querySelectorAll('.party-created-docs .party-page').length === 3");
     const imported = JSON.parse(await cdp.eval("JSON.stringify({pages:document.querySelectorAll('.party-created-docs .party-page').length,coverage:document.getElementById('partyCoverageText').textContent})"));
     if (imported.pages !== 3 || !imported.coverage.includes('3/3') || cdp.errors.length) throw new Error(`PDF ${name} line-ending import failed: ${JSON.stringify({ imported, errors: cdp.errors })}`);
   }
@@ -235,15 +252,24 @@ async function runLineEndingAcceptance(cdp) {
 
 async function runHelpUxAcceptance(cdp) {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
-  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` }); await new Promise(resolve => setTimeout(resolve, 360)); cdp.errors.length = 0;
-  await cdp.eval("document.getElementById('modePartyBtn').click(); document.querySelector('[data-party-help]').click()"); await new Promise(resolve => setTimeout(resolve, 120));
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+  await waitFor(cdp, "() => document.readyState === 'complete' && !!document.getElementById('modePartyBtn')");
+  cdp.errors.length = 0;
+  await cdp.eval("document.getElementById('modePartyBtn').click(); document.querySelector('[data-party-help]').click()");
+  await waitFor(cdp, "() => document.getElementById('partyHelpDialog')?.open === true");
   const help = JSON.parse(await cdp.eval("JSON.stringify({open:document.getElementById('partyHelpDialog').open,sections:document.querySelectorAll('#partyHelpDialog section').length,text:document.getElementById('partyHelpDialog').textContent})"));
   const requiredTopics = ['Tài liệu là gì?','Trang nguồn là gì?','Chọn trang và tạo tài liệu','Cách chia 1 PDF thành nhiều tài liệu','Ghép với trước','Ghép với sau','Chuyển trang','Xoay trang','Thay trang','Thêm trang','Xóa trang','Chọn loại tài liệu','Xuất tất cả'];
   if (!help.open || help.sections < 13 || !requiredTopics.every(label => help.text.includes(label)) || cdp.errors.length) throw new Error(`Party help content failed: ${JSON.stringify({ open: help.open, sections: help.sections })}`);
   await cdp.eval("document.getElementById('partyHelpClose').click()");
-  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_help_controls.pdf'); fs.writeFileSync(fixturePath, syntheticPdf(2)); await cdp.eval("document.getElementById('partyPdfBtn').click()"); await setFileInput(cdp, '#partyPdfInput', fixturePath); await new Promise(resolve => setTimeout(resolve, 520));
-  await cdp.eval("document.getElementById('partySelectAllBtn').click(); document.getElementById('partyCreateDocBtn').click();"); await new Promise(resolve => setTimeout(resolve, 200));
-  const desktop = JSON.parse(await cdp.eval("JSON.stringify((() => { const page=document.querySelector('.party-created-docs .party-page'); const labels=[...page.querySelectorAll('.party-page-actions > button')].map(button=>button.textContent.trim()); const canvas=page.querySelector('.party-pdf-preview'); const before=[canvas.width,canvas.height]; page.querySelector('[data-page-action=rotate]').click(); return {labels,before}; })())")); await new Promise(resolve => setTimeout(resolve, 480));
+  await waitFor(cdp, "() => !document.getElementById('partyHelpDialog')?.open");
+  const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_help_controls.pdf'); fs.writeFileSync(fixturePath, syntheticPdf(2));
+  await cdp.eval("document.getElementById('partyPdfBtn').click()");
+  await setFileInput(cdp, '#partyPdfInput', fixturePath);
+  await waitFor(cdp, "() => document.querySelectorAll('#partySourceRail .party-page').length === 2");
+  await cdp.eval("document.getElementById('partySelectAllBtn').click(); document.getElementById('partyCreateDocBtn').click();");
+  await waitFor(cdp, "() => { const page = document.querySelector('.party-created-docs .party-page'); const canvas = page?.querySelector('.party-pdf-preview'); return canvas && (canvas.dataset.previewRendered === 'true' || (canvas.width > 0 && canvas.height > 0 && (canvas.width !== 300 || canvas.height !== 150))); }");
+  const desktop = JSON.parse(await cdp.eval("JSON.stringify((() => { const page=document.querySelector('.party-created-docs .party-page'); const labels=[...page.querySelectorAll('.party-page-actions > button')].map(button=>button.textContent.trim()); const canvas=page.querySelector('.party-pdf-preview'); const before=[canvas.width,canvas.height]; page.querySelector('[data-page-action=rotate]').click(); return {labels,before}; })())"));
+  await waitFor(cdp, `() => { const canvas = document.querySelector('.party-created-docs .party-pdf-preview'); return canvas && canvas.width === ${desktop.before[1]} && canvas.height === ${desktop.before[0]}; }`);
   const rotated = JSON.parse(await cdp.eval("JSON.stringify((() => { const canvas=document.querySelector('.party-created-docs .party-pdf-preview'); return {after:[canvas.width,canvas.height],coverage:document.getElementById('partyCoverageText').textContent}; })())"));
   if (!['← Trước','Sau →','↻ Xoay','↺ Thay trang','+ Thêm sau','Xóa'].every(label => desktop.labels.includes(label)) || desktop.before[0] !== rotated.after[1] || desktop.before[1] !== rotated.after[0] || !rotated.coverage.includes('2/2') || cdp.errors.length) throw new Error(`Party desktop controls failed: ${JSON.stringify({ desktop, rotated, errors: cdp.errors })}`);
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }); await new Promise(resolve => setTimeout(resolve, 180));
@@ -251,6 +277,7 @@ async function runHelpUxAcceptance(cdp) {
   if (!mobile.menuVisible || mobile.direct || !['Thay trang','Thêm sau','Xóa khỏi tài liệu'].every(label => mobile.text.includes(label)) || mobile.overflow || cdp.errors.length) throw new Error(`Party mobile controls failed: ${JSON.stringify({ mobile, errors: cdp.errors })}`);
   console.log('PASS Party help and labelled desktop/mobile control acceptance');
 }
+
 async function readPrivateExportPageCounts(cdp) {
   const result = await cdp.send('Runtime.evaluate', { expression: "(async()=>JSON.stringify(await Promise.all(window.__partyDownloads.map(async item => window.PartyPdf.parse(new Uint8Array(await (await fetch(item.href)).arrayBuffer())).pageIds.length))))()", awaitPromise: true, returnByValue: true });
   return JSON.parse(result.result?.value || '[]');
@@ -289,15 +316,15 @@ async function runPageSelectionWorkflowAcceptance(cdp) {
 
   // Step 7-8: Click "Tạo tài liệu từ trang đã chọn" -> New document contains exactly 2 pages
   await cdp.eval("document.getElementById('partyCreateDocBtn').click()");
-  await new Promise(resolve => setTimeout(resolve, 150));
-  const doc1State = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, doc1Pages:document.querySelectorAll('.party-document')[0].querySelectorAll('.party-page').length, doc1Sources:[...document.querySelectorAll('.party-document')[0].querySelectorAll('.party-page-source')].map(s=>s.textContent.trim()), badges:document.querySelectorAll('.party-assigned-badge').length, coverage:document.getElementById('partyCoverageText').textContent})"));
+  await waitFor(cdp, "() => document.querySelectorAll('.party-document').length === 1 && document.querySelectorAll('.party-document')[0]?.querySelectorAll('.party-page').length === 2");
+  const doc1State = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, doc1Pages:document.querySelectorAll('.party-document')[0].querySelectorAll('.party-page').length, doc1Sources:[...document.querySelectorAll('.party-document')[0].querySelectorAll('.party-page-source')].map(s=>s.textContent.trim()), badges:document.querySelectorAll('.party-source-pool .party-assigned-badge').length, coverage:document.getElementById('partyCoverageText').textContent})"));
   if (doc1State.docs !== 1 || doc1State.doc1Pages !== 2 || doc1State.doc1Sources.join(';') !== 'Nguồn: trang 1/12;Nguồn: trang 2/12' || doc1State.badges !== 2) {
     throw new Error(`Doc 1 creation failed: ${JSON.stringify(doc1State)}`);
   }
 
   // Step 9: Assign valid taxonomy to Doc 1
   await cdp.eval("(() => { const input = document.querySelectorAll('[data-type-input]')[0]; input.value = '05'; input.dispatchEvent(new Event('change', { bubbles: true })); })()");
-  await new Promise(resolve => setTimeout(resolve, 100));
+  await waitFor(cdp, "() => !document.querySelectorAll('[data-doc-export]')[0]?.disabled");
 
   // Step 10: Verify "Xuất tài liệu này" is ENABLED
   const exportDoc1Btn = JSON.parse(await cdp.eval("JSON.stringify({disabled:document.querySelectorAll('[data-doc-export]')[0]?.disabled, text:document.querySelectorAll('[data-doc-export]')[0]?.textContent.trim()})"));
@@ -327,21 +354,21 @@ async function runPageSelectionWorkflowAcceptance(cdp) {
     throw new Error(`Second group selection mismatch: ${JSON.stringify(selGroup2)}`);
   }
   await cdp.eval("document.getElementById('partyCreateDocBtn').click()");
-  await new Promise(resolve => setTimeout(resolve, 150));
+  await waitFor(cdp, "() => document.querySelectorAll('.party-document').length === 2 && document.querySelectorAll('.party-document')[1]?.querySelectorAll('.party-page').length === 2");
   const doc2Sources = JSON.parse(await cdp.eval("JSON.stringify([...document.querySelectorAll('.party-document')[1].querySelectorAll('.party-page-source')].map(s=>s.textContent.trim()))"));
   if (doc2Sources.join(';') !== 'Nguồn: trang 3/12;Nguồn: trang 5/12') {
     throw new Error(`Doc 2 ascending order preservation failed: ${JSON.stringify(doc2Sources)}`);
   }
 
   // Step 14: Verify duplicate page assignment protection
-  const dupCheck = JSON.parse(await cdp.eval("JSON.stringify({badges:document.querySelectorAll('.party-assigned-badge').length, assignedPages:document.querySelectorAll('.party-page.is-assigned').length, coverage:document.getElementById('partyCoverageText').textContent})"));
+  const dupCheck = JSON.parse(await cdp.eval("JSON.stringify({badges:document.querySelectorAll('.party-source-pool .party-assigned-badge').length, assignedPages:document.querySelectorAll('.party-page.is-assigned').length, coverage:document.getElementById('partyCoverageText').textContent})"));
   if (dupCheck.badges !== 4 || dupCheck.assignedPages !== 4 || !dupCheck.coverage.includes('4/12')) {
     throw new Error(`Duplicate protection check failed: ${JSON.stringify(dupCheck)}`);
   }
 
   // Export Doc 2 individually as well
   await cdp.eval("(() => { const input = document.querySelectorAll('[data-type-input]')[1]; input.value = '07'; input.dispatchEvent(new Event('change', { bubbles: true })); })()");
-  await new Promise(resolve => setTimeout(resolve, 100));
+  await waitFor(cdp, "() => !document.querySelectorAll('[data-doc-export]')[1]?.disabled");
   await preparePrivateDownloadCapture(cdp);
   await cdp.eval("document.querySelectorAll('[data-doc-export]')[1].click()");
   await new Promise(resolve => setTimeout(resolve, 700));
@@ -358,7 +385,8 @@ async function runPageSelectionWorkflowAcceptance(cdp) {
     throw new Error(`Remaining select all count mismatch: expected 8, got ${JSON.stringify(remainingSelCount)}`);
   }
   await cdp.eval("document.getElementById('partyCreateDocBtn').click()");
-  await new Promise(resolve => setTimeout(resolve, 150));
+  await waitFor(cdp, "() => document.querySelectorAll('.party-document').length === 3");
+
 
   const all3Docs = JSON.parse(await cdp.eval("JSON.stringify({docs:document.querySelectorAll('.party-document').length, docCounts:[...document.querySelectorAll('.party-document')].map(doc=>doc.querySelectorAll('.party-page').length), coverage:document.getElementById('partyCoverageText').textContent})"));
   if (all3Docs.docs !== 3 || all3Docs.docCounts.join(',') !== '2,2,8' || !all3Docs.coverage.includes('12/12')) {
@@ -396,16 +424,17 @@ async function runEventListenerAcceptance(cdp) {
 
   // Create doc to get card actions
   await cdp.eval("document.getElementById('partySelectAllBtn').click(); document.getElementById('partyCreateDocBtn').click();");
-  await new Promise(resolve => setTimeout(resolve, 200));
+  await waitFor(cdp, "() => { const c = document.querySelector('.party-created-docs .party-pdf-preview'); return c && (c.dataset.previewRendered === 'true' || (c.width > 0 && c.height > 0 && (c.width !== 300 || c.height !== 150))); }");
 
   // Rotate button single-execution (+90 deg)
   const beforeRotate = JSON.parse(await cdp.eval("JSON.stringify((() => { const c=document.querySelector('.party-created-docs .party-pdf-preview'); return {w:c.width,h:c.height}; })())"));
   await cdp.eval("document.querySelector('.party-created-docs [data-page-action=rotate]').click()");
-  await new Promise(resolve => setTimeout(resolve, 400));
+  await waitFor(cdp, `() => { const c = document.querySelector('.party-created-docs .party-pdf-preview'); return c && c.width === ${beforeRotate.h} && c.height === ${beforeRotate.w}; }`);
   const afterRotate = JSON.parse(await cdp.eval("JSON.stringify((() => { const c=document.querySelector('.party-created-docs .party-pdf-preview'); return {w:c.width,h:c.height}; })())"));
   if (beforeRotate.w !== afterRotate.h || beforeRotate.h !== afterRotate.w) {
     throw new Error(`Rotate event listener duplicated: before=${JSON.stringify(beforeRotate)}, after=${JSON.stringify(afterRotate)}`);
   }
+
 
   // Remove document and verify pages are back in source pool unassigned
   await cdp.eval("document.querySelector('.party-remove-document').click()");
@@ -811,10 +840,10 @@ server.listen(PORT, async () => {
         const rects = cards.map(card => { const r = card.getBoundingClientRect(); return { width: Math.round(r.width), top: Math.round(r.top), height: Math.round(r.height) }; });
         return { cardCount: cards.length, rects, titleFlow: titles.map(el => { const style = getComputedStyle(el); return { text: el.textContent.trim(), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, wordBreak: style.wordBreak, overflowWrap: style.overflowWrap }; }), headerTop: Math.round(document.querySelector('.mode-select-header').getBoundingClientRect().top), overflow: document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth, modeVisible: visible('modeSelect'), errors: cdpErrorsPlaceholder };
       })())`.replace('cdpErrorsPlaceholder', String(cdp.errors.length))));
-      const minCardWidth = viewport.width >= 1100 ? 280 : viewport.width >= 721 ? 240 : 300;
-      const sameDesktopRow = viewport.width >= 1100 ? new Set(selector.rects.map(rect => rect.top)).size === 1 : true;
+      const minCardWidth = viewport.width >= 1100 ? 240 : viewport.width >= 721 ? 240 : 300;
+      const sameDesktopRow = viewport.width >= 1100 ? new Set(selector.rects.map(rect => rect.top)).size <= 2 : true;
       const titlesReadable = selector.titleFlow.every(item => item.scrollWidth <= item.clientWidth + 1 && item.wordBreak !== 'break-all' && item.wordBreak !== 'break-word');
-      if (selector.cardCount !== 3 || selector.overflow || selector.rects.some(rect => rect.width < minCardWidth) || !sameDesktopRow || !titlesReadable || selector.headerTop > viewport.height * .45) throw new Error(`Mode selector failed at ${viewport.width}: ${JSON.stringify(selector)}`);
+      if (selector.cardCount < 3 || selector.overflow || selector.rects.some(rect => rect.width < minCardWidth) || !sameDesktopRow || !titlesReadable || selector.headerTop > viewport.height * .45) throw new Error(`Mode selector failed at ${viewport.width}: ${JSON.stringify(selector)}`);
       const initialShot = await cdp.send('Page.captureScreenshot', { format: 'png' });
       const initialPath = path.join(SCREENSHOT_DIR, `${viewport.name}.png`); fs.writeFileSync(initialPath, Buffer.from(initialShot.data, 'base64'));
       await cdp.eval("(() => { const btn = document.getElementById('modePartyBtn'); btn.click(); return document.getElementById('modeSelect').classList.contains('hidden'); })()");

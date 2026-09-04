@@ -18,7 +18,7 @@
     progressBar: $('#progressBar'), progressLabel: $('#progressLabel'), exportSummary: $('#exportSummary'),
     exportNotice: $('#exportNotice'), toast: $('#toast'), installBtn: $('#installBtn'), offlineBadge: $('#offlineBadge'),
     // Mode select + Scan ID (front/back → single A4 PDF)
-    modeSelect: $('#modeSelect'), modeDocBtn: $('#modeDocBtn'), modeIdBtn: $('#modeIdBtn'), modePartyBtn: $('#modePartyBtn'), switchModeBtn: $('#switchModeBtn'),
+    modeSelect: $('#modeSelect'), modeDocBtn: $('#modeDocBtn'), modeIdBtn: $('#modeIdBtn'), modePartyBtn: $('#modePartyBtn'), modeWatermarkBtn: $('#modeWatermarkBtn'), switchModeBtn: $('#switchModeBtn'),
     idWorkspace: $('#idWorkspace'), idStepBadge: $('#idStepBadge'), idStepHint: $('#idStepHint'),
     idChooseBtn: $('#idChooseBtn'), idCameraBtn: $('#idCameraBtn'), idFileInput: $('#idFileInput'), idCameraInput: $('#idCameraInput'),
     idBackStepBtn: $('#idBackStepBtn'), idConfirmBtn: $('#idConfirmBtn'), idEditorSlot: $('#idEditorSlot'),
@@ -1082,9 +1082,10 @@
 
   function enterMode(mode) {
     state.mode = mode;
-    if (mode !== 'party') relocateEditor(mode);
+    if (mode !== 'party' && mode !== 'watermark') relocateEditor(mode);
     renderModeShell();
     if (mode === 'party') window.VigilLensParty?.activate();
+    if (mode === 'watermark') window.VigilLensWatermark?.activate();
   }
 
   function updateIdShell() {
@@ -1105,13 +1106,17 @@
   }
 
   // Single entry point for top-level visibility: mode-select screen vs
-  // document workflow vs Scan ID workflow. Mirrors how updateShell() already
+  // document workflow vs Scan ID workflow vs Watermark Stripper. Mirrors how updateShell() already
   // owns emptyState/workspace visibility for document mode.
   function renderModeShell() {
     els.modeSelect.classList.toggle('hidden', state.mode !== null);
     els.switchModeBtn.classList.toggle('hidden', state.mode === null);
     if (state.mode !== 'document') { els.emptyState.classList.add('hidden'); els.workspace.classList.add('hidden'); }
     if (state.mode !== 'id') { els.idWorkspace.classList.add('hidden'); els.idPreviewSection.classList.add('hidden'); }
+    if (state.mode !== 'watermark') {
+      const wmWs = $('#watermarkWorkspace');
+      if (wmWs) wmWs.classList.add('hidden');
+    }
     if (state.mode === 'document') updateShell();
     else if (state.mode === 'id') updateIdShell();
   }
@@ -1237,16 +1242,19 @@
   els.modeDocBtn.addEventListener('click', () => { if (state.busy) return; enterMode('document'); });
   els.modeIdBtn.addEventListener('click', () => { if (state.busy) return; enterMode('id'); });
   if (els.modePartyBtn) els.modePartyBtn.addEventListener('click', () => { if (state.busy) return; enterMode('party'); });
+  if (els.modeWatermarkBtn) els.modeWatermarkBtn.addEventListener('click', () => { if (state.busy) return; enterMode('watermark'); });
 
   els.switchModeBtn.addEventListener('click', () => {
     if (state.busy) return;
     const hasDocWork = state.mode === 'document' && state.pages.length > 0;
     const hasIdWork = state.mode === 'id' && (state.idScan.front || state.idScan.back);
     const hasPartyWork = state.mode === 'party' && !!window.VigilLensParty?.hasWork();
-    if ((hasDocWork || hasIdWork || hasPartyWork) && !confirm('Chuyển chế độ sẽ xóa ảnh đang xử lý. Tiếp tục?')) return;
+    const hasWatermarkWork = state.mode === 'watermark' && !!window.VigilLensWatermark?.hasWork();
+    if ((hasDocWork || hasIdWork || hasPartyWork || hasWatermarkWork) && !confirm('Chuyển chế độ sẽ xóa ảnh đang xử lý. Tiếp tục?')) return;
     if (state.mode === 'document') { state.pages.forEach(p => URL.revokeObjectURL(p.url)); state.pages = []; state.selectedId = null; }
     if (state.mode === 'id') resetIdScan();
     if (state.mode === 'party') window.VigilLensParty?.deactivate();
+    if (state.mode === 'watermark') window.VigilLensWatermark?.deactivate();
     state.preview.image?.close?.();
     state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
     state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';

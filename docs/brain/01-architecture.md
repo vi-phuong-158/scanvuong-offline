@@ -21,18 +21,25 @@ scanvuong-offline/
 ├── styles.css             # Layout responsive: desktop / ≤1080px / ≤720px
 ├── app.js                  # Toàn bộ logic: editor, warp, filter, quản lý trang, PDF writer, PWA glue
 ├── document-detector.js    # Detector module: lazy ML runtime, geometry guard, classical fallback
+├── party-mode.js           # Workflow quản lý tài liệu Đảng
+├── party-pdf.js            # Engine PDF nhị phân local: bóc tách/copy page object, decompress, watermark stripper
+├── party-taxonomy.js       # Danh mục 104 loại văn bản tài liệu Đảng
+├── watermark-mode.js       # Workflow bóc tách watermark CamScanner lossless
 ├── assets/
 │   ├── fonts/              # Typography tiếng Việt cục bộ (100% offline)
 │   │   ├── BeVietnamPro-Regular.woff2    # 400 Regular
 │   │   ├── BeVietnamPro-Medium.woff2     # 500 Medium
 │   │   ├── BeVietnamPro-SemiBold.woff2   # 600 SemiBold
 │   │   └── BeVietnamPro-Bold.woff2       # 700 Bold
-│   └── ml/                 # Tài nguyên ML cục bộ (100% offline)
-│       ├── doccornernet_lean.ort          # Trọng số mô hình DocCornerNet Lean (1.93 MB)
-│       ├── ort-wasm-simd-threaded.wasm    # ONNX Runtime Web WASM binary (1.52 MB)
-│       ├── ort-wasm-simd-threaded.mjs     # Emscripten WASM loader
-│       └── scanic-ort.wasm.min.js         # ONNX Runtime Web JS API
-├── sw.js                   # Service Worker — cache app shell và assets ML, phục vụ offline
+│   ├── ml/                 # Tài nguyên ML cục bộ (100% offline)
+│   │   ├── doccornernet_lean.ort          # Trọng số mô hình DocCornerNet Lean (1.93 MB)
+│   │   ├── ort-wasm-simd-threaded.wasm    # ONNX Runtime Web WASM binary (1.52 MB)
+│   │   ├── ort-wasm-simd-threaded.mjs     # Emscripten WASM loader
+│   │   └── scanic-ort.wasm.min.js         # ONNX Runtime Web JS API
+│   ├── party/              # Danh mục tài liệu Đảng JSON canonical
+│   │   └── document_types.json
+│   └── vendor/pdfjs/       # PDF.js 5.7.284 vendor nội bộ để render thumbnail PDF
+├── sw.js                   # Service Worker — cache app shell, assets ML và font, phục vụ offline
 ├── manifest.webmanifest    # Khai báo PWA (tên, icon, display mode, start_url)
 ├── icons/
 │   ├── icon-192.png
@@ -86,6 +93,10 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 | | `composeIdA4()` | `exportIdPdf()`, `renderIdPreview()` | gọi `calculateIdA4Layout()`, thuần canvas 2D, không gọi lại detect/homography |
 | | `exportIdPdf()` | `#idExportBtn` click | `renderPageCanvas()` ×2 (front, back — **dùng chung** với document export), `composeIdA4()`, `canvasToJpeg()`, `buildPdf()` (dùng chung) |
 | | `renderIdPreview()` | `updateIdShell()` khi `step==='preview'` | `renderPageCanvas()` ×2 (maxEdge thấp hơn), `composeIdA4()` |
+| **Watermark Stripper** | `detectCamScannerWatermarks()` | `stripWatermarks()` | phân tích XObjects trong `Resources`, kiểm tra kích thước/tỷ lệ logo, giải nén Content Stream qua `inflateSync` kiểm tra toạ độ `cm` ở dải lề dưới |
+| | `stripWatermarkFromContentStream()` | `copyPageObjects()` (khi `stripWatermarks: true`) | regex & token stripping loại bỏ khối `q ... cm /ImX Do Q` |
+| | `stripWatermarks()` | `watermark-mode.js` (`processPdfFile`) | `sourceFromBuffer()`, `detectCamScannerWatermarks()`, `copyPageObjects()`, `buildPdf()`, trả về kết quả hoặc fail-safe tệp gốc |
+| | `VigilLensWatermark` | `#watermarkChooseBtn`, drag-drop, `enterMode('watermark')` | `PartyPdf.stripWatermarks()`, render thống kê kết quả, tải file PDF sạch, thu hồi Object URL |
 
 ### Luồng xử lý chính
 
@@ -316,3 +327,25 @@ Each created document has an individual "Xuất tài liệu này" button that en
 `party-mode.js` assigns a monotonic `previewGeneration` to every DOM preview rebuild and mode exit. Each queued canvas captures that generation; the async renderer checks generation, active mode, connected canvas, and the current page identity before changing page state, canvas pixels, or status DOM. Generation is an invalidation token, not the queue mutex; the queue worker remains separate so a stale job cannot block the current generation.
 
 `party-pdf.js` stores only downsampled derivative `ImageData` in a per-source LRU cache capped at 16 entries. It validates image dimensions, components, decoded byte limits, direct stream lengths and bounded fallback stream offsets before allocating/decoding. For stream objects, it pre-indexes object definitions and resolves both direct (`/Length <number>`) and indirect (`/Length <id> <gen> R`) lengths, using declared length as the primary stream authority with bounded 0..2 byte lookahead (`endstream`, `\nendstream`, `\rendstream`, `\r\nendstream`). Recorded stream offsets (`streamDataStart`, `streamDataEnd`, `endStreamOffset`) are preserved across object extraction and rewriting to avoid false matches on binary payload bytes. JPEG previews use a bounded resize path and close `ImageBitmap`; fallback object URLs are revoked in `finally`. On source discard, pending/resolved preview entries are released and the Party document container is cleared so stale canvases do not remain in the DOM. Unsupported filters remain page-local preview errors and do not affect source-page export.
+
+## Lossless Watermark Stripper architecture (2026-09-04)
+
+The fourth workflow provides automated, bit-for-bit lossless removal of CamScanner watermarks ("Scanned with CamScanner") from existing PDF documents.
+
+### Invariants and Technical Principles
+
+1. **Bit-for-bit Lossless (Zero Re-encoding):**
+   Unlike raster inpainting approaches that convert pages to bitmaps, fill pixels, and recompress to JPEG (causing degradation, blurriness, and generational loss), this engine treats the PDF at the binary object level. The high-resolution scan image byte stream (`DCTDecode`/JPEG) is extracted and copied without touching a single pixel. Its SHA-256 hash remains identical before and after stripping.
+
+2. **Structural Surgery (XObject & Content Stream):**
+   CamScanner places watermarks as separate image XObjects rendered via content stream operators in the lower margin.
+   - **Detection (`detectCamScannerWatermarks`):** Scans each page's `/Resources/XObject` dictionary. Evaluates candidate images against heuristic rules:
+     - Dimension bounds: $140\text{px} \le \text{width} \le 270\text{px}$, $45\text{px} \le \text{height} \le 110\text{px}$ (matching standard CamScanner sizes: 240×90, 166×62, 160×60, 200×75).
+     - Aspect ratio $W/H$: $1.8 \le \text{ratio} \le 4.0$.
+     - Accompanied by a primary document scan image of significantly greater resolution on the same page.
+     - Content stream verification: Decompresses streams via `inflateSync` (if `/FlateDecode`) and verifies transformation matrix `cm` places the image at the bottom band ($y \le 0.25 \times \text{page height}$).
+   - **Content Stream Stripping (`stripWatermarkFromContentStream`):** Bóc tách sạch sẽ các lệnh vẽ watermark:
+     `q ... cm /ImX Do Q` hoặc standalone `/ImX Do`.
+   - **Object Pruning & Serialization (`copyPageObjects`):** Removes the watermark reference `/ImX <id> 0 R` from the page's `/Resources/XObject` dictionary (direct or indirect). Because the watermark XObject is no longer reachable from the page dictionary, it is excluded from object copying, reducing the output file size by the exact byte length of the watermark asset.
+   - **Fail-Safe Integrity:** If 0 watermarks are detected, `stripWatermarks` immediately returns the original PDF buffer unmodified (`unmodified: true`).
+
