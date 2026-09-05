@@ -7,7 +7,8 @@
 ## Đang làm
 
 - **PR #12 (Watermark Stripping): đã đóng**, xem `06-ai-working-log.md` các entry 2026-09-04.
-- **[2026-09-05] Giảm dung lượng PDF offline — mode thứ 5 + tích hợp Party Mode**: hoàn thành, xem entry đầu `06-ai-working-log.md` (2026-09-05) và quyết định kỹ thuật trong `03-decisions.md`. Còn 2 known limitation không chặn merge: `exportAll()` không có cảnh báo >20MB theo từng file (chỉ `exportSingleDocument()`), và chưa nghiệm thu thiết bị di động thật.
+- **[2026-09-05] Giảm dung lượng PDF offline — mode thứ 5 + tích hợp Party Mode**: hoàn thành, xem `06-ai-working-log.md` (2026-09-05) và `03-decisions.md`.
+- **[2026-09-06] Compress mode: memory audit + hardening + mobile-safety guard + realistic benchmark**: hoàn thành, xem entry đầu `06-ai-working-log.md` (2026-09-06) và `03-decisions.md` "Compress mode memory audit". Verdict: `PDF_COMPRESSION_TECHNICAL_PASS_OWNER_MOBILE_ACCEPTANCE_PENDING`. Known limitation không chặn: `exportAll()` không có cảnh báo >20MB theo từng file (chỉ `exportSingleDocument()`); đo memory bằng Chromium desktop `--single-process` (proxy, không thay thế điện thoại thật); 80MB ở rìa an toàn theo số đo; `PREVIEW_SOURCE_MAX_EDGE=640px` cố định trong fallback renderer của `party-pdf.js` (dùng chung, không sửa). **Cần owner test thật trên điện thoại** — xem checklist trong báo cáo phiên làm việc hoặc `06-ai-working-log.md`.
 
 ---
 

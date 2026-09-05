@@ -16,6 +16,36 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-06] Compress mode: honest memory audit, peak-RAM hardening, mobile-safety guard, realistic benchmark
+- **Agent:** Claude Code
+- **Thay đổi:**
+  1. **Sửa overclaim về memory:** báo cáo trước nói "chỉ giữ một full-resolution Canvas tại một thời điểm" — đúng cho canvas pixel buffer, nhưng bỏ sót rằng `renderRound()` vẫn giữ mảng `items` (JPEG bytes toàn bộ round) và — quan trọng hơn nhiều — bộ parser cổ điển dùng chung `party-pdf.js` decode toàn bộ file thành string 2 lần + lưu byte/text-slice cho mọi object, sống suốt `compressPdf()`. Xem chi tiết đầy đủ trong `03-decisions.md` "Compress mode memory audit (2026-09-06)".
+  2. **Hardening tối thiểu (`pdf-compress.js`):** `blob = null` đầu mỗi vòng round (drop reference round trước SỚM hơn, trước khi render round mới thay vì sau); `releasePreviewCache()` xác nhận vẫn chạy trong `finally` kể cả khi render lỗi (đã đúng từ trước, xác nhận lại bằng regression mới).
+  3. **Peak-memory guard mới:** `estimateMemoryRisk(inputBytes)` — hệ số `PARSE_MEMORY_MULTIPLIER=5` lấy từ đo thật (không đoán, xem benchmark bên dưới), `SAFE_MOBILE_PEAK_BYTES=500.000.000`. `compressPdf()` fail closed bằng thông báo tiếng Việt rõ ràng TRƯỚC KHI parse. Phát hiện và sửa bug: `inspectPdf()` bản đầu gọi `sourceFromBuffer()` (bước tốn kém) RỒI MỚI tính risk — nghĩa là file quá khổ vẫn bị parse đầy đủ chỉ để bị từ chối; đã sửa thứ tự (risk check trước, parse chỉ khi an toàn).
+  4. **UI (`compress-mode.js`, `index.html`, `styles.css`):** thêm `#compressMemoryRiskNotice` — hiện đúng thông báo "Tệp này quá lớn để xử lý an toàn trên thiết bị hiện tại. Hãy thử trên máy tính hoặc chia tài liệu thành các phần nhỏ hơn.", ẩn/disable nút "Giảm dung lượng", hiện "—" thay vì số trang khi không xác định được (file bị từ chối trước khi parse). Thêm class `.notice-danger` và `white-space:pre-line` cho `.notice` để xuống dòng đúng.
+  5. **Fail-closed cho renderer lỗi:** thêm regression stub `PartyPdf.renderThumbnail` throw lỗi, xác nhận `compressPdf()` propagate lỗi (không âm thầm đóng gói trang trắng/thiếu rồi báo thành công) — đúng yêu cầu "Compression là destructive/lossy export... phải fail closed".
+  6. **Fixture thực tế hơn (`scripts/benchmark_pdf_compress.cjs`, mới):** thay ảnh trắng synthetic cũ bằng trang mô phỏng scan thật: nền xám nhạt, noise dạng texture (Math.random low-res upscale, không phải crypto full-res — nhanh hơn, giống nhiễu máy quét hơn), nhiều dòng "chữ in" nhỏ, bảng kẻ ô, vùng "ảnh" gradient+noise, dấu đỏ tròn có chữ, chữ ký giả lập, trang ngang/dọc xen kẽ, một trang gần-toàn-ảnh.
+  7. **Benchmark thật trên Chromium 141 `--single-process`, đo RSS qua `/proc/<pid>/status`** (không dùng `Performance.getMetrics` JSHeapUsedSize — xác nhận số liệu đó không thấy TypedArray/Blob backing store, giữ <3MB dù xử lý 80MB): 4 tier 23/38/56/80MB đều đạt target ở round 1, RSS delta 211/217/264/369MB (tỷ lệ 9.1×/5.7×/4.7×/4.6× giảm dần theo kích thước file).
+  8. **Quality spot-check trực quan:** chụp lại trang đã nén ở round 1 (2200px/0.84) VÀ ở safety floor (1400px/0.50) của cùng 1 trang test (chữ nhỏ, dấu đỏ, chữ ký, vùng ảnh) — cả hai đều đọc được, không banding nghiêm trọng, không mất nội dung; xem screenshot trong báo cáo phiên làm việc.
+  9. **Mobile viewport acceptance thật (390px/360px, browser automation)** — không chỉ layout tĩnh: drop PDF → info → (390px) chạy nén thật → result, xác nhận không tràn ngang và touch target `#compressWorkspace` (button trong workspace này KHÔNG nằm trong danh sách section mà `test_touch_targets.cjs` drive vào) đạt ≥44px.
+  10. **Party Mode re-run đầy đủ:** case "Tải bản gốc" (giữ nguyên lossless, không đổi dung lượng) và case "Tạo bản dưới 20MB" (gọi `PdfCompress` dùng chung) đều PASS lại sau mọi thay đổi.
+- **File đã sửa/mới:** `pdf-compress.js`, `compress-mode.js`, `index.html`, `styles.css`, `scripts/regression_pdf_compress.cjs`, `scripts/acceptance_pdf_compress.cjs`, `scripts/benchmark_pdf_compress.cjs` (mới), `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`.
+- **Lý do:** Yêu cầu audit lại honest memory claim, hardening peak-RAM, benchmark thực tế thay vì trang trắng, và nghiệm thu mobile viewport thật thay vì chỉ layout tĩnh.
+- **Kiểm tra:**
+  - `node --check` PASS toàn bộ file sửa/mới.
+  - `python scripts/validate_static.py`: 10/10 PASS.
+  - `node scripts/regression_pdf_compress.cjs`: 38/38 PASS (tăng từ 30, thêm 8 check cho guard + fail-closed).
+  - Toàn bộ regression cũ không đổi: `regression_export_busy.js` 29/29, `regression_scan_id.js` 52/52, `regression_image_decode.js` 32/32, `regression_detection_fallback.js` 17/17, `regression_help_ia.js` 26/26, `regression_party_mode.cjs` 62/62, `regression_watermark.cjs` 35/35, `regression_sw_update.cjs` 9/9, `test_touch_targets.cjs` 180/180.
+  - `node scripts/acceptance_pdf_compress.cjs` (Chromium thật): PASS toàn bộ — Compress mode >20MB→<20MB, memory guard UI, Party Mode cả 2 case, mobile viewport 390px (đầy đủ) và 360px (dropzone+info) — không lỗi console ở bất kỳ kịch bản nào.
+  - `node scripts/benchmark_pdf_compress.cjs` (Chromium thật): 4/4 tier PASS (23/38/56/80MB), tất cả đạt target ở round 1, không có tier nào thất bại.
+  - `node scripts/acceptance_party_ui.cjs` (full): PASS trừ `runPreviewLifecycleAcceptance` — flake đã biết từ trước (xem `04-current-tasks.md`), tái hiện y hệt, không liên quan tới thay đổi lần này.
+  - `node scripts/acceptance_offline_pwa.cjs`: PASS toàn bộ.
+- **Known limitations:**
+  - Đo memory bằng Chromium desktop-class `--single-process` — proxy cùng bậc độ lớn, KHÔNG thay thế đo trên điện thoại thật (baseline renderer process thật thấp hơn nhiều so với single-process desktop).
+  - 80MB được xếp loại "hỗ trợ nhưng ở rìa an toàn" theo số đo thật — cần owner tự test tier này trên điện thoại tầm trung/thấp thật trước khi coi là an toàn tuyệt đối.
+  - `PREVIEW_SOURCE_MAX_EDGE=640px` cố định trong `party-pdf.js`'s fallback renderer nghĩa là nếu PDF.js lỗi và rơi vào fallback, trang đó render ở độ phân giải thấp hơn round đang yêu cầu (kể cả round 1's 2200px) — không lỗi/không trắng nhưng chất lượng thấp hơn dự kiến; không sửa (rủi ro cao hơn lợi ích, dùng chung với Party preview).
+  - Chưa có bằng chứng nghiệm thu trên thiết bị di động thật (`MOBILE_DEVICE_ACCEPTANCE_PENDING`) — chỉ Chromium device-metrics emulation.
+
 ## [2026-09-05] Giảm dung lượng PDF offline — mode thứ 5 + tích hợp Party Mode
 - **Agent:** Claude Code
 - **Thay đổi:**

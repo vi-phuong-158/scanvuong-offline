@@ -10,7 +10,10 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
-const context = { window: {}, TextEncoder, TextDecoder, Uint8Array, Blob, Math, Error, console, URL };
+// A minimal `document` so renderCompressionPage()'s `document.createElement('canvas')`
+// doesn't throw a ReferenceError before reaching the renderer stub in the
+// fail-closed test below — nothing here needs real Canvas 2D behavior.
+const context = { window: {}, document: { createElement: () => ({}) }, TextEncoder, TextDecoder, Uint8Array, Blob, Math, Error, console, URL };
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(root, 'party-pdf.js'), 'utf8'), context, { filename: 'party-pdf.js' });
 vm.runInContext(fs.readFileSync(path.join(root, 'pdf-compress.js'), 'utf8'), context, { filename: 'pdf-compress.js' });
@@ -88,6 +91,60 @@ check('buildCompressedPdf returns a Blob', blob instanceof Blob);
     inspectThrew = true;
   }
   check('inspectPdf fails closed on a non-PDF buffer (no pdf.js import ever needed to reject)', inspectThrew);
+
+  // ---- Peak-memory guard (docs/brain/03-decisions.md "Compress mode memory audit") ----
+  const risk20 = PdfCompress.estimateMemoryRisk(20 * 1000 * 1000);
+  const risk80 = PdfCompress.estimateMemoryRisk(80 * 1000 * 1000);
+  const risk120 = PdfCompress.estimateMemoryRisk(120 * 1000 * 1000);
+  check('estimateMemoryRisk: 20MB (bottom of the requested range) is not flagged too large', risk20.tooLarge === false);
+  check('estimateMemoryRisk: 80MB (top of the requested range) is not flagged too large', risk80.tooLarge === false);
+  check('estimateMemoryRisk: 120MB (clearly excessive) is flagged too large', risk120.tooLarge === true);
+  check('estimateMemoryRisk: the estimate grows with input size (not a flat constant)', risk80.estimatedPeakBytes > risk20.estimatedPeakBytes);
+
+  // inspectPdf() must check the size guard BEFORE parsing too — proven the
+  // same way: garbage (non-PDF) bytes at an oversized length must come back
+  // as a graceful "too large" result, not a "not a PDF" parse error, which
+  // would mean the expensive/risky parse ran anyway just to populate an
+  // info screen this file is about to be refused on.
+  const oversizedGarbageForInspect = new Uint8Array(120 * 1000 * 1000);
+  const inspected = await PdfCompress.inspectPdf({ arrayBuffer: async () => oversizedGarbageForInspect.buffer });
+  check('inspectPdf checks the size guard before parsing (oversized garbage does not throw a parse error)', inspected.memoryRisk.tooLarge === true && inspected.pageCount === null);
+
+  // compressPdf() must refuse an oversized input BEFORE ever parsing it —
+  // proven by feeding bytes that are NOT a valid PDF (garbage) at a size
+  // past the guard: if the size guard didn't fire first, this would fail
+  // with a "not a PDF" parse error instead of the memory-risk message.
+  const oversizedGarbage = new Uint8Array(120 * 1000 * 1000); // zero-filled, not a PDF
+  let oversizedError = null;
+  try {
+    await PdfCompress.compressPdf({ arrayBuffer: async () => oversizedGarbage.buffer });
+  } catch (err) {
+    oversizedError = err;
+  }
+  check('compressPdf rejects an oversized input with the graceful message, before attempting to parse it', oversizedError?.message === PdfCompress.MEMORY_RISK_MESSAGE);
+
+  // ---- Render-failure fail-closed (task: "Compression là destructive/lossy
+  // export... phải fail closed nếu renderer báo lỗi rõ ràng") ----
+  const singlePageBlob = PdfCompress.buildCompressedPdf([items[0]]);
+  const singlePageBytes = new Uint8Array(await singlePageBlob.arrayBuffer());
+  const originalRenderThumbnail = PartyPdf.renderThumbnail;
+  const originalReleasePreviewCache = PartyPdf.releasePreviewCache;
+  let releaseCalledOnFailure = false;
+  PartyPdf.renderThumbnail = async () => {
+    throw new Error('Không thể hiển thị xem trước trang 1 (PDF.js: giả lập lỗi, Fallback: giả lập lỗi)');
+  };
+  PartyPdf.releasePreviewCache = source => { releaseCalledOnFailure = true; return originalReleasePreviewCache(source); };
+  let renderFailurePropagated = false;
+  try {
+    await PdfCompress.compressPdf({ arrayBuffer: async () => singlePageBytes.buffer });
+  } catch (err) {
+    renderFailurePropagated = /Không thể hiển thị xem trước/.test(err.message);
+  } finally {
+    PartyPdf.renderThumbnail = originalRenderThumbnail;
+    PartyPdf.releasePreviewCache = originalReleasePreviewCache;
+  }
+  check('compressPdf propagates a renderer failure instead of silently packaging a blank/partial page', renderFailurePropagated);
+  check('compressPdf still releases the preview cache (finally block) even when rendering fails', releaseCalledOnFailure);
 
   console.log(`\n${pass}/${pass} checks passed.`);
   console.log('PdfCompress engine regression: PASS');

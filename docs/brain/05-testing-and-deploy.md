@@ -94,6 +94,10 @@ Cần Chromium/Chrome thật (tự tìm, hoặc đặt `CHROME_PATH`) nên **kh�
 
 **Ghi chú môi trường:** engine nén dùng lại `PartyPdf.renderThumbnail()` (đã có sẵn cho Party Mode) để dựng từng trang — hàm này tự thử PDF.js trước, nếu `page.render()` lỗi (từng gặp trên một bản Chromium headless cụ thể trong quá trình phát triển task này, do thiếu `Map.prototype.getOrInsertComputed`) thì tự chuyển sang bộ dựng cổ điển của `party-pdf.js`, nên tính năng nén không phụ thuộc PDF.js phải chạy được 100%.
 
+    node scripts/benchmark_pdf_compress.cjs
+
+Benchmark thực tế (không phải trang trắng) trên 4 tier 20-25/35-40/50-60/70-80MB — cần Chromium/Chrome thật, chạy `--single-process` để đo RSS thật qua `/proc/<pid>/status` (không dùng `Performance.getMetrics` JSHeapUsedSize — số đó không thấy TypedArray/Blob backing store, xem `03-decisions.md` "Compress mode memory audit"). In ra bảng input/pages/round/maxEdge/jpeg/output/elapsed/achieved/RSS peak cho từng tier, và lưu 2 ảnh chụp màn hình quality spot-check (round 1 và safety floor) vào thư mục temp hệ thống để xem lại bằng mắt. Không chạy trong CI (cần Chromium thật, và mất vài chục giây).
+
 ## Hướng dẫn — kiểm tra kiến trúc thông tin (browser acceptance)
 
     node scripts/acceptance_help_ui.cjs

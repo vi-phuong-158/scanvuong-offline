@@ -16,6 +16,7 @@
     metaPages: $('compressMetaPages'),
     metaSize: $('compressMetaSize'),
     alreadySmallNotice: $('compressAlreadySmallNotice'),
+    memoryRiskNotice: $('compressMemoryRiskNotice'),
     startBtn: $('compressStartBtn'),
     changeFileBtn: $('compressChangeFileBtn'),
     progress: $('compressProgress'),
@@ -40,7 +41,8 @@
     pageCount: 0,
     result: null,
     downloadUrl: null,
-    usedBeyondFloor: false
+    usedBeyondFloor: false,
+    memoryRisk: null
   };
 
   function toast(message) {
@@ -83,6 +85,7 @@
     try {
       const info = await PdfCompress.inspectPdf(file);
       state.pageCount = info.pageCount;
+      state.memoryRisk = info.memoryRisk;
       renderInfo();
       showState('info');
     } catch (err) {
@@ -96,10 +99,17 @@
 
   function renderInfo() {
     els.metaName.textContent = state.originalName;
-    els.metaPages.textContent = `${state.pageCount} trang`;
+    els.metaPages.textContent = state.pageCount == null ? '—' : `${state.pageCount} trang`;
     els.metaSize.textContent = formatBytes(state.originalSize);
     const alreadySmall = state.originalSize <= PdfCompress.PDF_COMPRESSION_DISPLAY_LIMIT_BYTES;
     els.alreadySmallNotice.classList.toggle('hidden', !alreadySmall);
+    const tooLarge = !!state.memoryRisk?.tooLarge;
+    if (els.memoryRiskNotice) {
+      els.memoryRiskNotice.textContent = PdfCompress.MEMORY_RISK_MESSAGE;
+      els.memoryRiskNotice.classList.toggle('hidden', !tooLarge);
+    }
+    els.startBtn.disabled = tooLarge;
+    els.startBtn.classList.toggle('hidden', tooLarge);
   }
 
   function setProgress(percent, label) {
@@ -122,7 +132,7 @@
   }
 
   async function runCompress(options) {
-    if (state.busy || !state.file) return;
+    if (state.busy || !state.file || state.memoryRisk?.tooLarge) return;
     state.busy = true;
     els.startBtn.disabled = true;
     els.strongerBtn.disabled = true;
@@ -197,6 +207,9 @@
     state.pageCount = 0;
     state.result = null;
     state.usedBeyondFloor = false;
+    state.memoryRisk = null;
+    if (els.startBtn) { els.startBtn.disabled = false; els.startBtn.classList.remove('hidden'); }
+    if (els.memoryRiskNotice) els.memoryRiskNotice.classList.add('hidden');
     if (els.fileInput) els.fileInput.value = '';
     showState('drop');
   }

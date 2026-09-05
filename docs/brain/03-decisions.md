@@ -3,6 +3,29 @@
 > Ghi lại quyết định kỹ thuật quan trọng để agent sau không "phát minh lại" hoặc đảo ngược
 > mà không biết lý do. Mỗi entry: quyết định gì, vì sao, đánh đổi gì.
 
+## [2026-09-06] Compress mode memory audit — sửa overclaim "one page at a time", thêm peak-memory guard dựa trên đo thật
+
+- **Bối cảnh:** Báo cáo trước (2026-09-05) nói compression "chỉ giữ một full-resolution Canvas tại một thời điểm" — đúng nhưng **không đầy đủ**: chỉ đúng cho *canvas pixel buffer* (được release ngay sau `encodePage()`), không đúng cho toàn bộ pipeline. Audit vòng này đo lại trung thực.
+- **Phát hiện (audit, không phải giả định):**
+  1. `renderRound()` vẫn giữ **toàn bộ mảng `items`** (JPEG bytes của TẤT CẢ trang trong round hiện tại) trong RAM trước khi gọi `buildCompressedPdf()` — không phải "một trang".
+  2. **Driver chính của peak memory không phải `pdf-compress.js`** — mà là bộ parser cổ điển dùng chung `party-pdf.js` (`parseObjects`): decode **toàn bộ file** thành một JS string **hai lần** (`buildObjectIndex` và kiểm tra `/Encrypt`), và lưu **cả byte-slice lẫn text-slice** cho MỌI object PDF (kể cả object chứa nguyên ảnh JPEG nhúng). `source` phải sống suốt toàn bộ `compressPdf()` (mọi round) nên toàn bộ cấu trúc này không thể giải phóng giữa chừng. PDF.js cũng giữ thêm MỘT bản copy đầy đủ bytes nguồn (`source.bytes.slice()` trong `pdfJsDocument()`).
+  3. Giữa các round: `blob` (round trước) và `items` (round sau, đang render) có thể cùng tồn tại trong bộ nhớ tại thời điểm build round mới, do reassignment `blob = buildCompressedPdf(items)` chỉ drop reference SAU KHI blob mới đã build xong.
+  4. **Đo thật bằng Chromium 141 `--single-process` + `/proc/<pid>/status` VmRSS** (`Performance.getMetrics()`'s `JSHeapUsedSize` không thấy gì — TypedArray/Blob backing store nằm ở external allocation, không phải on-heap V8 — đo được vẫn <3MB dù xử lý file 80MB!), fixture realistic (`scripts/benchmark_pdf_compress.cjs`, không phải trang trắng synthetic cũ):
+     - 23MB vào → +211MB RSS (9.1×) · 38MB → +217MB (5.7×) · 56MB → +264MB (4.7×) · 80MB → +369MB (4.6×)
+     - Tỷ lệ giảm dần và ổn định quanh 4.6–5× khi file lớn dần (chi phí cố định — khởi tạo WASM, v.v. — chiếm tỷ trọng nhỏ hơn).
+  5. `renderThumbnail()`'s classical fallback (`renderThumbnailFallback` → `imageFor`) decode ảnh nhúng ở `PREVIEW_SOURCE_MAX_EDGE = 640px` **cố định**, bất kể round đang yêu cầu `maxEdge` bao nhiêu (kể cả round 1's 2200px) — nếu PDF.js lỗi và rơi vào fallback, trang đó render ở chất lượng thấp hơn NHIỀU so với round yêu cầu, dù không lỗi/không trắng/không mất trang. Đây là hành vi CÓ SẴN trong `party-pdf.js` (dùng chung cho Party preview), không sửa vì rủi ro cao hơn lợi ích ở phạm vi task này.
+- **Quyết định (hardening tối thiểu, không rewrite PDF engine):**
+  1. `blob = null` ngay ĐẦU mỗi vòng lặp round, TRƯỚC khi render round mới — không đợi tới khi blob mới build xong mới drop reference cũ.
+  2. Thêm `estimateMemoryRisk(inputBytes)`: `estimatedPeakBytes = inputBytes × 5 + 60.000.000`, `SAFE_MOBILE_PEAK_BYTES = 500.000.000`. Hệ số `5` lấy từ số đo thật ở trên (không phải đoán); ngưỡng 500MB chọn để dải 20–80MB theo yêu cầu task đều lọt qua có margin (80MB → ước tính 460MB), trong khi file rõ ràng quá khổ (≥~88MB) bị chặn.
+  3. `compressPdf()` fail closed bằng thông báo tiếng Việt rõ ràng ("Tệp này quá lớn để xử lý an toàn trên thiết bị hiện tại. Hãy thử trên máy tính hoặc chia tài liệu thành các phần nhỏ hơn.") **TRƯỚC KHI** gọi `sourceFromBuffer()` — không lãng phí đúng chi phí đang được guard chống lại.
+  4. `inspectPdf()` (dùng cho màn hình thông tin file trước khi bấm nút) PHẢI kiểm tra risk TRƯỚC khi parse — bug ban đầu: `inspectPdf()` gọi `sourceFromBuffer()` (chính là bước tốn kém) rồi MỚI tính `memoryRisk`, nghĩa là file quá khổ vẫn bị parse đầy đủ chỉ để hiện màn hình từ chối nó. Đã sửa: risk check trước, nếu `tooLarge` trả về `{pageCount: null, memoryRisk}` ngay, không đụng `sourceFromBuffer()`. UI (`compress-mode.js`) hiện "—" cho số trang trong trường hợp này.
+  5. Thêm regression fail-closed cho renderer: stub `PartyPdf.renderThumbnail` throw lỗi, xác nhận `compressPdf()` propagate lỗi (không âm thầm đóng gói trang trắng/thiếu rồi báo thành công) và `releasePreviewCache()` vẫn chạy trong `finally`.
+- **Giới hạn kiến trúc không sửa (theo đúng yêu cầu "không rewrite PDF engine lớn"):** driver chính của peak memory (decode-to-string + byte/text-slice duplication trong `party-pdf.js`'s `parseObjects`) là kiến trúc chung của bộ parser PDF cổ điển, dùng cho cả Party Mode lẫn compression. Sửa tận gốc (ví dụ streaming parser không giữ toàn bộ text) là rewrite lớn, rủi ro cao cho Party Mode đã ổn định — ngoài phạm vi task này.
+- **Đánh giá độ tin cậy phép đo:** đo bằng Chromium desktop-class chạy `--single-process` (để đọc RSS qua `/proc`) — đây là proxy cùng bậc độ lớn (same-order-of-magnitude), KHÔNG thay thế cho đo trên điện thoại thật (renderer process thật của Chrome multi-process có baseline thấp hơn nhiều so với single-process desktop). 80MB được xếp loại "hỗ trợ nhưng ở rìa an toàn" — khuyến nghị owner tự test tier này trên điện thoại tầm trung/thấp thật.
+- **Người quyết định:** Claude Code, qua audit + đo thật (`scripts/benchmark_pdf_compress.cjs`) trước khi merge — không suy đoán lý thuyết.
+
+---
+
 ## [2026-09-05] Giảm dung lượng PDF: adaptive target-size compression, target 19.000.000 byte, dùng lại `PartyPdf.renderThumbnail()` thay vì tự bootstrap PDF.js
 
 - **Quyết định:**

@@ -242,6 +242,106 @@ const BUILD_PARTY_IMAGES_EXPR = `
   return files.reduce((sum, f) => sum + f.size, 0);
 })`;
 
+// Encodes one representative page ONCE, then duplicates the identical bytes
+// across many page entries — cheap to generate (a single canvas+JPEG
+// encode) while still producing a genuinely large, valid multi-page PDF,
+// so the UI's "too large to process safely" gate can be exercised without
+// spending minutes re-rendering unique content for every page.
+async function runMemoryGuardAcceptance(cdp) {
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+  await waitFor(cdp, "() => document.readyState === 'complete' && !!window.PdfCompress && !!window.VigilLensCompress");
+  cdp.errors.length = 0;
+
+  const oversizedSize = await cdp.eval(`(async () => {
+    const w = 2480, h = 3508;
+    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    const noise = ctx.createImageData(w, h);
+    const total = noise.data.length;
+    for (let off = 0; off < total; off += 65536) { const len = Math.min(65536, total - off); crypto.getRandomValues(noise.data.subarray(off, off + len)); }
+    for (let p = 3; p < total; p += 4) noise.data[p] = 255;
+    ctx.putImageData(noise, 0, 0);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    canvas.width = 0; canvas.height = 0;
+    const perPage = { bytes, width: w, height: h };
+    const pageCount = 90; // duplicated bytes; only total size needs to clear the guard
+    const items = new Array(pageCount).fill(perPage);
+    const pdfBlob = window.PartyPdf.buildPdf([], items, {});
+    window.__oversizedPdf = pdfBlob;
+    return pdfBlob.size;
+  })()`, true);
+  console.log(`  memory-guard fixture: ${(oversizedSize / 1e6).toFixed(1)} MB (single page duplicated)`);
+  if (!(oversizedSize > 88 * 1000 * 1000)) throw new Error(`Fixture not large enough to clear the guard threshold: ${oversizedSize} bytes`);
+
+  await cdp.eval("document.getElementById('modeCompressBtn').click()");
+  await waitFor(cdp, "() => !document.getElementById('compressWorkspace').classList.contains('hidden')");
+  await cdp.eval(`(() => {
+    const file = new File([window.__oversizedPdf], 'oversized.pdf', { type: 'application/pdf' });
+    const dt = new DataTransfer(); dt.items.add(file);
+    document.getElementById('compressDropZone').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  })()`);
+
+  await waitFor(cdp, "() => !document.getElementById('compressInfo').classList.contains('hidden')", 20000);
+  const guardState = JSON.parse(await cdp.eval("JSON.stringify({pages:document.getElementById('compressMetaPages').textContent, noticeHidden:document.getElementById('compressMemoryRiskNotice').classList.contains('hidden'), noticeText:document.getElementById('compressMemoryRiskNotice').textContent, startHidden:document.getElementById('compressStartBtn').classList.contains('hidden'), startDisabled:document.getElementById('compressStartBtn').disabled})"));
+  console.log(`  guard UI state: ${JSON.stringify(guardState)}`);
+  if (guardState.noticeHidden) throw new Error('Memory-risk notice did not appear for an oversized file');
+  if (!guardState.noticeText.includes('quá lớn')) throw new Error('Memory-risk notice text is wrong: ' + guardState.noticeText);
+  if (!guardState.startHidden && !guardState.startDisabled) throw new Error('"Giảm dung lượng" button is still clickable for an oversized file');
+  if (guardState.pages !== '—') throw new Error('Expected page count to be withheld (no risky parse) for an oversized file, got: ' + guardState.pages);
+
+  if (cdp.errors.length) throw new Error('Console errors during memory-guard run: ' + cdp.errors.join(' | '));
+  console.log('PASS Memory guard: oversized PDF shows the graceful "quá lớn" notice, Start disabled, no risky parse attempted');
+}
+
+// Real mobile-viewport functional acceptance (task §13): not just static
+// layout (already covered by test_touch_targets.cjs) — actually drives the
+// drop → info → compress → result flow with CDP device-metrics overrides at
+// 390px and 360px, the two minimum-gate widths, checking horizontal
+// overflow and touch target sizes on the Compress workspace's own controls
+// (test_touch_targets.cjs's driven section list doesn't include
+// #compressWorkspace, so this is the only place those get checked).
+async function runMobileViewportAcceptance(cdp, width, height, runFullCompress) {
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: true });
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+  await waitFor(cdp, "() => document.readyState === 'complete' && !!window.PdfCompress && !!window.VigilLensCompress");
+  const innerWidth = await cdp.eval('window.innerWidth');
+  if (innerWidth !== width) throw new Error(`Viewport override did not take effect: expected ${width}, got ${innerWidth}`);
+  cdp.errors.length = 0;
+
+  await cdp.eval("document.getElementById('modeCompressBtn').click()");
+  await waitFor(cdp, "() => !document.getElementById('compressWorkspace').classList.contains('hidden')");
+  const dropOverflow = JSON.parse(await cdp.eval("JSON.stringify({overflow: document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth})"));
+  if (dropOverflow.overflow) throw new Error(`Horizontal overflow on the Compress dropzone screen at ${width}px`);
+
+  const fixtureSize = await cdp.eval(`(${BUILD_SOURCE_PDF_EXPR})(6).then(r => { window.__mobileFixture = r; return r.blob.size; })`, true);
+  await cdp.eval(`(() => {
+    const file = new File([window.__mobileFixture.blob], 'mobile-test.pdf', { type: 'application/pdf' });
+    const dt = new DataTransfer(); dt.items.add(file);
+    document.getElementById('compressDropZone').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  })()`);
+  await waitFor(cdp, "() => !document.getElementById('compressInfo').classList.contains('hidden')", 15000);
+
+  const infoState = JSON.parse(await cdp.eval(`JSON.stringify({
+    overflow: document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth,
+    touchTargets: [...document.querySelectorAll('#compressWorkspace button')].filter(el => getComputedStyle(el).display !== 'none' && el.getClientRects().length).map(el => { const r = el.getBoundingClientRect(); return { id: el.id, w: Math.round(r.width), h: Math.round(r.height) }; })
+  })`));
+  if (infoState.overflow) throw new Error(`Horizontal overflow on the Compress info screen at ${width}px`);
+  const smallTargets = infoState.touchTargets.filter(t => Math.min(t.w, t.h) < 44);
+  if (smallTargets.length) throw new Error(`Touch target(s) under 44px at ${width}px: ${JSON.stringify(smallTargets)}`);
+  console.log(`  [${width}x${height}] PASS dropzone+info: no overflow, ${infoState.touchTargets.length} touch target(s) all >= 44px (input ${(fixtureSize / 1e6).toFixed(1)}MB, 6 pages)`);
+
+  if (runFullCompress) {
+    await cdp.eval("document.getElementById('compressStartBtn').click()");
+    await waitFor(cdp, "() => !document.getElementById('compressResult').classList.contains('hidden')", 60000, 500);
+    const resultState = JSON.parse(await cdp.eval("JSON.stringify({overflow: document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth, sizes: document.getElementById('compressResultSizes').textContent})"));
+    if (resultState.overflow) throw new Error(`Horizontal overflow on the Compress result screen at ${width}px`);
+    console.log(`  [${width}x${height}] PASS full compress flow on real mobile viewport: ${resultState.sizes}`);
+  }
+
+  if (cdp.errors.length) throw new Error(`Console errors at ${width}px: ` + cdp.errors.join(' | '));
+}
+
 async function runPartyLargeFileAcceptance(cdp) {
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
   await waitFor(cdp, "() => document.readyState === 'complete' && !!window.VigilLensParty && !!window.PdfCompress");
@@ -328,7 +428,11 @@ server.listen(PORT, async () => {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 900, deviceScaleFactor: 1, mobile: false });
 
     await runCompressModeAcceptance(cdp);
+    await runMemoryGuardAcceptance(cdp);
     await runPartyLargeFileAcceptance(cdp);
+    await runMobileViewportAcceptance(cdp, 390, 844, true);
+    await runMobileViewportAcceptance(cdp, 360, 800, false);
+    console.log('PASS Mobile viewport (390px, 360px) acceptance — see MOBILE_DEVICE_ACCEPTANCE_PENDING note: this is Chromium device-metrics emulation, not a real phone');
 
     console.log('\nPDF_COMPRESSION_BROWSER_ACCEPTANCE: PASS (Compress mode + Party Mode >20MB detour)');
     process.exitCode = 0;

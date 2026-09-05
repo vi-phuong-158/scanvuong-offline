@@ -56,6 +56,7 @@ $$\text{Capture} \longrightarrow \text{Detect} \longrightarrow \text{Correct} \l
 - Nén thích ứng theo dung lượng thực tế (adaptive target-size compression): dựng lại từng trang thành ảnh ở nhiều mức chất lượng giảm dần, đóng gói lại thành PDF và đo dung lượng thật, lặp lại tới khi đạt mục tiêu nội bộ ~19 MB hoặc dừng ở một mức chất lượng an toàn (quality floor) — không âm thầm nén tới mức mờ không đọc được.
 - Giữ màu mặc định (không tự chuyển đen trắng), giữ đúng số trang và thứ tự trang, giữ đúng hướng trang (dọc/ngang) theo bản gốc; file nguồn không bị sửa, kết quả luôn là file mới.
 - **Cố gắng đưa xuống dưới 20 MB** — không đảm bảo mọi trường hợp đều đạt nếu điều đó đòi hỏi hy sinh khả năng đọc tài liệu; khi đó ứng dụng báo rõ và cho lựa chọn nén mạnh hơn một cách chủ động (thao tác rõ ràng của người dùng).
+- Nếu tệp quá lớn để xử lý an toàn trên thiết bị hiện tại (đã kiểm chứng bằng đo bộ nhớ thật, không phải giới hạn tuỳ tiện), ứng dụng báo rõ và gợi ý thử trên máy tính hoặc chia nhỏ tài liệu — không âm thầm treo hay làm trình duyệt bị đóng tab.
 - Tích hợp nhẹ với Scan hồ sơ Đảng: xuất mặc định của Party Mode vẫn giữ nguyên bản chép trang PDF không mất chất lượng (lossless); nếu bản xuất đó lớn hơn 20 MB, ứng dụng chỉ cảnh báo và cho chọn "Tải bản gốc" (giữ nguyên) hoặc "Tạo bản dưới 20MB" (dùng chung engine nén ở trên).
 
 ---
@@ -147,6 +148,9 @@ node scripts/regression_pdf_compress.cjs
 node scripts/acceptance_party_ui.cjs
 node scripts/acceptance_offline_pwa.cjs
 node scripts/acceptance_pdf_compress.cjs
+
+# Benchmark thực tế (không phải trang trắng), 4 tier 20-80MB, đo RSS thật
+node scripts/benchmark_pdf_compress.cjs
 ```
 
 ---

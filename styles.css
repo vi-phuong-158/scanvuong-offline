@@ -1170,6 +1170,13 @@ button {
   font-size: 12px;
   line-height: 1.4;
   margin: 0;
+  white-space: pre-line;
+}
+
+.notice.notice-danger {
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+  color: var(--danger-dark) !important;
 }
 
 /* --- 10. Scan ID Workspace & Preview Section --- */
