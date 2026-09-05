@@ -59,6 +59,12 @@ jobs:
       - name: Regression harness (image decode ladder / phone photos)
         run: node scripts/regression_image_decode.js
 
+      - name: Regression harness (decode vs. edge-detection failure isolation)
+        run: node scripts/regression_detection_fallback.js
+
+      - name: Regression harness (Help information architecture)
+        run: node scripts/regression_help_ia.js
+
       - name: Regression harness (Service Worker update safety)
         run: node scripts/regression_sw_update.cjs
 

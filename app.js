@@ -25,7 +25,14 @@
     idPreviewSection: $('#idPreviewSection'), idPreviewCanvas: $('#idPreviewCanvas'),
     idEditFrontBtn: $('#idEditFrontBtn'), idEditBackBtn: $('#idEditBackBtn'), idExportBtn: $('#idExportBtn'),
     idExportProgress: $('#idExportProgress'), idProgressBar: $('#idProgressBar'), idProgressLabel: $('#idProgressLabel'), idExportNotice: $('#idExportNotice'),
-    updateBanner: $('#updateBanner'), updateBtn: $('#updateBtn'), updateDismiss: $('#updateDismiss')
+    updateBanner: $('#updateBanner'), updateBtn: $('#updateBtn'), updateDismiss: $('#updateDismiss'),
+    // Global Help — cross-application, not owned by any single mode. See
+    // docs/brain/03-decisions.md ("Hướng dẫn là cross-application support
+    // surface, không thuộc riêng Scan hồ sơ Đảng").
+    helpBtn: $('#helpBtn'), helpDialog: $('#helpDialog'), helpClose: $('#helpClose'),
+    partyHelpLinkEmpty: $('#partyHelpLinkEmpty'), partyHelpLinkToolbar: $('#partyHelpLinkToolbar'),
+    helpGotoDocBtn: $('#helpGotoDocBtn'), helpGotoIdBtn: $('#helpGotoIdBtn'),
+    helpGotoPartyBtn: $('#helpGotoPartyBtn'), helpGotoWatermarkBtn: $('#helpGotoWatermarkBtn')
   };
 
   const state = {
@@ -396,33 +403,59 @@
     return canvas;
   }
 
+  // detectPage() has two independent failure domains that must never be
+  // confused: loadImage() above can genuinely fail to decode the file (bad
+  // format, unreadable bytes) — that is real and must reach the caller. But
+  // the corner-detection block below (canvas draw of a working thumbnail, ML
+  // inference, classical CV, geometry math) is a *best-effort estimate* on an
+  // image that already decoded fine. A crash in there — a WASM/ONNX runtime
+  // failure on a low-end device, a canvas edge case, a future regression in
+  // detectDocument() — is not evidence the photo is unreadable, so it must
+  // never surface as "cannot decode the image". It degrades to the same
+  // full-frame default crop the app already offers when detectors return low-
+  // confidence geometry, just tagged with its own detectorSource so the two
+  // situations stay distinguishable in diagnostics.
+  const FULL_FRAME_CORNERS = [{ x: 0.045, y: 0.045 }, { x: 0.955, y: 0.045 }, { x: 0.955, y: 0.955 }, { x: 0.045, y: 0.955 }];
+
   async function detectPage(page, rerender = true) {
     const source = await loadImage(page.file);
     try {
-      const rotated = drawRotatedToCanvas(source, page.rotation, 560);
-      let detection;
-      if (typeof DocumentDetector !== 'undefined') {
-        const detRes = await DocumentDetector.detect(rotated, {
-          rotation: 0,
-          fallbackDetector: (c) => detectDocument(c)
-        });
-        detection = {
-          corners: detRes.corners,
-          confidence: detRes.documentScore !== null && detRes.documentScore !== undefined ? detRes.documentScore : 0.55,
-          source: detRes.source
-        };
-      } else {
-        detection = detectDocument(rotated);
+      let rotated, detection;
+      try {
+        rotated = drawRotatedToCanvas(source, page.rotation, 560);
+        if (typeof DocumentDetector !== 'undefined') {
+          const detRes = await DocumentDetector.detect(rotated, {
+            rotation: 0,
+            fallbackDetector: (c) => detectDocument(c)
+          });
+          detection = {
+            corners: detRes.corners,
+            confidence: detRes.documentScore !== null && detRes.documentScore !== undefined ? detRes.documentScore : 0.55,
+            source: detRes.source
+          };
+        } else {
+          detection = detectDocument(rotated);
+        }
+        if (state.mode === 'id') applyIdAspectHint(detection, rotated.width, rotated.height);
+      } catch (err) {
+        console.error('detectPage: edge detection failed on a decoded image, falling back to manual crop', err);
+        rotated = null;
+        detection = null;
       }
-      if (state.mode === 'id') applyIdAspectHint(detection, rotated.width, rotated.height);
       const safeCorners = (detection && detection.corners && Array.isArray(detection.corners) && detection.corners.length === 4)
         ? detection.corners
-        : [{ x: 0.045, y: 0.045 }, { x: 0.955, y: 0.045 }, { x: 0.955, y: 0.955 }, { x: 0.045, y: 0.955 }];
+        : FULL_FRAME_CORNERS;
       page.corners = safeCorners;
       page.confidence = detection && typeof detection.confidence === 'number' ? detection.confidence : 0.55;
-      page.detectorSource = detection && detection.source ? detection.source : 'DEFAULT_FALLBACK';
-      page.width = rotated.width;
-      page.height = rotated.height;
+      page.detectorSource = rotated ? (detection && detection.source ? detection.source : 'DEFAULT_FALLBACK') : 'DETECTION_ERROR_FALLBACK';
+      if (rotated) {
+        page.width = rotated.width;
+        page.height = rotated.height;
+      } else {
+        const dims = rotatedDimensions(source.width || source.naturalWidth, source.height || source.naturalHeight, page.rotation);
+        page.width = dims.w;
+        page.height = dims.h;
+      }
     } finally {
       releaseImage(source);
     }
@@ -1264,6 +1297,50 @@
     if (mode === 'watermark') window.VigilLensWatermark?.activate();
   }
 
+  // Confirms (when there's work to lose) and tears down whatever mode is
+  // currently active, returning to the mode-select screen. Shared by
+  // switchModeBtn and the Help dialog's quick-start shortcuts — both need the
+  // exact same "don't silently drop an in-progress scan" guard before calling
+  // enterMode() on a different mode. Returns false (does nothing) if the user
+  // declined the confirm prompt.
+  function leaveActiveModeWithConfirm() {
+    const hasDocWork = state.mode === 'document' && state.pages.length > 0;
+    const hasIdWork = state.mode === 'id' && (state.idScan.front || state.idScan.back);
+    const hasPartyWork = state.mode === 'party' && !!window.VigilLensParty?.hasWork();
+    const hasWatermarkWork = state.mode === 'watermark' && !!window.VigilLensWatermark?.hasWork();
+    if ((hasDocWork || hasIdWork || hasPartyWork || hasWatermarkWork) && !confirm('Chuyển chế độ sẽ xóa ảnh đang xử lý. Tiếp tục?')) return false;
+    if (state.mode === 'document') { state.pages.forEach(p => URL.revokeObjectURL(p.url)); state.pages = []; state.selectedId = null; }
+    if (state.mode === 'id') resetIdScan();
+    if (state.mode === 'party') window.VigilLensParty?.deactivate();
+    if (state.mode === 'watermark') window.VigilLensWatermark?.deactivate();
+    releaseImage(state.preview.image);
+    state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
+    state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';
+    state.mode = null;
+    renderModeShell();
+    return true;
+  }
+
+  // ---------- Global Help — independent of state.mode, never touches it
+  // except via leaveActiveModeWithConfirm() when a quick-start shortcut asks
+  // to jump straight into a tool. Opening/closing Help never reads or
+  // mutates any scan-session state, so a session in progress survives
+  // opening Help untouched (see docs/brain/03-decisions.md).
+  function openHelp(sectionId) {
+    if (!els.helpDialog.open) els.helpDialog.showModal();
+    if (sectionId) {
+      const target = $('#' + sectionId);
+      if (target) {
+        if ('open' in target) target.open = true;
+        target.scrollIntoView?.({ block: 'start' });
+      }
+    }
+  }
+
+  function closeHelp() {
+    if (els.helpDialog.open) els.helpDialog.close();
+  }
+
   function updateIdShell() {
     if (state.mode !== 'id') return;
     const s = state.idScan;
@@ -1420,23 +1497,26 @@
   if (els.modePartyBtn) els.modePartyBtn.addEventListener('click', () => { if (state.busy) return; enterMode('party'); });
   if (els.modeWatermarkBtn) els.modeWatermarkBtn.addEventListener('click', () => { if (state.busy) return; enterMode('watermark'); });
 
-  els.switchModeBtn.addEventListener('click', () => {
+  els.switchModeBtn.addEventListener('click', () => { if (state.busy) return; leaveActiveModeWithConfirm(); });
+
+  // Help is a cross-application surface: reachable from the topbar in every
+  // mode, and from a shortcut link inside Scan hồ sơ Đảng. Neither ever
+  // touches state.mode directly.
+  els.helpBtn.addEventListener('click', () => openHelp());
+  els.helpClose.addEventListener('click', closeHelp);
+  els.helpDialog.addEventListener('click', event => { if (event.target === els.helpDialog) closeHelp(); });
+  els.partyHelpLinkEmpty.addEventListener('click', () => openHelp('helpSectionParty'));
+  els.partyHelpLinkToolbar.addEventListener('click', () => openHelp('helpSectionParty'));
+  function helpQuickstartTo(mode) {
     if (state.busy) return;
-    const hasDocWork = state.mode === 'document' && state.pages.length > 0;
-    const hasIdWork = state.mode === 'id' && (state.idScan.front || state.idScan.back);
-    const hasPartyWork = state.mode === 'party' && !!window.VigilLensParty?.hasWork();
-    const hasWatermarkWork = state.mode === 'watermark' && !!window.VigilLensWatermark?.hasWork();
-    if ((hasDocWork || hasIdWork || hasPartyWork || hasWatermarkWork) && !confirm('Chuyển chế độ sẽ xóa ảnh đang xử lý. Tiếp tục?')) return;
-    if (state.mode === 'document') { state.pages.forEach(p => URL.revokeObjectURL(p.url)); state.pages = []; state.selectedId = null; }
-    if (state.mode === 'id') resetIdScan();
-    if (state.mode === 'party') window.VigilLensParty?.deactivate();
-    if (state.mode === 'watermark') window.VigilLensWatermark?.deactivate();
-    releaseImage(state.preview.image);
-    state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
-    state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';
-    state.mode = null;
-    renderModeShell();
-  });
+    closeHelp();
+    if (!leaveActiveModeWithConfirm()) return;
+    enterMode(mode);
+  }
+  els.helpGotoDocBtn.addEventListener('click', () => helpQuickstartTo('document'));
+  els.helpGotoIdBtn.addEventListener('click', () => helpQuickstartTo('id'));
+  els.helpGotoPartyBtn.addEventListener('click', () => helpQuickstartTo('party'));
+  els.helpGotoWatermarkBtn.addEventListener('click', () => helpQuickstartTo('watermark'));
 
   els.idChooseBtn.addEventListener('click', () => { if (state.busy) return; els.idFileInput.click(); });
   els.idCameraBtn.addEventListener('click', () => { if (state.busy) return; els.idCameraInput.click(); });

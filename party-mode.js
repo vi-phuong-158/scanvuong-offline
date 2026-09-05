@@ -14,7 +14,6 @@
     createDocBtn: $('partyCreateDocBtn'), selectAllBtn: $('partySelectAllBtn'),
     clearSelectionBtn: $('partyClearSelectionBtn'),
     rangeInput: $('partyRangeInput'), rangeBtn: $('partyRangeBtn'),
-    helpDialog: $('partyHelpDialog'), helpClose: $('partyHelpClose'),
     viewerDialog: $('partyPreviewDialog'), viewerCanvas: $('partyPreviewCanvas'), viewerImage: $('partyPreviewImage'),
     viewerTitle: $('partyPreviewTitle'), viewerMeta: $('partyPreviewMeta'), viewerStatus: $('partyPreviewStatus'),
     viewerPrev: $('partyPreviewPrev'), viewerNext: $('partyPreviewNext'), viewerRotate: $('partyPreviewRotate'),
@@ -44,8 +43,6 @@
     const node = $('toast');
     if (node) { node.textContent = message; node.classList.remove('hidden'); setTimeout(() => node.classList.add('hidden'), 3200); }
   }
-
-  function openHelp() { if (els.helpDialog?.showModal) els.helpDialog.showModal(); }
 
   function isImage(file) { return !!file && (/^image\/(jpeg|jpg|png|webp)$/i.test(file.type || '') || (!file.type && imageExt.test(file.name || ''))); }
   function isPdf(file) { return !!file && (/application\/pdf/i.test(file.type || '') || /\.pdf$/i.test(file.name || '')); }
@@ -1066,9 +1063,9 @@
   els.cameraInput.addEventListener('change', event => { if (state.active) addImages(event.target.files, null); event.target.value = ''; });
   els.pdfInput.addEventListener('change', async event => { if (state.active) await addPdf(event.target.files[0], null); event.target.value = ''; });
   els.exportAll.addEventListener('click', exportAll);
-  document.querySelectorAll('[data-party-help]').forEach(button => button.addEventListener('click', openHelp));
-  els.helpClose?.addEventListener('click', () => els.helpDialog.close());
-  els.helpDialog?.addEventListener('click', event => { if (event.target === els.helpDialog) els.helpDialog.close(); });
+  // "Xem hướng dẫn Scan hồ sơ Đảng" opens the global Help dialog (owned by
+  // app.js — see openHelp() there) at the Party section; Party mode itself
+  // owns no help content or dialog anymore.
 
   els.viewerClose?.addEventListener('click', closePageViewer);
   els.viewerPrev?.addEventListener('click', () => stepPageViewer(-1));

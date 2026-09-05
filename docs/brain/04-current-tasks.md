@@ -17,10 +17,16 @@
 
 ## Chờ làm (backlog)
 
-### Xác nhận trên thiết bị thật: Scan ID với ảnh chụp bằng điện thoại
-- **Mô tả:** Lỗi "Không xuất được PDF: The source image cannot be decoded." + khung xem trước A4 trắng đã được sửa bằng thang bậc giải mã trong `loadImage()` (xem [03-decisions.md](03-decisions.md), mục 2026-09-05). Đã nghiệm thu bằng harness Node và Chromium headless thật, **chưa** nghiệm thu trên chính máy Android của người dùng.
-- **Việc cần làm:** Cập nhật app lên cache `vigil-lens-v2.8.2` (bấm "Cập nhật" khi hiện banner, hoặc tải lại trang), rồi chọn lại **đúng tấm ảnh đã gây lỗi** trong Scan ID. Nếu vẫn hỏng, giờ đây thông báo sẽ hiện **ngay ở bước chụp** kèm nguyên nhân — chụp lại màn hình đó là đủ để lần tiếp theo khoanh vùng.
-- **Ưu tiên:** Cao — đây là đường xác nhận duy nhất còn lại cho lỗi người dùng báo.
+### [ĐÃ XÁC NHẬN 2026-09-05] Scan ID với ảnh chụp bằng điện thoại — SCAN_ID_JPEG_ANDROID_RUNTIME_ACCEPTANCE_PASS
+- **Mô tả:** Hai lớp sửa liên tiếp cho cùng một luồng báo lỗi của người dùng:
+  1. [2026-09-05, sáng] Thang bậc giải mã trong `loadImage()` — sửa cho ảnh THẬT SỰ khó giải mã (quá lớn, HEIC, bytes không đọc được).
+  2. [2026-09-05, DEV MODE audit] Tách miền lỗi "giải mã" khỏi miền lỗi "nhận diện góc" trong `detectPage()` — sửa cho đúng root cause thật: một ảnh JPEG Android **hợp lệ, giải mã tốt** vẫn bị báo "Không đọc được ảnh này" vì bộ nhận diện góc (ML/WASM hoặc canvas) crash và lỗi đó bị `addFiles()`/`addIdFile()` gộp chung với lỗi giải mã. Xem [03-decisions.md](03-decisions.md), mục 2026-09-05 (cả hai).
+- **Kết quả:** Operator đã test trực tiếp trên điện thoại Android thật — ảnh JPEG từ thư viện điện thoại hoạt động bình thường. **Đóng mục này**, không còn hành động nào cần làm thêm.
+
+### Flake đã biết (không thuộc scope hiện tại): `runPreviewLifecycleAcceptance` trong `acceptance_party_ui.cjs`
+- **Mô tả:** Bước "Stale preview lifecycle" trong `acceptance_party_ui.cjs` thất bại với cùng một thông điệp lỗi y hệt (`calls:8, ready:6, blankReady:false`, cùng kích thước canvas) trên CẢ code trước và sau các thay đổi Hướng dẫn (2026-09-05) — tái hiện giống hệt trên cả hai, chứng tỏ đây là vấn đề timing/môi trường có sẵn từ trước trong pipeline render preview của Party PDF, không liên quan tới việc di chuyển Hướng dẫn.
+- **Việc cần làm:** Không nằm trong phạm vi task Hướng dẫn (không được sửa business logic/rendering của Party). Cần một phiên làm việc riêng để root-cause pipeline preview PDF của Party mode nếu muốn khắc phục.
+- **Ưu tiên:** Thấp — không chặn release, không phải regression mới.
 
 ### GATE-01: Nghiệm thu PWA Installability thủ công trên trình duyệt thật (OS Launcher)
 - **Mô tả:** Kiểm tra thủ công prompt cài đặt PWA ("Cài đặt ứng dụng" / "Add to Home Screen") trên trình duyệt Chrome/Edge thực tế ngoài môi trường headless, xác nhận icon launcher xuất hiện trên màn hình chính và mở ứng dụng standalone khi không có mạng.

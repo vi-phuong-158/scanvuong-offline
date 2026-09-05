@@ -257,15 +257,20 @@ async function runLineEndingAcceptance(cdp) {
 }
 
 async function runHelpUxAcceptance(cdp) {
+  // Help is now a global surface (app.js's #helpDialog), not a Party-owned
+  // dialog — see docs/brain/03-decisions.md ("Hướng dẫn là cross-application
+  // support surface"). Party mode only carries a shortcut link
+  // (#partyHelpLinkToolbar) that deep-links into #helpSectionParty inside
+  // that global dialog; the moved content itself is unchanged (verbatim).
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   await navigateAndEnterPartyMode(cdp);
-  await cdp.eval("document.querySelector('[data-party-help]').click()");
-  await waitFor(cdp, "() => document.getElementById('partyHelpDialog')?.open === true");
-  const help = JSON.parse(await cdp.eval("JSON.stringify({open:document.getElementById('partyHelpDialog').open,sections:document.querySelectorAll('#partyHelpDialog section').length,text:document.getElementById('partyHelpDialog').textContent})"));
+  await cdp.eval("document.getElementById('partyHelpLinkToolbar').click()");
+  await waitFor(cdp, "() => document.getElementById('helpDialog')?.open === true");
+  const help = JSON.parse(await cdp.eval("JSON.stringify({open:document.getElementById('helpDialog').open,partySectionOpen:document.getElementById('helpSectionParty').open,sections:document.querySelectorAll('#helpSectionParty section').length,text:document.getElementById('helpSectionParty').textContent})"));
   const requiredTopics = ['Tài liệu là gì?','Trang nguồn là gì?','Chọn trang và tạo tài liệu','Cách chia 1 PDF thành nhiều tài liệu','Ghép với trước','Ghép với sau','Chuyển trang','Xoay trang','Thay trang','Thêm trang','Xóa trang','Chọn loại tài liệu','Xuất tất cả'];
-  if (!help.open || help.sections < 13 || !requiredTopics.every(label => help.text.includes(label)) || cdp.errors.length) throw new Error(`Party help content failed: ${JSON.stringify({ open: help.open, sections: help.sections })}`);
-  await cdp.eval("document.getElementById('partyHelpClose').click()");
-  await waitFor(cdp, "() => !document.getElementById('partyHelpDialog')?.open");
+  if (!help.open || !help.partySectionOpen || help.sections < 13 || !requiredTopics.every(label => help.text.includes(label)) || cdp.errors.length) throw new Error(`Party help content failed: ${JSON.stringify({ open: help.open, partySectionOpen: help.partySectionOpen, sections: help.sections })}`);
+  await cdp.eval("document.getElementById('helpClose').click()");
+  await waitFor(cdp, "() => !document.getElementById('helpDialog')?.open");
   const fixturePath = path.join(SCREENSHOT_DIR, 'party_ui_help_controls.pdf'); fs.writeFileSync(fixturePath, syntheticPdf(2));
   await cdp.eval("document.getElementById('partyPdfBtn').click()");
   await setFileInput(cdp, '#partyPdfInput', fixturePath);
