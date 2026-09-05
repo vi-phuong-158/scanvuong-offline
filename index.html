@@ -39,6 +39,13 @@
         </svg>
         <span>100% Offline</span>
       </span>
+      <button class="btn ghost compact" id="helpBtn" type="button" aria-label="Hướng dẫn sử dụng" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+        </svg>
+        <span>Hướng dẫn</span>
+      </button>
       <button class="btn ghost compact hidden" id="switchModeBtn" type="button" aria-label="Đổi chế độ quét">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="m16 3 4 4-4 4"/>
@@ -235,7 +242,7 @@
           <button id="partyCameraBtn" class="btn primary touch-lg" type="button">Chụp ảnh</button>
           <button id="partyChooseBtn" class="btn secondary touch-lg" type="button">Chọn ảnh</button>
           <button id="partyPdfBtn" class="btn secondary touch-lg" type="button">Nhập PDF</button>
-          <button class="btn ghost touch-lg" data-party-help type="button" aria-haspopup="dialog">? Hướng dẫn</button>
+          <button id="partyHelpLinkEmpty" class="btn ghost touch-lg" type="button" aria-haspopup="dialog">Xem hướng dẫn Scan hồ sơ Đảng</button>
         </div>
         <div class="privacy-note"><span>Không OCR · Không tự phân loại · 100% xử lý trên thiết bị</span></div>
       </div>
@@ -419,7 +426,7 @@
             <p class="muted party-toolbar-help">Tích chọn các trang nguồn để tạo tài liệu độc lập và xuất theo quy định.</p>
           </div>
           <div class="party-head-actions">
-            <button class="btn ghost small" data-party-help type="button" aria-haspopup="dialog">? Hướng dẫn</button>
+            <button id="partyHelpLinkToolbar" class="btn ghost small" type="button" aria-haspopup="dialog">Xem hướng dẫn</button>
             <button id="partyAddBtn" class="btn secondary small" type="button">+ Thêm ảnh</button>
             <button id="partyAddPdfBtn" class="btn secondary small" type="button">+ Thêm PDF</button>
           </div>
@@ -457,368 +464,6 @@
         <p id="partyExportStatus" class="party-export-status" aria-live="polite"></p>
       </aside>
     </section>
-    <dialog id="partyHelpDialog" class="party-help-dialog" aria-labelledby="partyHelpTitle">
-      <div class="party-help-sheet">
-        <header class="party-help-head">
-          <div>
-            <span class="party-kicker">SCAN TÀI LIỆU ĐẢNG</span>
-            <h2 id="partyHelpTitle">Hướng dẫn sử dụng dành cho cán bộ</h2>
-          </div>
-          <button id="partyHelpClose" class="btn ghost small" type="button">Đóng</button>
-        </header>
-        <div class="party-help-content">
-
-          <!-- TẦNG 0: TỔNG QUAN 4 CHẾ ĐỘ LÀM VIỆC -->
-          <section class="party-help-quickflow" aria-label="4 Chế độ làm việc của Vigil Lens">
-            <div class="party-help-quickflow-head">
-              <span class="party-help-badge">TỔNG QUAN TÍNH NĂNG</span>
-              <h3>4 Chế độ làm việc của Vigil Lens</h3>
-              <p>Phần mềm xử lý 100% tại chỗ trên thiết bị, không cần mạng internet, không gửi dữ liệu ra ngoài:</p>
-            </div>
-            <div class="party-help-steps-grid">
-              <div class="party-help-step-card">
-                <div class="party-help-step-num">1</div>
-                <div class="party-help-step-body">
-                  <strong>Scan tài liệu</strong>
-                  <p>Chụp hoặc tải ảnh tài liệu đơn, tự căn chỉnh góc vuông, làm sạch nền giấy và xuất file PDF rõ nét.</p>
-                </div>
-              </div>
-              <div class="party-help-step-card">
-                <div class="party-help-step-num">2</div>
-                <div class="party-help-step-body">
-                  <strong>Scan ID (CCCD/CMND)</strong>
-                  <p>Chụp 2 mặt Căn cước công dân hoặc thẻ định danh, tự căn ghép vào đúng 1 trang A4 chuẩn để in ấn tức thì.</p>
-                </div>
-              </div>
-              <div class="party-help-step-card">
-                <div class="party-help-step-num">3</div>
-                <div class="party-help-step-body">
-                  <strong>Scan tài liệu Đảng</strong>
-                  <p>Ghép nối, tách trang từ PDF hoặc ảnh scan, phân loại theo 104 danh mục hồ sơ Đảng, xuất chuẩn lưu trữ không nén lại ảnh (lossless).</p>
-                </div>
-              </div>
-              <div class="party-help-step-card">
-                <div class="party-help-step-num">4</div>
-                <div class="party-help-step-body">
-                  <strong>Làm sạch chân trang</strong>
-                  <p>Làm sạch vùng chân trang mà không làm giảm chất lượng ảnh quét (giữ nguyên 100% dữ liệu gốc).</p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <!-- TẦNG 1: QUY TRÌNH NHANH 6 BƯỚC -->
-          <div class="party-help-quickflow" aria-label="Quy trình nhanh 6 bước">
-            <div class="party-help-quickflow-head">
-              <span class="party-help-badge">QUY TRÌNH NHANH</span>
-              <h3>6 bước xử lý hồ sơ cơ bản</h3>
-              <p>Trình tự chuẩn để cán bộ lần đầu sử dụng có thể thao tác nhanh chóng và chính xác:</p>
-            </div>
-            <div class="party-help-steps-grid">
-              <div class="party-help-step-card">
-                <div class="party-help-step-num">1</div>
-                <div class="party-help-step-body">
-                  <strong>Nhập PDF hoặc ảnh</strong>
-                  <p>Chọn file PDF scan từ máy, chọn ảnh hoặc chụp ảnh trực tiếp. Có thể bổ sung thêm nguồn bất kỳ lúc nào.</p>
-                </div>
-              </div>
-              <div class="party-help-step-card">
-                <div class="party-help-step-num">2</div>
-                <div class="party-help-step-body">
-                  <strong>Kiểm tra trang nguồn</strong>
-                  <p>Xem tổng số trang và số trang chưa xếp. Bấm vào thumbnail để mở xem trước cỡ lớn kiểm tra độ nét văn bản.</p>
-                </div>
-              </div>
-              <div class="party-help-step-card">
-                <div class="party-help-step-num">3</div>
-                <div class="party-help-step-body">
-                  <strong>Chọn trang tạo tài liệu</strong>
-                  <p>Tick chọn từng trang hoặc nhập khoảng (ví dụ: <code>1-3</code>), rồi bấm <span class="party-help-btn-tag">Tạo tài liệu từ trang đã chọn</span>.</p>
-                </div>
-              </div>
-              <div class="party-help-step-card">
-                <div class="party-help-step-num">4</div>
-                <div class="party-help-step-body">
-                  <strong>Sắp xếp &amp; chỉnh trang</strong>
-                  <p>Đổi thứ tự trang (<span class="party-help-btn-tag">← Trước</span>, <span class="party-help-btn-tag">Sau →</span>), xoay 90°, thay trang mờ hoặc chuyển trang giữa các tài liệu.</p>
-                </div>
-              </div>
-              <div class="party-help-step-card">
-                <div class="party-help-step-num">5</div>
-                <div class="party-help-step-body">
-                  <strong>Chọn loại trong 104 loại</strong>
-                  <p>Tìm theo mã (<code>05</code>) hoặc tên văn bản không dấu. Phần mềm tự động tạo tên file PDF chuẩn hóa.</p>
-                </div>
-              </div>
-              <div class="party-help-step-card">
-                <div class="party-help-step-num">6</div>
-                <div class="party-help-step-body">
-                  <strong>Kiểm tra &amp; xuất PDF</strong>
-                  <p>Kiểm tra thanh phân trang (coverage), xác nhận thứ tự trùng loại (<code>.1</code>, <code>.2</code>) và bấm xuất riêng hoặc xuất tất cả.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- TẦNG 2: HƯỚNG DẪN CHI TIẾT THEO NGHIỆP VỤ -->
-
-          <section>
-            <h3>Chức năng Scan tài liệu Đảng dùng để làm gì?</h3>
-            <p>Tính năng <strong>Scan tài liệu Đảng</strong> được thiết kế chuyên biệt phục vụ công tác văn phòng và quản lý hồ sơ đảng viên tại các cơ quan, tổ chức Đảng:</p>
-            <ul>
-              <li><strong>Nhập PDF scan &amp; ảnh chụp:</strong> Nạp các tập tài liệu scan hoặc ảnh chụp hồ sơ gốc vào hệ thống xử lý nội bộ.</li>
-              <li><strong>Tách và ghép tài liệu linh hoạt:</strong> Tách một tập file PDF scan dung lượng lớn thành nhiều văn bản riêng biệt, hoặc ghép nối các trang thuộc cùng một văn bản.</li>
-              <li><strong>Sắp xếp và biên tập trang:</strong> Hoán đổi thứ tự trang, xoay đúng chiều đọc, thay thế trang scan bị mờ hỏng hoặc bổ sung trang còn thiếu.</li>
-              <li><strong>Danh mục 104 loại tài liệu Đảng:</strong> Tra cứu nhanh theo mã số hoặc tên văn bản, tự động sinh tên file PDF chuẩn hóa theo quy định.</li>
-              <li><strong>Xuất PDF bảo toàn chất lượng:</strong> Xuất riêng từng tài liệu hoàn thành hoặc xuất toàn bộ hồ sơ mà không làm giảm độ sắc nét của văn bản gốc.</li>
-            </ul>
-            <div class="party-help-callout">
-              <strong>Nguyên tắc nghiệp vụ:</strong> Phần mềm <em>không sử dụng OCR</em> và <em>không tự ý phân loại hồ sơ bằng AI</em>. Cán bộ nghiệp vụ trực tiếp kiểm tra và quyết định loại tài liệu để bảo đảm tính chuẩn xác và giá trị pháp lý tuyệt đối.
-            </div>
-          </section>
-
-          <section>
-            <h3>1. Tài liệu là gì?</h3>
-            <p>Một <strong>Tài liệu</strong> là một văn bản hoàn chỉnh, độc lập trong hồ sơ Đảng (ví dụ: <em>Đơn xin vào Đảng</em>, <em>Lý lịch của người xin vào Đảng</em>, <em>Quyết định kết nạp đảng viên</em>, <em>Nghị quyết của chi bộ</em>, <em>Phiếu bổ sung hồ sơ</em>...).</p>
-            <p>Mỗi tài liệu có thể gồm một hoặc nhiều trang và sẽ được xuất thành một file PDF độc lập theo đúng tên gọi chuẩn trong danh mục 104 loại.</p>
-            <div class="party-help-callout warning">
-              <strong>Phân biệt quan trọng:</strong> <em>Một file PDF nạp vào không đồng nghĩa với một tài liệu.</em> Một file PDF scan từ máy quét thường chứa nhiều văn bản khác nhau ghép liền nhau. Nhiệm vụ của cán bộ là bóc tách file scan đó thành các tài liệu độc lập chuẩn hóa.
-            </div>
-          </section>
-
-          <section>
-            <h3>2. Trang nguồn là gì?</h3>
-            <p><strong>Trang nguồn</strong> là số thứ tự trang gốc trong file PDF scan hoặc ảnh ban đầu đưa vào hệ thống (ví dụ: <code>Nguồn: trang 6/30</code> nghĩa là trang thứ 6 trong tệp PDF gốc gồm 30 trang; với ảnh chụp mới sẽ hiển thị <code>Ảnh scan mới</code>).</p>
-            <p>Số trang nguồn giúp cán bộ đối chiếu tức thì với văn bản giấy gốc trên tay, đảm bảo không bỏ sót trang, không nhầm lẫn mặt sau hoặc các văn bản nối tiếp khi thao tác chia tách.</p>
-          </section>
-
-          <section>
-            <h3>3. Nhập tài liệu ban đầu và bổ sung nguồn</h3>
-            <p>Cán bộ có 3 phương thức đưa dữ liệu vào hệ thống:</p>
-            <ul>
-              <li><strong>Chụp ảnh:</strong> Bấm <span class="party-help-btn-tag">Chụp ảnh</span> để dùng máy ảnh thiết bị ghi lại trực tiếp các trang văn bản.</li>
-              <li><strong>Chọn ảnh:</strong> Bấm <span class="party-help-btn-tag">Chọn ảnh</span> để nạp các file ảnh chụp có sẵn (JPEG, PNG, WebP).</li>
-              <li><strong>Nhập PDF:</strong> Bấm <span class="party-help-btn-tag">Nhập PDF</span> để nạp tệp tài liệu scan sẵn từ máy tính.</li>
-            </ul>
-            <p>Trong quá trình xử lý hồ sơ, cán bộ luôn có thể bổ sung thêm trang bất cứ lúc nào qua các nút <span class="party-help-btn-tag">+ Thêm ảnh</span> hoặc <span class="party-help-btn-tag">+ Thêm PDF</span> trên thanh công cụ mà không làm ảnh hưởng đến các tài liệu đã tạo trước đó.</p>
-          </section>
-
-          <section>
-            <h3>4. Khu vực Danh sách trang nguồn</h3>
-            <p>Khu vực <strong>DANH SÁCH TRANG NGUỒN</strong> hiển thị trực quan toàn bộ các trang đã nạp vào phiên làm việc, kèm trạng thái tổng quát ở tiêu đề (ví dụ: <code>Trang nguồn (50 trang · 8 chưa xếp)</code>):</p>
-            <ul>
-              <li><strong>Tổng số trang:</strong> Tổng lượng trang có trong phiên xử lý hiện tại (ví dụ: 50 trang).</li>
-              <li><strong>Số trang chưa xếp:</strong> Số lượng trang nguồn còn lại chưa được gán vào bất kỳ tài liệu nào (ví dụ: 8 chưa xếp).</li>
-              <li><strong>Trang đã gán:</strong> Những trang đã đưa vào tài liệu sẽ hiển thị nhãn (badge) định danh tương ứng như <span class="party-assigned-badge">Tài liệu 1</span>, <span class="party-assigned-badge">Tài liệu 2</span>. Ô checkbox của trang này sẽ tự động khóa lại để chống chọn trùng lặp.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h3>5. Xem trước trang cỡ lớn</h3>
-            <p>Bấm trực tiếp vào hình thu nhỏ (thumbnail) của bất kỳ trang nào trong danh sách trang nguồn hoặc trong tài liệu để mở cửa sổ <strong>XEM TRƯỚC TẠI CHỖ</strong> kích thước lớn.</p>
-            <p>Trong cửa sổ xem trước, cán bộ có thể:</p>
-            <ul>
-              <li>Soi rõ từng chi tiết chữ viết, con dấu, chữ ký trên văn bản.</li>
-              <li>Chuyển nhanh qua lại giữa các trang bằng nút <span class="party-help-btn-tag">← Trang trước</span> và <span class="party-help-btn-tag">Trang sau →</span>.</li>
-              <li>Xoay trang trực tiếp bằng nút <span class="party-help-btn-tag">↻ Xoay</span>.</li>
-            </ul>
-            <div class="party-help-callout warning">
-              <strong>Lưu ý về hình ảnh xem trước:</strong> Nếu hình thu nhỏ hoặc cửa sổ xem trước hiển thị chậm hoặc báo lỗi hiển thị, <em>điều này hoàn toàn không đồng nghĩa trang PDF nguồn bị mất hay hư hại</em>. Cán bộ không cần xóa trang vì lý do hiển thị xem trước; toàn bộ dữ liệu gốc của trang PDF vẫn được bảo toàn nguyên vẹn khi xuất file.
-            </div>
-          </section>
-
-          <section>
-            <h3>6. Chọn trang và tạo tài liệu</h3>
-            <p>Để tạo một tài liệu mới từ các trang nguồn, cán bộ có thể sử dụng các cách chọn trang linh hoạt:</p>
-            <ul>
-              <li><strong>Tick chọn từng trang:</strong> Bấm vào ô vuông checkbox trên góc mỗi thẻ trang nguồn mong muốn.</li>
-              <li><strong>Chọn theo khoảng trang:</strong> Nhập khoảng trang vào ô chọn khoảng, ví dụ: <code>1-3</code> hoặc <code>17-22</code> rồi bấm <span class="party-help-btn-tag">Chọn khoảng</span>.</li>
-              <li><strong>Chọn trang cách quãng hoặc kết hợp:</strong> Nhập các trang rời như <code>17,19</code> hoặc kết hợp nhiều dải trang như <code>1-3, 5, 8-10</code> để chọn đồng thời nhiều vị trí.</li>
-              <li><strong>Chọn tất cả:</strong> Bấm nút <span class="party-help-btn-tag">Chọn tất cả</span> để chọn nhanh toàn bộ những trang nguồn đang còn khả dụng (chưa được đưa vào tài liệu nào).</li>
-            </ul>
-            <p>Sau khi đã chọn đúng các trang thuộc cùng một văn bản, bấm nút <span class="party-help-btn-tag">Tạo tài liệu từ trang đã chọn</span>. Hệ thống sẽ gom các trang đó thành một <strong>Tài liệu N</strong> mới và tự động sắp xếp theo thứ tự trang nguồn tăng dần.</p>
-          </section>
-
-          <section>
-            <h3>7. Cách chia 1 PDF thành nhiều tài liệu</h3>
-            <p>Khi đưa một tệp PDF scan lớn chứa nhiều văn bản nghiệp vụ vào hệ thống (ví dụ: tệp 20 trang chứa 4 văn bản khác nhau), quy trình tách diễn ra như sau:</p>
-            <ol>
-              <li>Chọn các trang của văn bản thứ nhất (ví dụ: trang <code>1-3</code>), bấm <span class="party-help-btn-tag">Tạo tài liệu từ trang đã chọn</span> → Tạo thành <strong>Tài liệu 1</strong>.</li>
-              <li>Chọn các trang của văn bản thứ hai (ví dụ: trang <code>4-10</code>), bấm tạo tài liệu → Tạo thành <strong>Tài liệu 2</strong>.</li>
-              <li>Chọn trang của văn bản thứ ba (ví dụ: trang <code>11</code>), bấm tạo tài liệu → Tạo thành <strong>Tài liệu 3</strong>.</li>
-              <li>Chọn các trang của văn bản thứ tư (ví dụ: trang <code>12-13</code>), bấm tạo tài liệu → Tạo thành <strong>Tài liệu 4</strong>.</li>
-            </ol>
-            <p>Các trang đã phân loại sẽ tự động gắn nhãn và không thể bị chọn trùng. Cán bộ có thể chọn loại tài liệu và bấm <span class="party-help-btn-tag">Xuất tài liệu này</span> ngay cho từng tài liệu mà không cần đợi phân loại xong toàn bộ tệp.</p>
-          </section>
-
-          <section>
-            <h3>8. Sắp xếp thứ tự trang bên trong tài liệu</h3>
-            <p>Trên mỗi thẻ trang trong tài liệu có hai nút điều hướng thứ tự:</p>
-            <ul>
-              <li><span class="party-help-btn-tag">← Trước</span>: Di chuyển trang hiện tại lên trước một vị trí.</li>
-              <li><span class="party-help-btn-tag">Sau →</span>: Di chuyển trang hiện tại về sau một vị trí.</li>
-            </ul>
-            <p><em>Ví dụ thực tế:</em> Nếu một tài liệu scan bị đảo lộn trang theo thứ tự <code>5 → 7 → 6</code>, cán bộ bấm nút <span class="party-help-btn-tag">← Trước</span> trên trang 6 để đưa tài liệu về đúng thứ tự liền mạch <code>5 → 6 → 7</code>.</p>
-            <p>Cán bộ cần lưu ý kiểm tra kỹ thứ tự đối với các văn bản nhiều trang, bìa trước, bìa sau và các trang phụ lục đính kèm.</p>
-          </section>
-
-          <section>
-            <h3>9. Ghép với trước</h3>
-            <p>Nút <span class="party-help-btn-tag">Ghép với trước</span> nằm trên thanh tiêu đề của tài liệu:</p>
-            <p>Khi bấm nút này, toàn bộ các trang của tài liệu hiện tại sẽ được gộp nối tiếp vào cuối của tài liệu đứng ngay phía trước nó. Tài liệu hiện tại sau đó sẽ được gỡ bỏ.</p>
-            <p><em>Ví dụ:</em> Tài liệu 1 đang có các trang 1, 2, 3; Tài liệu 2 có các trang 4, 5. Khi bấm <span class="party-help-btn-tag">Ghép với trước</span> tại Tài liệu 2, toàn bộ trang 4, 5 sẽ được chuyển vào cuối Tài liệu 1, tạo thành một tài liệu hoàn chỉnh gồm các trang 1, 2, 3, 4, 5.</p>
-          </section>
-
-          <section>
-            <h3>10. Ghép với sau</h3>
-            <p>Nút <span class="party-help-btn-tag">Ghép với sau</span> nằm trên thanh tiêu đề của tài liệu:</p>
-            <p>Khi bấm nút này, toàn bộ các trang của tài liệu đứng liền kề phía sau sẽ được gộp vào cuối của tài liệu hiện tại. Tài liệu phía sau sau đó sẽ được gỡ bỏ.</p>
-            <p><em>Ví dụ:</em> Đứng tại Tài liệu 1, bấm <span class="party-help-btn-tag">Ghép với sau</span> thì toàn bộ các trang của Tài liệu 2 sẽ được chuyển vào cuối Tài liệu 1.</p>
-          </section>
-
-          <section>
-            <h3>11. Chuyển trang</h3>
-            <p>Khi một trang bị đưa nhầm sang tài liệu khác (ví dụ trang 4 thuộc Tài liệu 2 nhưng vô tình bị gán vào Tài liệu 1):</p>
-            <ol>
-              <li>Tìm đến thẻ trang bị nhầm trong tài liệu.</li>
-              <li>Tại ô lựa chọn <span class="party-help-btn-tag">Chuyển trang…</span> trên thẻ trang, bấm chọn tài liệu đích mong muốn (ví dụ: chuyển sang <em>Tài liệu 2</em>).</li>
-              <li>Trang sẽ được chuyển ngay sang tài liệu đích. Sau khi chuyển, cán bộ cần mở tài liệu đích và kiểm tra, sắp xếp lại thứ tự trang nếu cần.</li>
-            </ol>
-          </section>
-
-          <section>
-            <h3>12. Xoay trang</h3>
-            <p>Bấm nút <span class="party-help-btn-tag">↻ Xoay</span> trên thẻ trang hoặc trong trình xem trước lớn.</p>
-            <p>Mỗi lần bấm, trang sẽ xoay đúng <strong>90 độ theo chiều kim đồng hồ</strong>. Cán bộ bấm liên tiếp cho đến khi trang văn bản đứng thẳng đúng chiều đọc tự nhiên.</p>
-          </section>
-
-          <section>
-            <h3>13. Thay trang</h3>
-            <p>Bấm nút <span class="party-help-btn-tag">↺ Thay trang</span> trên thẻ trang khi phát hiện trang scan bị mờ, lệch góc, mất góc chữ hoặc sai nội dung.</p>
-            <p>Hệ thống cho phép cán bộ chụp lại bằng camera hoặc chọn file ảnh/PDF mới để thay thế ngay tại chỗ. Trang mới sẽ được đưa vào <strong>đúng vị trí hiện tại</strong> của trang cũ trong tài liệu mà không cần phải xóa đi hay dựng lại tài liệu từ đầu.</p>
-          </section>
-
-          <section>
-            <h3>14. Thêm trang</h3>
-            <p>Để bổ sung trang vào tài liệu, cán bộ có hai phương thức:</p>
-            <ul>
-              <li><span class="party-help-btn-tag">+ Thêm sau</span> trên thẻ trang: Chèn thêm trang mới vào ngay sau trang đang đứng.</li>
-              <li><span class="party-help-btn-tag">+ Thêm trang</span> trên thanh công cụ tài liệu: Bổ sung trang mới vào cuối tài liệu.</li>
-            </ul>
-            <p>Có thể thêm từ camera chụp trực tiếp hoặc từ file ảnh/PDF có sẵn. Sau khi thêm, hãy kiểm tra lại thứ tự các trang trong tài liệu.</p>
-          </section>
-
-          <section>
-            <h3>15. Xóa trang khỏi tài liệu</h3>
-            <p>Bấm nút <span class="party-help-btn-tag">Xóa khỏi tài liệu</span> (hoặc <span class="party-help-btn-tag">Xóa</span>) trên thẻ trang nếu trang đó bị scan thừa hoặc gán nhầm.</p>
-            <div class="party-help-callout">
-              <strong>Hành vi an toàn dữ liệu:</strong> Thao tác này <em>chỉ gỡ bỏ trang ra khỏi tài liệu hiện tại</em> và hoàn trả trang đó về trạng thái chưa gán trong danh sách trang nguồn. File scan gốc trên máy tính của cán bộ <strong>hoàn toàn không bị xóa hay sửa đổi</strong>. Trang được giải phóng có thể dùng để tạo tài liệu khác bất cứ lúc nào.
-            </div>
-          </section>
-
-          <section>
-            <h3>16. Xóa tài liệu</h3>
-            <p>Nếu gom nhầm hoặc muốn phân chia lại toàn bộ một văn bản, cán bộ bấm nút <span class="party-help-btn-tag">Xóa tài liệu</span> tại tiêu đề của tài liệu đó.</p>
-            <p>Khi xóa tài liệu, toàn bộ các trang bên trong sẽ được giải phóng nguyên vẹn và quay trở lại danh sách trang nguồn chưa gán. Cán bộ có thể yên tâm chọn lại từ đầu mà không lo mất mát dữ liệu.</p>
-          </section>
-
-          <section>
-            <h3>17. Chọn loại tài liệu (Danh mục 104 loại)</h3>
-            <p>Tại ô tìm kiếm <strong>Loại tài liệu do cán bộ chọn</strong> trên mỗi tài liệu:</p>
-            <ul>
-              <li>Cán bộ có thể tìm kiếm nhanh theo mã số (ví dụ: <code>05</code>), theo tên văn bản có dấu hoặc không dấu (ví dụ: <code>quyet dinh ket nap</code>, <code>ly lich</code>, <code>don xin vao dang</code>).</li>
-              <li>Khi chọn một loại trong danh mục 104 loại chuẩn, phần mềm sẽ tự động sinh tên file chuẩn hóa (canonical filename), ví dụ: <code>05.Quyet_dinh_ket_nap_dang_vien.pdf</code>.</li>
-            </ul>
-            <div class="party-help-callout">
-              <strong>Lưu ý:</strong> Cán bộ không cần tự gõ tên file thủ công. Hệ thống không tự động phân loại bằng AI để đảm bảo hồ sơ được thẩm định chính xác tuyệt đối bởi cán bộ quản lý.
-            </div>
-          </section>
-
-          <section>
-            <h3>18. Nhiều tài liệu cùng loại và Xác nhận thứ tự</h3>
-            <p>Trong một bộ hồ sơ, có thể xuất hiện từ 2 tài liệu trở lên có cùng một loại (cùng mã <code>type_id</code>, ví dụ: 2 Quyết định kết nạp khác nhau, hoặc nhiều Phiếu bổ sung hồ sơ theo từng năm):</p>
-            <ul>
-              <li>Hệ thống sẽ tự động thêm hậu tố thứ tự: <code>.1.pdf</code>, <code>.2.pdf</code>, <code>.3.pdf</code> vào tên file xuất (ví dụ: <code>05.Quyet_dinh_ket_nap_dang_vien.1.pdf</code> và <code>05.Quyet_dinh_ket_nap_dang_vien.2.pdf</code>).</li>
-              <li><strong>Ý nghĩa:</strong> Số <code>.1</code>, <code>.2</code> là <em>thứ tự các văn bản cùng loại trong hồ sơ</em>, <strong>không phải số trang</strong> của văn bản.</li>
-              <li><strong>Bảng xác nhận thứ tự:</strong> Ở cột bên phải sẽ xuất hiện bảng điều chỉnh thứ tự nhóm cùng loại kèm nút <span class="party-help-btn-tag">↑</span>, <span class="party-help-btn-tag">↓</span> và nút <span class="party-help-btn-tag">Xác nhận thứ tự tài liệu</span>. Cán bộ cần xác nhận thứ tự này trước khi tiến hành xuất tất cả.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h3>19. Theo dõi phân trang (Page coverage)</h3>
-            <p>Thanh theo dõi tiến độ phân trang cung cấp cái nhìn tổng quan về tình trạng hồ sơ, ví dụ: <code>45/50 trang nguồn đã được phân vào tài liệu (còn 5 trang chưa xếp)</code>.</p>
-            <p>Khi còn trang chưa xếp, cán bộ nên rà soát lại kỹ lưỡng:</p>
-            <ul>
-              <li>Đây có phải là một văn bản độc lập chưa tạo tài liệu?</li>
-              <li>Có phải là trang nối tiếp hoặc mặt sau của một văn bản đã tạo?</li>
-              <li>Có phải là tờ bìa, phong bì, hay trang scan thừa, trang trắng?</li>
-            </ul>
-            <p>Không nên vội vàng xóa trang khi chưa đối chiếu đầy đủ với hồ sơ giấy gốc.</p>
-          </section>
-
-          <section>
-            <h3>20. Xuất riêng từng tài liệu</h3>
-            <p>Trên thanh tiêu đề của mỗi tài liệu có nút <span class="party-help-btn-tag">Xuất tài liệu này</span>:</p>
-            <ul>
-              <li><strong>Điều kiện:</strong> Tài liệu có ít nhất một trang, đã được cán bộ chọn loại trong danh mục 104 loại, và hệ thống không đang trong quá trình xuất khác.</li>
-              <li><strong>Ưu điểm:</strong> Cán bộ có thể hoàn thiện và tải về ngay từng văn bản mà không bắt buộc phải chờ phân loại xong toàn bộ các trang khác trong tệp.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h3>21. Xuất tất cả tài liệu</h3>
-            <p>Nút <span class="party-help-btn-tag">Xuất tất cả tài liệu</span> ở thanh điều khiển bên phải cho phép đóng gói và tải về toàn bộ các tài liệu đã tạo:</p>
-            <ul>
-              <li><strong>Điều kiện:</strong> Mọi tài liệu tạo ra đều hợp lệ (có trang, đã chọn loại tài liệu, và đã xác nhận thứ tự tài liệu trùng loại nếu có).</li>
-              <li><strong>Cảnh báo trang chưa xếp:</strong> Nếu vẫn còn trang nguồn chưa được xếp vào tài liệu nào, hệ thống sẽ hiển thị thông báo nhắc nhở số trang chưa xử lý để cán bộ kiểm tra trước khi quyết định xuất file.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h3>22. Bảo toàn chất lượng file PDF nguồn</h3>
-            <p>Hệ thống áp dụng cơ chế xử lý file PDF tiên tiến:</p>
-            <ul>
-              <li><strong>Copy trực tiếp đối tượng trang (Page-object copier):</strong> Các trang lấy từ file PDF scan nguồn được trích xuất trực tiếp ở cấp độ đối tượng nội bộ của PDF, giữ nguyên vẹn 100% vector văn bản, luồng nội dung và hình ảnh scan gốc mà không làm vỡ nét hoặc giảm độ phân giải.</li>
-              <li><strong>Không tái nén toàn bộ (No rasterization):</strong> Hệ thống không biến cả file PDF thành ảnh để rồi nén lại. Hình ảnh thu nhỏ và cửa sổ xem trước chỉ là bản dựng derivative phục vụ hiển thị màn hình, không can thiệp vào dữ liệu xuất file.</li>
-              <li><strong>Xử lý ảnh mới:</strong> Các trang ảnh chụp mới hoặc chọn từ máy sẽ được tối ưu qua bộ lọc xử lý phù hợp trước khi ghép vào tệp PDF.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h3>23. Bảo mật và Quyền riêng tư tuyệt đối</h3>
-            <div class="party-help-callout privacy">
-              <p><strong>Cam kết bảo mật an toàn thông tin:</strong></p>
-              <ul>
-                <li><strong>Không OCR:</strong> Không đọc trích xuất dữ liệu chữ từ tài liệu.</li>
-                <li><strong>Không tự phân loại bằng AI:</strong> Không gửi dữ liệu tới bất kỳ dịch vụ trí tuệ nhân tạo nào.</li>
-                <li><strong>Không tải hồ sơ lên mạng:</strong> Hoàn toàn không có thao tác upload dữ liệu.</li>
-                <li><strong>Không có máy chủ xử lý dữ liệu:</strong> Mọi thuật toán chạy 100% offline ngay trên trình duyệt thiết bị của cán bộ.</li>
-              </ul>
-            </div>
-            <p><strong>Lưu ý về lưu trữ:</strong> Toàn bộ dữ liệu phiên làm việc được lưu trong bộ nhớ tạm của trình duyệt; khi đóng tab hoặc làm mới trang, dữ liệu sẽ tự động giải phóng. Cán bộ cần lưu trữ các file PDF đã tải về vào vị trí lưu trữ hồ sơ chính thức của đơn vị.</p>
-          </section>
-
-          <section>
-            <h3>24. Ví dụ quy trình thực tế từ A đến Z (File scan 36 trang)</h3>
-            <p>Để dễ hình dung, giả sử cán bộ cần xử lý một tệp scan hồ sơ đảng viên gồm <strong>36 trang</strong> chứa nhiều văn bản:</p>
-            <div class="party-help-example">
-              <ol>
-                <li><strong>Nạp file:</strong> Bấm <span class="party-help-btn-tag">Nhập PDF</span> chọn file scan 36 trang → Hệ thống nạp vào <code>Trang nguồn (36 trang · 36 chưa xếp)</code>.</li>
-                <li><strong>Tài liệu 1 (Đơn xin vào Đảng):</strong> Nhập khoảng <code>1-2</code>, bấm <span class="party-help-btn-tag">Tạo tài liệu từ trang đã chọn</span> → Chọn loại <code>03</code> sinh file <code>03.Don_xin_vao_dang.pdf</code>.</li>
-                <li><strong>Tài liệu 2 (Lý lịch):</strong> Nhập khoảng <code>3-14</code>, bấm tạo tài liệu → Chọn loại <code>02</code> sinh file <code>02.Ly_lich_cua_nguoi_xin_vao_dang.pdf</code>.</li>
-                <li><strong>Tài liệu 3 (Nghị quyết giới thiệu):</strong> Tick chọn trang <code>15</code>, bấm tạo tài liệu → Chọn loại <code>04</code> sinh file <code>04.Nghi_quyet_gioi_thieu_doan_vien_vao_dang.pdf</code>.</li>
-                <li><strong>Tài liệu 4 (Quyết định kết nạp):</strong> Nhập <code>16-17</code>, bấm tạo tài liệu → Chọn loại <code>05</code> sinh file <code>05.Quyet_dinh_ket_nap_dang_vien.pdf</code>.</li>
-                <li><strong>Chỉnh sửa trang:</strong> Kiểm tra thấy trang 17 bị xếp trước trang 16, bấm <span class="party-help-btn-tag">Sau →</span> để đưa về đúng thứ tự 16 rồi đến 17. Nếu trang 18 scan bị tối, bấm <span class="party-help-btn-tag">↺ Thay trang</span> để chụp lại ngay tại vị trí đó.</li>
-                <li><strong>Tiếp tục phân loại:</strong> Lặp lại tương tự cho các tài liệu còn lại cho đến khi thanh coverage thông báo <code>36/36 trang nguồn đã được phân vào tài liệu</code>.</li>
-                <li><strong>Xác nhận trùng loại:</strong> Nếu có 2 quyết định cùng mã <code>05</code>, kiểm tra bảng bên phải và bấm <span class="party-help-btn-tag">Xác nhận thứ tự tài liệu</span> (được đánh số <code>.1</code> và <code>.2</code>).</li>
-                <li><strong>Xuất file:</strong> Bấm <span class="party-help-btn-tag">Xuất tất cả tài liệu</span> để nhận trọn bộ các file PDF chuẩn hóa, hoàn tất hồ sơ.</li>
-              </ol>
-            </div>
-          </section>
-
-        </div>
-      </div>
-    </dialog>
     <dialog id="partyPreviewDialog" class="party-preview-dialog" aria-labelledby="partyPreviewTitle">
       <div class="party-preview-sheet">
         <header class="party-preview-head">
@@ -1026,6 +671,424 @@
     </section>
 
   </main>
+
+  <!-- Global Help — a cross-application support surface, independent of any
+       single scan mode (see docs/brain/03-decisions.md, "Hướng dẫn là
+       cross-application support surface"). Opened from the topbar button
+       (#helpBtn, always visible) or from a shortcut link inside a mode
+       (e.g. "Xem hướng dẫn Scan hồ sơ Đảng"); never tied to state.mode. -->
+  <dialog id="helpDialog" class="help-dialog" aria-labelledby="helpTitle">
+    <div class="help-sheet">
+      <header class="help-head">
+        <div>
+          <span class="party-kicker">VIGIL LENS</span>
+          <h2 id="helpTitle">Hướng dẫn sử dụng</h2>
+        </div>
+        <button id="helpClose" class="btn ghost small" type="button">Đóng</button>
+      </header>
+      <div class="help-content">
+
+        <section class="help-quickflow" aria-label="Bắt đầu nhanh">
+          <div class="help-quickflow-head">
+            <span class="help-badge">BẮT ĐẦU NHANH</span>
+            <h3>Bắt đầu nhanh</h3>
+            <p>Vigil Lens xử lý tài liệu ngay trên thiết bị. Chọn công cụ phù hợp, kiểm tra kết quả và xác nhận trước khi xuất tệp.</p>
+          </div>
+          <div class="help-quickstart-grid">
+            <button id="helpGotoDocBtn" class="help-quickstart-btn" type="button" data-help-goto-mode="document">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+              <span>Scan tài liệu</span>
+            </button>
+            <button id="helpGotoIdBtn" class="help-quickstart-btn" type="button" data-help-goto-mode="id">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="3" /><circle cx="8" cy="11" r="2.5" /></svg>
+              <span>Scan ID</span>
+            </button>
+            <button id="helpGotoPartyBtn" class="help-quickstart-btn" type="button" data-help-goto-mode="party">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 12h8M8 16h5" /></svg>
+              <span>Scan hồ sơ Đảng</span>
+            </button>
+            <button id="helpGotoWatermarkBtn" class="help-quickstart-btn" type="button" data-help-goto-mode="watermark">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 3 6.5 6.5a2.12 2.12 0 0 1 0 3l-8 8a2.12 2.12 0 0 1-3 0l-5-5a2.12 2.12 0 0 1 0-3L11 3a2.12 2.12 0 0 1 3 0Z" /></svg>
+              <span>Làm sạch chân trang</span>
+            </button>
+          </div>
+        </section>
+
+        <details class="help-section" id="helpSectionDoc">
+          <summary>Scan tài liệu</summary>
+          <div class="help-section-body">
+            <div class="help-steps-grid">
+              <div class="help-step-card"><div class="help-step-num">1</div><div class="help-step-body"><p>Chụp hoặc chọn ảnh.</p></div></div>
+              <div class="help-step-card"><div class="help-step-num">2</div><div class="help-step-body"><p>Kiểm tra mép giấy.</p></div></div>
+              <div class="help-step-card"><div class="help-step-num">3</div><div class="help-step-body"><p>Điều chỉnh 4 góc nếu cần.</p></div></div>
+              <div class="help-step-card"><div class="help-step-num">4</div><div class="help-step-body"><p>Chọn chế độ màu phù hợp.</p></div></div>
+              <div class="help-step-card"><div class="help-step-num">5</div><div class="help-step-body"><p>Kiểm tra các trang.</p></div></div>
+              <div class="help-step-card"><div class="help-step-num">6</div><div class="help-step-body"><p>Xuất PDF.</p></div></div>
+            </div>
+          </div>
+        </details>
+
+        <details class="help-section" id="helpSectionParty">
+          <summary>Scan hồ sơ Đảng</summary>
+          <div class="help-section-body">
+          <!-- TẦNG 1: QUY TRÌNH NHANH 6 BƯỚC -->
+          <div class="help-quickflow" aria-label="Quy trình nhanh 6 bước">
+            <div class="help-quickflow-head">
+              <span class="help-badge">QUY TRÌNH NHANH</span>
+              <h3>6 bước xử lý hồ sơ cơ bản</h3>
+              <p>Trình tự chuẩn để cán bộ lần đầu sử dụng có thể thao tác nhanh chóng và chính xác:</p>
+            </div>
+            <div class="help-steps-grid">
+              <div class="help-step-card">
+                <div class="help-step-num">1</div>
+                <div class="help-step-body">
+                  <strong>Nhập PDF hoặc ảnh</strong>
+                  <p>Chọn file PDF scan từ máy, chọn ảnh hoặc chụp ảnh trực tiếp. Có thể bổ sung thêm nguồn bất kỳ lúc nào.</p>
+                </div>
+              </div>
+              <div class="help-step-card">
+                <div class="help-step-num">2</div>
+                <div class="help-step-body">
+                  <strong>Kiểm tra trang nguồn</strong>
+                  <p>Xem tổng số trang và số trang chưa xếp. Bấm vào thumbnail để mở xem trước cỡ lớn kiểm tra độ nét văn bản.</p>
+                </div>
+              </div>
+              <div class="help-step-card">
+                <div class="help-step-num">3</div>
+                <div class="help-step-body">
+                  <strong>Chọn trang tạo tài liệu</strong>
+                  <p>Tick chọn từng trang hoặc nhập khoảng (ví dụ: <code>1-3</code>), rồi bấm <span class="help-btn-tag">Tạo tài liệu từ trang đã chọn</span>.</p>
+                </div>
+              </div>
+              <div class="help-step-card">
+                <div class="help-step-num">4</div>
+                <div class="help-step-body">
+                  <strong>Sắp xếp &amp; chỉnh trang</strong>
+                  <p>Đổi thứ tự trang (<span class="help-btn-tag">← Trước</span>, <span class="help-btn-tag">Sau →</span>), xoay 90°, thay trang mờ hoặc chuyển trang giữa các tài liệu.</p>
+                </div>
+              </div>
+              <div class="help-step-card">
+                <div class="help-step-num">5</div>
+                <div class="help-step-body">
+                  <strong>Chọn loại trong 104 loại</strong>
+                  <p>Tìm theo mã (<code>05</code>) hoặc tên văn bản không dấu. Phần mềm tự động tạo tên file PDF chuẩn hóa.</p>
+                </div>
+              </div>
+              <div class="help-step-card">
+                <div class="help-step-num">6</div>
+                <div class="help-step-body">
+                  <strong>Kiểm tra &amp; xuất PDF</strong>
+                  <p>Kiểm tra thanh phân trang (coverage), xác nhận thứ tự trùng loại (<code>.1</code>, <code>.2</code>) và bấm xuất riêng hoặc xuất tất cả.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TẦNG 2: HƯỚNG DẪN CHI TIẾT THEO NGHIỆP VỤ -->
+
+          <section>
+            <h3>Chức năng Scan tài liệu Đảng dùng để làm gì?</h3>
+            <p>Tính năng <strong>Scan tài liệu Đảng</strong> được thiết kế chuyên biệt phục vụ công tác văn phòng và quản lý hồ sơ đảng viên tại các cơ quan, tổ chức Đảng:</p>
+            <ul>
+              <li><strong>Nhập PDF scan &amp; ảnh chụp:</strong> Nạp các tập tài liệu scan hoặc ảnh chụp hồ sơ gốc vào hệ thống xử lý nội bộ.</li>
+              <li><strong>Tách và ghép tài liệu linh hoạt:</strong> Tách một tập file PDF scan dung lượng lớn thành nhiều văn bản riêng biệt, hoặc ghép nối các trang thuộc cùng một văn bản.</li>
+              <li><strong>Sắp xếp và biên tập trang:</strong> Hoán đổi thứ tự trang, xoay đúng chiều đọc, thay thế trang scan bị mờ hỏng hoặc bổ sung trang còn thiếu.</li>
+              <li><strong>Danh mục 104 loại tài liệu Đảng:</strong> Tra cứu nhanh theo mã số hoặc tên văn bản, tự động sinh tên file PDF chuẩn hóa theo quy định.</li>
+              <li><strong>Xuất PDF bảo toàn chất lượng:</strong> Xuất riêng từng tài liệu hoàn thành hoặc xuất toàn bộ hồ sơ mà không làm giảm độ sắc nét của văn bản gốc.</li>
+            </ul>
+            <div class="help-callout">
+              <strong>Nguyên tắc nghiệp vụ:</strong> Phần mềm <em>không sử dụng OCR</em> và <em>không tự ý phân loại hồ sơ bằng AI</em>. Cán bộ nghiệp vụ trực tiếp kiểm tra và quyết định loại tài liệu để bảo đảm tính chuẩn xác và giá trị pháp lý tuyệt đối.
+            </div>
+          </section>
+
+          <section>
+            <h3>1. Tài liệu là gì?</h3>
+            <p>Một <strong>Tài liệu</strong> là một văn bản hoàn chỉnh, độc lập trong hồ sơ Đảng (ví dụ: <em>Đơn xin vào Đảng</em>, <em>Lý lịch của người xin vào Đảng</em>, <em>Quyết định kết nạp đảng viên</em>, <em>Nghị quyết của chi bộ</em>, <em>Phiếu bổ sung hồ sơ</em>...).</p>
+            <p>Mỗi tài liệu có thể gồm một hoặc nhiều trang và sẽ được xuất thành một file PDF độc lập theo đúng tên gọi chuẩn trong danh mục 104 loại.</p>
+            <div class="help-callout warning">
+              <strong>Phân biệt quan trọng:</strong> <em>Một file PDF nạp vào không đồng nghĩa với một tài liệu.</em> Một file PDF scan từ máy quét thường chứa nhiều văn bản khác nhau ghép liền nhau. Nhiệm vụ của cán bộ là bóc tách file scan đó thành các tài liệu độc lập chuẩn hóa.
+            </div>
+          </section>
+
+          <section>
+            <h3>2. Trang nguồn là gì?</h3>
+            <p><strong>Trang nguồn</strong> là số thứ tự trang gốc trong file PDF scan hoặc ảnh ban đầu đưa vào hệ thống (ví dụ: <code>Nguồn: trang 6/30</code> nghĩa là trang thứ 6 trong tệp PDF gốc gồm 30 trang; với ảnh chụp mới sẽ hiển thị <code>Ảnh scan mới</code>).</p>
+            <p>Số trang nguồn giúp cán bộ đối chiếu tức thì với văn bản giấy gốc trên tay, đảm bảo không bỏ sót trang, không nhầm lẫn mặt sau hoặc các văn bản nối tiếp khi thao tác chia tách.</p>
+          </section>
+
+          <section>
+            <h3>3. Nhập tài liệu ban đầu và bổ sung nguồn</h3>
+            <p>Cán bộ có 3 phương thức đưa dữ liệu vào hệ thống:</p>
+            <ul>
+              <li><strong>Chụp ảnh:</strong> Bấm <span class="help-btn-tag">Chụp ảnh</span> để dùng máy ảnh thiết bị ghi lại trực tiếp các trang văn bản.</li>
+              <li><strong>Chọn ảnh:</strong> Bấm <span class="help-btn-tag">Chọn ảnh</span> để nạp các file ảnh chụp có sẵn (JPEG, PNG, WebP).</li>
+              <li><strong>Nhập PDF:</strong> Bấm <span class="help-btn-tag">Nhập PDF</span> để nạp tệp tài liệu scan sẵn từ máy tính.</li>
+            </ul>
+            <p>Trong quá trình xử lý hồ sơ, cán bộ luôn có thể bổ sung thêm trang bất cứ lúc nào qua các nút <span class="help-btn-tag">+ Thêm ảnh</span> hoặc <span class="help-btn-tag">+ Thêm PDF</span> trên thanh công cụ mà không làm ảnh hưởng đến các tài liệu đã tạo trước đó.</p>
+          </section>
+
+          <section>
+            <h3>4. Khu vực Danh sách trang nguồn</h3>
+            <p>Khu vực <strong>DANH SÁCH TRANG NGUỒN</strong> hiển thị trực quan toàn bộ các trang đã nạp vào phiên làm việc, kèm trạng thái tổng quát ở tiêu đề (ví dụ: <code>Trang nguồn (50 trang · 8 chưa xếp)</code>):</p>
+            <ul>
+              <li><strong>Tổng số trang:</strong> Tổng lượng trang có trong phiên xử lý hiện tại (ví dụ: 50 trang).</li>
+              <li><strong>Số trang chưa xếp:</strong> Số lượng trang nguồn còn lại chưa được gán vào bất kỳ tài liệu nào (ví dụ: 8 chưa xếp).</li>
+              <li><strong>Trang đã gán:</strong> Những trang đã đưa vào tài liệu sẽ hiển thị nhãn (badge) định danh tương ứng như <span class="party-assigned-badge">Tài liệu 1</span>, <span class="party-assigned-badge">Tài liệu 2</span>. Ô checkbox của trang này sẽ tự động khóa lại để chống chọn trùng lặp.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>5. Xem trước trang cỡ lớn</h3>
+            <p>Bấm trực tiếp vào hình thu nhỏ (thumbnail) của bất kỳ trang nào trong danh sách trang nguồn hoặc trong tài liệu để mở cửa sổ <strong>XEM TRƯỚC TẠI CHỖ</strong> kích thước lớn.</p>
+            <p>Trong cửa sổ xem trước, cán bộ có thể:</p>
+            <ul>
+              <li>Soi rõ từng chi tiết chữ viết, con dấu, chữ ký trên văn bản.</li>
+              <li>Chuyển nhanh qua lại giữa các trang bằng nút <span class="help-btn-tag">← Trang trước</span> và <span class="help-btn-tag">Trang sau →</span>.</li>
+              <li>Xoay trang trực tiếp bằng nút <span class="help-btn-tag">↻ Xoay</span>.</li>
+            </ul>
+            <div class="help-callout warning">
+              <strong>Lưu ý về hình ảnh xem trước:</strong> Nếu hình thu nhỏ hoặc cửa sổ xem trước hiển thị chậm hoặc báo lỗi hiển thị, <em>điều này hoàn toàn không đồng nghĩa trang PDF nguồn bị mất hay hư hại</em>. Cán bộ không cần xóa trang vì lý do hiển thị xem trước; toàn bộ dữ liệu gốc của trang PDF vẫn được bảo toàn nguyên vẹn khi xuất file.
+            </div>
+          </section>
+
+          <section>
+            <h3>6. Chọn trang và tạo tài liệu</h3>
+            <p>Để tạo một tài liệu mới từ các trang nguồn, cán bộ có thể sử dụng các cách chọn trang linh hoạt:</p>
+            <ul>
+              <li><strong>Tick chọn từng trang:</strong> Bấm vào ô vuông checkbox trên góc mỗi thẻ trang nguồn mong muốn.</li>
+              <li><strong>Chọn theo khoảng trang:</strong> Nhập khoảng trang vào ô chọn khoảng, ví dụ: <code>1-3</code> hoặc <code>17-22</code> rồi bấm <span class="help-btn-tag">Chọn khoảng</span>.</li>
+              <li><strong>Chọn trang cách quãng hoặc kết hợp:</strong> Nhập các trang rời như <code>17,19</code> hoặc kết hợp nhiều dải trang như <code>1-3, 5, 8-10</code> để chọn đồng thời nhiều vị trí.</li>
+              <li><strong>Chọn tất cả:</strong> Bấm nút <span class="help-btn-tag">Chọn tất cả</span> để chọn nhanh toàn bộ những trang nguồn đang còn khả dụng (chưa được đưa vào tài liệu nào).</li>
+            </ul>
+            <p>Sau khi đã chọn đúng các trang thuộc cùng một văn bản, bấm nút <span class="help-btn-tag">Tạo tài liệu từ trang đã chọn</span>. Hệ thống sẽ gom các trang đó thành một <strong>Tài liệu N</strong> mới và tự động sắp xếp theo thứ tự trang nguồn tăng dần.</p>
+          </section>
+
+          <section>
+            <h3>7. Cách chia 1 PDF thành nhiều tài liệu</h3>
+            <p>Khi đưa một tệp PDF scan lớn chứa nhiều văn bản nghiệp vụ vào hệ thống (ví dụ: tệp 20 trang chứa 4 văn bản khác nhau), quy trình tách diễn ra như sau:</p>
+            <ol>
+              <li>Chọn các trang của văn bản thứ nhất (ví dụ: trang <code>1-3</code>), bấm <span class="help-btn-tag">Tạo tài liệu từ trang đã chọn</span> → Tạo thành <strong>Tài liệu 1</strong>.</li>
+              <li>Chọn các trang của văn bản thứ hai (ví dụ: trang <code>4-10</code>), bấm tạo tài liệu → Tạo thành <strong>Tài liệu 2</strong>.</li>
+              <li>Chọn trang của văn bản thứ ba (ví dụ: trang <code>11</code>), bấm tạo tài liệu → Tạo thành <strong>Tài liệu 3</strong>.</li>
+              <li>Chọn các trang của văn bản thứ tư (ví dụ: trang <code>12-13</code>), bấm tạo tài liệu → Tạo thành <strong>Tài liệu 4</strong>.</li>
+            </ol>
+            <p>Các trang đã phân loại sẽ tự động gắn nhãn và không thể bị chọn trùng. Cán bộ có thể chọn loại tài liệu và bấm <span class="help-btn-tag">Xuất tài liệu này</span> ngay cho từng tài liệu mà không cần đợi phân loại xong toàn bộ tệp.</p>
+          </section>
+
+          <section>
+            <h3>8. Sắp xếp thứ tự trang bên trong tài liệu</h3>
+            <p>Trên mỗi thẻ trang trong tài liệu có hai nút điều hướng thứ tự:</p>
+            <ul>
+              <li><span class="help-btn-tag">← Trước</span>: Di chuyển trang hiện tại lên trước một vị trí.</li>
+              <li><span class="help-btn-tag">Sau →</span>: Di chuyển trang hiện tại về sau một vị trí.</li>
+            </ul>
+            <p><em>Ví dụ thực tế:</em> Nếu một tài liệu scan bị đảo lộn trang theo thứ tự <code>5 → 7 → 6</code>, cán bộ bấm nút <span class="help-btn-tag">← Trước</span> trên trang 6 để đưa tài liệu về đúng thứ tự liền mạch <code>5 → 6 → 7</code>.</p>
+            <p>Cán bộ cần lưu ý kiểm tra kỹ thứ tự đối với các văn bản nhiều trang, bìa trước, bìa sau và các trang phụ lục đính kèm.</p>
+          </section>
+
+          <section>
+            <h3>9. Ghép với trước</h3>
+            <p>Nút <span class="help-btn-tag">Ghép với trước</span> nằm trên thanh tiêu đề của tài liệu:</p>
+            <p>Khi bấm nút này, toàn bộ các trang của tài liệu hiện tại sẽ được gộp nối tiếp vào cuối của tài liệu đứng ngay phía trước nó. Tài liệu hiện tại sau đó sẽ được gỡ bỏ.</p>
+            <p><em>Ví dụ:</em> Tài liệu 1 đang có các trang 1, 2, 3; Tài liệu 2 có các trang 4, 5. Khi bấm <span class="help-btn-tag">Ghép với trước</span> tại Tài liệu 2, toàn bộ trang 4, 5 sẽ được chuyển vào cuối Tài liệu 1, tạo thành một tài liệu hoàn chỉnh gồm các trang 1, 2, 3, 4, 5.</p>
+          </section>
+
+          <section>
+            <h3>10. Ghép với sau</h3>
+            <p>Nút <span class="help-btn-tag">Ghép với sau</span> nằm trên thanh tiêu đề của tài liệu:</p>
+            <p>Khi bấm nút này, toàn bộ các trang của tài liệu đứng liền kề phía sau sẽ được gộp vào cuối của tài liệu hiện tại. Tài liệu phía sau sau đó sẽ được gỡ bỏ.</p>
+            <p><em>Ví dụ:</em> Đứng tại Tài liệu 1, bấm <span class="help-btn-tag">Ghép với sau</span> thì toàn bộ các trang của Tài liệu 2 sẽ được chuyển vào cuối Tài liệu 1.</p>
+          </section>
+
+          <section>
+            <h3>11. Chuyển trang</h3>
+            <p>Khi một trang bị đưa nhầm sang tài liệu khác (ví dụ trang 4 thuộc Tài liệu 2 nhưng vô tình bị gán vào Tài liệu 1):</p>
+            <ol>
+              <li>Tìm đến thẻ trang bị nhầm trong tài liệu.</li>
+              <li>Tại ô lựa chọn <span class="help-btn-tag">Chuyển trang…</span> trên thẻ trang, bấm chọn tài liệu đích mong muốn (ví dụ: chuyển sang <em>Tài liệu 2</em>).</li>
+              <li>Trang sẽ được chuyển ngay sang tài liệu đích. Sau khi chuyển, cán bộ cần mở tài liệu đích và kiểm tra, sắp xếp lại thứ tự trang nếu cần.</li>
+            </ol>
+          </section>
+
+          <section>
+            <h3>12. Xoay trang</h3>
+            <p>Bấm nút <span class="help-btn-tag">↻ Xoay</span> trên thẻ trang hoặc trong trình xem trước lớn.</p>
+            <p>Mỗi lần bấm, trang sẽ xoay đúng <strong>90 độ theo chiều kim đồng hồ</strong>. Cán bộ bấm liên tiếp cho đến khi trang văn bản đứng thẳng đúng chiều đọc tự nhiên.</p>
+          </section>
+
+          <section>
+            <h3>13. Thay trang</h3>
+            <p>Bấm nút <span class="help-btn-tag">↺ Thay trang</span> trên thẻ trang khi phát hiện trang scan bị mờ, lệch góc, mất góc chữ hoặc sai nội dung.</p>
+            <p>Hệ thống cho phép cán bộ chụp lại bằng camera hoặc chọn file ảnh/PDF mới để thay thế ngay tại chỗ. Trang mới sẽ được đưa vào <strong>đúng vị trí hiện tại</strong> của trang cũ trong tài liệu mà không cần phải xóa đi hay dựng lại tài liệu từ đầu.</p>
+          </section>
+
+          <section>
+            <h3>14. Thêm trang</h3>
+            <p>Để bổ sung trang vào tài liệu, cán bộ có hai phương thức:</p>
+            <ul>
+              <li><span class="help-btn-tag">+ Thêm sau</span> trên thẻ trang: Chèn thêm trang mới vào ngay sau trang đang đứng.</li>
+              <li><span class="help-btn-tag">+ Thêm trang</span> trên thanh công cụ tài liệu: Bổ sung trang mới vào cuối tài liệu.</li>
+            </ul>
+            <p>Có thể thêm từ camera chụp trực tiếp hoặc từ file ảnh/PDF có sẵn. Sau khi thêm, hãy kiểm tra lại thứ tự các trang trong tài liệu.</p>
+          </section>
+
+          <section>
+            <h3>15. Xóa trang khỏi tài liệu</h3>
+            <p>Bấm nút <span class="help-btn-tag">Xóa khỏi tài liệu</span> (hoặc <span class="help-btn-tag">Xóa</span>) trên thẻ trang nếu trang đó bị scan thừa hoặc gán nhầm.</p>
+            <div class="help-callout">
+              <strong>Hành vi an toàn dữ liệu:</strong> Thao tác này <em>chỉ gỡ bỏ trang ra khỏi tài liệu hiện tại</em> và hoàn trả trang đó về trạng thái chưa gán trong danh sách trang nguồn. File scan gốc trên máy tính của cán bộ <strong>hoàn toàn không bị xóa hay sửa đổi</strong>. Trang được giải phóng có thể dùng để tạo tài liệu khác bất cứ lúc nào.
+            </div>
+          </section>
+
+          <section>
+            <h3>16. Xóa tài liệu</h3>
+            <p>Nếu gom nhầm hoặc muốn phân chia lại toàn bộ một văn bản, cán bộ bấm nút <span class="help-btn-tag">Xóa tài liệu</span> tại tiêu đề của tài liệu đó.</p>
+            <p>Khi xóa tài liệu, toàn bộ các trang bên trong sẽ được giải phóng nguyên vẹn và quay trở lại danh sách trang nguồn chưa gán. Cán bộ có thể yên tâm chọn lại từ đầu mà không lo mất mát dữ liệu.</p>
+          </section>
+
+          <section>
+            <h3>17. Chọn loại tài liệu (Danh mục 104 loại)</h3>
+            <p>Tại ô tìm kiếm <strong>Loại tài liệu do cán bộ chọn</strong> trên mỗi tài liệu:</p>
+            <ul>
+              <li>Cán bộ có thể tìm kiếm nhanh theo mã số (ví dụ: <code>05</code>), theo tên văn bản có dấu hoặc không dấu (ví dụ: <code>quyet dinh ket nap</code>, <code>ly lich</code>, <code>don xin vao dang</code>).</li>
+              <li>Khi chọn một loại trong danh mục 104 loại chuẩn, phần mềm sẽ tự động sinh tên file chuẩn hóa (canonical filename), ví dụ: <code>05.Quyet_dinh_ket_nap_dang_vien.pdf</code>.</li>
+            </ul>
+            <div class="help-callout">
+              <strong>Lưu ý:</strong> Cán bộ không cần tự gõ tên file thủ công. Hệ thống không tự động phân loại bằng AI để đảm bảo hồ sơ được thẩm định chính xác tuyệt đối bởi cán bộ quản lý.
+            </div>
+          </section>
+
+          <section>
+            <h3>18. Nhiều tài liệu cùng loại và Xác nhận thứ tự</h3>
+            <p>Trong một bộ hồ sơ, có thể xuất hiện từ 2 tài liệu trở lên có cùng một loại (cùng mã <code>type_id</code>, ví dụ: 2 Quyết định kết nạp khác nhau, hoặc nhiều Phiếu bổ sung hồ sơ theo từng năm):</p>
+            <ul>
+              <li>Hệ thống sẽ tự động thêm hậu tố thứ tự: <code>.1.pdf</code>, <code>.2.pdf</code>, <code>.3.pdf</code> vào tên file xuất (ví dụ: <code>05.Quyet_dinh_ket_nap_dang_vien.1.pdf</code> và <code>05.Quyet_dinh_ket_nap_dang_vien.2.pdf</code>).</li>
+              <li><strong>Ý nghĩa:</strong> Số <code>.1</code>, <code>.2</code> là <em>thứ tự các văn bản cùng loại trong hồ sơ</em>, <strong>không phải số trang</strong> của văn bản.</li>
+              <li><strong>Bảng xác nhận thứ tự:</strong> Ở cột bên phải sẽ xuất hiện bảng điều chỉnh thứ tự nhóm cùng loại kèm nút <span class="help-btn-tag">↑</span>, <span class="help-btn-tag">↓</span> và nút <span class="help-btn-tag">Xác nhận thứ tự tài liệu</span>. Cán bộ cần xác nhận thứ tự này trước khi tiến hành xuất tất cả.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>19. Theo dõi phân trang (Page coverage)</h3>
+            <p>Thanh theo dõi tiến độ phân trang cung cấp cái nhìn tổng quan về tình trạng hồ sơ, ví dụ: <code>45/50 trang nguồn đã được phân vào tài liệu (còn 5 trang chưa xếp)</code>.</p>
+            <p>Khi còn trang chưa xếp, cán bộ nên rà soát lại kỹ lưỡng:</p>
+            <ul>
+              <li>Đây có phải là một văn bản độc lập chưa tạo tài liệu?</li>
+              <li>Có phải là trang nối tiếp hoặc mặt sau của một văn bản đã tạo?</li>
+              <li>Có phải là tờ bìa, phong bì, hay trang scan thừa, trang trắng?</li>
+            </ul>
+            <p>Không nên vội vàng xóa trang khi chưa đối chiếu đầy đủ với hồ sơ giấy gốc.</p>
+          </section>
+
+          <section>
+            <h3>20. Xuất riêng từng tài liệu</h3>
+            <p>Trên thanh tiêu đề của mỗi tài liệu có nút <span class="help-btn-tag">Xuất tài liệu này</span>:</p>
+            <ul>
+              <li><strong>Điều kiện:</strong> Tài liệu có ít nhất một trang, đã được cán bộ chọn loại trong danh mục 104 loại, và hệ thống không đang trong quá trình xuất khác.</li>
+              <li><strong>Ưu điểm:</strong> Cán bộ có thể hoàn thiện và tải về ngay từng văn bản mà không bắt buộc phải chờ phân loại xong toàn bộ các trang khác trong tệp.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>21. Xuất tất cả tài liệu</h3>
+            <p>Nút <span class="help-btn-tag">Xuất tất cả tài liệu</span> ở thanh điều khiển bên phải cho phép đóng gói và tải về toàn bộ các tài liệu đã tạo:</p>
+            <ul>
+              <li><strong>Điều kiện:</strong> Mọi tài liệu tạo ra đều hợp lệ (có trang, đã chọn loại tài liệu, và đã xác nhận thứ tự tài liệu trùng loại nếu có).</li>
+              <li><strong>Cảnh báo trang chưa xếp:</strong> Nếu vẫn còn trang nguồn chưa được xếp vào tài liệu nào, hệ thống sẽ hiển thị thông báo nhắc nhở số trang chưa xử lý để cán bộ kiểm tra trước khi quyết định xuất file.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>22. Bảo toàn chất lượng file PDF nguồn</h3>
+            <p>Hệ thống áp dụng cơ chế xử lý file PDF tiên tiến:</p>
+            <ul>
+              <li><strong>Copy trực tiếp đối tượng trang (Page-object copier):</strong> Các trang lấy từ file PDF scan nguồn được trích xuất trực tiếp ở cấp độ đối tượng nội bộ của PDF, giữ nguyên vẹn 100% vector văn bản, luồng nội dung và hình ảnh scan gốc mà không làm vỡ nét hoặc giảm độ phân giải.</li>
+              <li><strong>Không tái nén toàn bộ (No rasterization):</strong> Hệ thống không biến cả file PDF thành ảnh để rồi nén lại. Hình ảnh thu nhỏ và cửa sổ xem trước chỉ là bản dựng derivative phục vụ hiển thị màn hình, không can thiệp vào dữ liệu xuất file.</li>
+              <li><strong>Xử lý ảnh mới:</strong> Các trang ảnh chụp mới hoặc chọn từ máy sẽ được tối ưu qua bộ lọc xử lý phù hợp trước khi ghép vào tệp PDF.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>23. Bảo mật và Quyền riêng tư tuyệt đối</h3>
+            <div class="help-callout privacy">
+              <p><strong>Cam kết bảo mật an toàn thông tin:</strong></p>
+              <ul>
+                <li><strong>Không OCR:</strong> Không đọc trích xuất dữ liệu chữ từ tài liệu.</li>
+                <li><strong>Không tự phân loại bằng AI:</strong> Không gửi dữ liệu tới bất kỳ dịch vụ trí tuệ nhân tạo nào.</li>
+                <li><strong>Không tải hồ sơ lên mạng:</strong> Hoàn toàn không có thao tác upload dữ liệu.</li>
+                <li><strong>Không có máy chủ xử lý dữ liệu:</strong> Mọi thuật toán chạy 100% offline ngay trên trình duyệt thiết bị của cán bộ.</li>
+              </ul>
+            </div>
+            <p><strong>Lưu ý về lưu trữ:</strong> Toàn bộ dữ liệu phiên làm việc được lưu trong bộ nhớ tạm của trình duyệt; khi đóng tab hoặc làm mới trang, dữ liệu sẽ tự động giải phóng. Cán bộ cần lưu trữ các file PDF đã tải về vào vị trí lưu trữ hồ sơ chính thức của đơn vị.</p>
+          </section>
+
+          <section>
+            <h3>24. Ví dụ quy trình thực tế từ A đến Z (File scan 36 trang)</h3>
+            <p>Để dễ hình dung, giả sử cán bộ cần xử lý một tệp scan hồ sơ đảng viên gồm <strong>36 trang</strong> chứa nhiều văn bản:</p>
+            <div class="help-example">
+              <ol>
+                <li><strong>Nạp file:</strong> Bấm <span class="help-btn-tag">Nhập PDF</span> chọn file scan 36 trang → Hệ thống nạp vào <code>Trang nguồn (36 trang · 36 chưa xếp)</code>.</li>
+                <li><strong>Tài liệu 1 (Đơn xin vào Đảng):</strong> Nhập khoảng <code>1-2</code>, bấm <span class="help-btn-tag">Tạo tài liệu từ trang đã chọn</span> → Chọn loại <code>03</code> sinh file <code>03.Don_xin_vao_dang.pdf</code>.</li>
+                <li><strong>Tài liệu 2 (Lý lịch):</strong> Nhập khoảng <code>3-14</code>, bấm tạo tài liệu → Chọn loại <code>02</code> sinh file <code>02.Ly_lich_cua_nguoi_xin_vao_dang.pdf</code>.</li>
+                <li><strong>Tài liệu 3 (Nghị quyết giới thiệu):</strong> Tick chọn trang <code>15</code>, bấm tạo tài liệu → Chọn loại <code>04</code> sinh file <code>04.Nghi_quyet_gioi_thieu_doan_vien_vao_dang.pdf</code>.</li>
+                <li><strong>Tài liệu 4 (Quyết định kết nạp):</strong> Nhập <code>16-17</code>, bấm tạo tài liệu → Chọn loại <code>05</code> sinh file <code>05.Quyet_dinh_ket_nap_dang_vien.pdf</code>.</li>
+                <li><strong>Chỉnh sửa trang:</strong> Kiểm tra thấy trang 17 bị xếp trước trang 16, bấm <span class="help-btn-tag">Sau →</span> để đưa về đúng thứ tự 16 rồi đến 17. Nếu trang 18 scan bị tối, bấm <span class="help-btn-tag">↺ Thay trang</span> để chụp lại ngay tại vị trí đó.</li>
+                <li><strong>Tiếp tục phân loại:</strong> Lặp lại tương tự cho các tài liệu còn lại cho đến khi thanh coverage thông báo <code>36/36 trang nguồn đã được phân vào tài liệu</code>.</li>
+                <li><strong>Xác nhận trùng loại:</strong> Nếu có 2 quyết định cùng mã <code>05</code>, kiểm tra bảng bên phải và bấm <span class="help-btn-tag">Xác nhận thứ tự tài liệu</span> (được đánh số <code>.1</code> và <code>.2</code>).</li>
+                <li><strong>Xuất file:</strong> Bấm <span class="help-btn-tag">Xuất tất cả tài liệu</span> để nhận trọn bộ các file PDF chuẩn hóa, hoàn tất hồ sơ.</li>
+              </ol>
+            </div>
+          </section>
+          </div>
+        </details>
+
+        <details class="help-section" id="helpSectionId">
+          <summary>Scan ID</summary>
+          <div class="help-section-body">
+            <div class="help-steps-grid">
+              <div class="help-step-card"><div class="help-step-num">1</div><div class="help-step-body"><p>Chọn Mặt trước.</p></div></div>
+              <div class="help-step-card"><div class="help-step-num">2</div><div class="help-step-body"><p>Chụp ảnh hoặc chọn ảnh từ thiết bị.</p></div></div>
+              <div class="help-step-card"><div class="help-step-num">3</div><div class="help-step-body"><p>Kiểm tra 4 góc.</p></div></div>
+              <div class="help-step-card"><div class="help-step-num">4</div><div class="help-step-body"><p>Nếu nhận diện mép chưa đúng, kéo các điểm vào đúng 4 góc giấy.</p></div></div>
+              <div class="help-step-card"><div class="help-step-num">5</div><div class="help-step-body"><p>Xác nhận mặt trước.</p></div></div>
+              <div class="help-step-card"><div class="help-step-num">6</div><div class="help-step-body"><p>Làm tương tự với mặt sau.</p></div></div>
+              <div class="help-step-card"><div class="help-step-num">7</div><div class="help-step-body"><p>Xuất kết quả.</p></div></div>
+            </div>
+            <div class="help-callout">
+              <strong>Lưu ý:</strong> Chụp đủ sáng, tránh lóa, để đủ 4 góc trong khung hình. Không cần crop ảnh trước khi đưa vào Vigil Lens.
+            </div>
+          </div>
+        </details>
+
+        <details class="help-section" id="helpSectionWatermark">
+          <summary>Làm sạch chân trang</summary>
+          <div class="help-section-body">
+            <p>Dùng để làm sạch phần chữ hoặc logo không mong muốn ở vùng chân trang của bản scan.</p>
+            <ul>
+              <li>Chọn đúng vùng cần xử lý.</li>
+              <li>Kiểm tra bản xem trước trước khi xác nhận.</li>
+              <li>Người dùng là người quyết định kết quả cuối cùng.</li>
+            </ul>
+          </div>
+        </details>
+
+        <details class="help-section" id="helpSectionTips">
+          <summary>Mẹo để scan rõ và chính xác</summary>
+          <div class="help-section-body">
+            <ul>
+              <li>Chụp ở nơi đủ sáng, tránh ngược sáng.</li>
+              <li>Tránh lóa đèn hoặc bóng đổ lên giấy.</li>
+              <li>Đặt camera thẳng góc với mặt giấy, giữ đủ 4 góc trong khung hình.</li>
+              <li>Giữ điện thoại ổn định khi chụp để tránh ảnh bị mờ.</li>
+              <li>Nếu góc nhận diện tự động chưa đúng, luôn có thể kéo tay lại cho chính xác.</li>
+            </ul>
+          </div>
+        </details>
+
+      </div>
+    </div>
+  </dialog>
+
 
   <!-- Hidden Native Inputs -->
   <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />

@@ -130,6 +130,15 @@ function makeCanvasEl() {
   return el;
 }
 
+function makeDialogEl() {
+  const el = makeEl();
+  el.tagName = 'DIALOG';
+  el.open = false;
+  el.showModal = function () { this.open = true; };
+  el.close = function () { this.open = false; };
+  return el;
+}
+
 class TestBlob {
   constructor(parts = [], opts = {}) {
     const chunks = (parts || []).map(p => {
@@ -201,13 +210,16 @@ const ELEMENT_IDS = [
   'modeSelect', 'modeDocBtn', 'modeIdBtn', 'switchModeBtn',
   'idWorkspace', 'idStepBadge', 'idStepHint', 'idChooseBtn', 'idCameraBtn', 'idFileInput', 'idCameraInput',
   'idBackStepBtn', 'idConfirmBtn', 'idEditorSlot', 'idPreviewSection', 'idPreviewCanvas',
-  'idEditFrontBtn', 'idEditBackBtn', 'idExportBtn', 'idExportProgress', 'idProgressBar', 'idProgressLabel', 'idExportNotice',
+  'idEditFrontBtn', 'idEditBackBtn', 'idExportBtn', 'idExportProgress', 'idProgressBar', 'idProgressLabel', 'idExportNotice',,
+  // Global Help (cross-application, see docs/brain/03-decisions.md)
+  'helpBtn', 'helpDialog', 'helpClose', 'partyHelpLinkEmpty', 'partyHelpLinkToolbar', 'helpGotoDocBtn', 'helpGotoIdBtn', 'helpGotoPartyBtn', 'helpGotoWatermarkBtn'
 ];
 
 function buildSandbox(documentDetectorStub) {
   const elementsById = {};
   const CANVAS_IDS = new Set(['editorCanvas', 'idPreviewCanvas']);
-  for (const id of ELEMENT_IDS) elementsById[id] = CANVAS_IDS.has(id) ? makeCanvasEl() : makeEl();
+  const DIALOG_IDS = new Set(['helpDialog']);
+  for (const id of ELEMENT_IDS) elementsById[id] = CANVAS_IDS.has(id) ? makeCanvasEl() : DIALOG_IDS.has(id) ? makeDialogEl() : makeEl();
   elementsById.editorCanvas.parentElement = makeEl();
   elementsById.idPreviewCanvas.parentElement = makeEl();
   elementsById.fileInput.files = [];

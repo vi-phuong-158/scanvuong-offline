@@ -25,7 +25,14 @@
     idPreviewSection: $('#idPreviewSection'), idPreviewCanvas: $('#idPreviewCanvas'),
     idEditFrontBtn: $('#idEditFrontBtn'), idEditBackBtn: $('#idEditBackBtn'), idExportBtn: $('#idExportBtn'),
     idExportProgress: $('#idExportProgress'), idProgressBar: $('#idProgressBar'), idProgressLabel: $('#idProgressLabel'), idExportNotice: $('#idExportNotice'),
-    updateBanner: $('#updateBanner'), updateBtn: $('#updateBtn'), updateDismiss: $('#updateDismiss')
+    updateBanner: $('#updateBanner'), updateBtn: $('#updateBtn'), updateDismiss: $('#updateDismiss'),
+    // Global Help — cross-application, not owned by any single mode. See
+    // docs/brain/03-decisions.md ("Hướng dẫn là cross-application support
+    // surface, không thuộc riêng Scan hồ sơ Đảng").
+    helpBtn: $('#helpBtn'), helpDialog: $('#helpDialog'), helpClose: $('#helpClose'),
+    partyHelpLinkEmpty: $('#partyHelpLinkEmpty'), partyHelpLinkToolbar: $('#partyHelpLinkToolbar'),
+    helpGotoDocBtn: $('#helpGotoDocBtn'), helpGotoIdBtn: $('#helpGotoIdBtn'),
+    helpGotoPartyBtn: $('#helpGotoPartyBtn'), helpGotoWatermarkBtn: $('#helpGotoWatermarkBtn')
   };
 
   const state = {
@@ -1290,6 +1297,50 @@
     if (mode === 'watermark') window.VigilLensWatermark?.activate();
   }
 
+  // Confirms (when there's work to lose) and tears down whatever mode is
+  // currently active, returning to the mode-select screen. Shared by
+  // switchModeBtn and the Help dialog's quick-start shortcuts — both need the
+  // exact same "don't silently drop an in-progress scan" guard before calling
+  // enterMode() on a different mode. Returns false (does nothing) if the user
+  // declined the confirm prompt.
+  function leaveActiveModeWithConfirm() {
+    const hasDocWork = state.mode === 'document' && state.pages.length > 0;
+    const hasIdWork = state.mode === 'id' && (state.idScan.front || state.idScan.back);
+    const hasPartyWork = state.mode === 'party' && !!window.VigilLensParty?.hasWork();
+    const hasWatermarkWork = state.mode === 'watermark' && !!window.VigilLensWatermark?.hasWork();
+    if ((hasDocWork || hasIdWork || hasPartyWork || hasWatermarkWork) && !confirm('Chuyển chế độ sẽ xóa ảnh đang xử lý. Tiếp tục?')) return false;
+    if (state.mode === 'document') { state.pages.forEach(p => URL.revokeObjectURL(p.url)); state.pages = []; state.selectedId = null; }
+    if (state.mode === 'id') resetIdScan();
+    if (state.mode === 'party') window.VigilLensParty?.deactivate();
+    if (state.mode === 'watermark') window.VigilLensWatermark?.deactivate();
+    releaseImage(state.preview.image);
+    state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
+    state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';
+    state.mode = null;
+    renderModeShell();
+    return true;
+  }
+
+  // ---------- Global Help — independent of state.mode, never touches it
+  // except via leaveActiveModeWithConfirm() when a quick-start shortcut asks
+  // to jump straight into a tool. Opening/closing Help never reads or
+  // mutates any scan-session state, so a session in progress survives
+  // opening Help untouched (see docs/brain/03-decisions.md).
+  function openHelp(sectionId) {
+    if (!els.helpDialog.open) els.helpDialog.showModal();
+    if (sectionId) {
+      const target = $('#' + sectionId);
+      if (target) {
+        if ('open' in target) target.open = true;
+        target.scrollIntoView?.({ block: 'start' });
+      }
+    }
+  }
+
+  function closeHelp() {
+    if (els.helpDialog.open) els.helpDialog.close();
+  }
+
   function updateIdShell() {
     if (state.mode !== 'id') return;
     const s = state.idScan;
@@ -1446,23 +1497,26 @@
   if (els.modePartyBtn) els.modePartyBtn.addEventListener('click', () => { if (state.busy) return; enterMode('party'); });
   if (els.modeWatermarkBtn) els.modeWatermarkBtn.addEventListener('click', () => { if (state.busy) return; enterMode('watermark'); });
 
-  els.switchModeBtn.addEventListener('click', () => {
+  els.switchModeBtn.addEventListener('click', () => { if (state.busy) return; leaveActiveModeWithConfirm(); });
+
+  // Help is a cross-application surface: reachable from the topbar in every
+  // mode, and from a shortcut link inside Scan hồ sơ Đảng. Neither ever
+  // touches state.mode directly.
+  els.helpBtn.addEventListener('click', () => openHelp());
+  els.helpClose.addEventListener('click', closeHelp);
+  els.helpDialog.addEventListener('click', event => { if (event.target === els.helpDialog) closeHelp(); });
+  els.partyHelpLinkEmpty.addEventListener('click', () => openHelp('helpSectionParty'));
+  els.partyHelpLinkToolbar.addEventListener('click', () => openHelp('helpSectionParty'));
+  function helpQuickstartTo(mode) {
     if (state.busy) return;
-    const hasDocWork = state.mode === 'document' && state.pages.length > 0;
-    const hasIdWork = state.mode === 'id' && (state.idScan.front || state.idScan.back);
-    const hasPartyWork = state.mode === 'party' && !!window.VigilLensParty?.hasWork();
-    const hasWatermarkWork = state.mode === 'watermark' && !!window.VigilLensWatermark?.hasWork();
-    if ((hasDocWork || hasIdWork || hasPartyWork || hasWatermarkWork) && !confirm('Chuyển chế độ sẽ xóa ảnh đang xử lý. Tiếp tục?')) return;
-    if (state.mode === 'document') { state.pages.forEach(p => URL.revokeObjectURL(p.url)); state.pages = []; state.selectedId = null; }
-    if (state.mode === 'id') resetIdScan();
-    if (state.mode === 'party') window.VigilLensParty?.deactivate();
-    if (state.mode === 'watermark') window.VigilLensWatermark?.deactivate();
-    releaseImage(state.preview.image);
-    state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
-    state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';
-    state.mode = null;
-    renderModeShell();
-  });
+    closeHelp();
+    if (!leaveActiveModeWithConfirm()) return;
+    enterMode(mode);
+  }
+  els.helpGotoDocBtn.addEventListener('click', () => helpQuickstartTo('document'));
+  els.helpGotoIdBtn.addEventListener('click', () => helpQuickstartTo('id'));
+  els.helpGotoPartyBtn.addEventListener('click', () => helpQuickstartTo('party'));
+  els.helpGotoWatermarkBtn.addEventListener('click', () => helpQuickstartTo('watermark'));
 
   els.idChooseBtn.addEventListener('click', () => { if (state.busy) return; els.idFileInput.click(); });
   els.idCameraBtn.addEventListener('click', () => { if (state.busy) return; els.idCameraInput.click(); });
