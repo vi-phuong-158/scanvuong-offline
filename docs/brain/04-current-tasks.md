@@ -5,14 +5,10 @@
 ---
 
 ## Đang làm
- 
-- **PR #12: Lossless CamScanner Watermark Stripping & Final Defect Closure**: Đóng toàn bộ các lỗi tồn đọng:
-  1. MediaBox/CropBox/Rotate parser hardening cho cả direct & indirect objects, bỏ qua `/CropBox null`, và định vị thẻ đóng dictionary chuẩn.
-  2. False-positive safety cho bộ bóc tách watermark CamScanner: kiểm tra tỷ lệ khung hình 2.3–3.2, yêu cầu ảnh quét chính $\ge 500$k px và gấp $\ge 8\times$, phân tích ma trận `cm` trong cửa sổ lookback 250 ký tự tại lề dưới $\le 20\%$, kích thước hiển thị $20\le W\le 220, 5\le H\le 70$, loại bỏ fallback regex nguy hiểm.
-  3. Làm sạch từ điển `/Resources` và inline vào trang, loại bỏ triệt để đối tượng watermark khỏi file xuất ra, bảo toàn bit-for-bit nguyên vẹn ảnh quét chính.
-  4. Mở rộng bộ kiểm thử 10 negative regression test cases và CI static validation workflow.
-  5. Cập nhật Hướng dẫn sử dụng người dùng cho cả 4 chế độ làm việc.
- 
+
+- **PR #12 (Watermark Stripping): đã đóng**, xem `06-ai-working-log.md` các entry 2026-09-04.
+- **[2026-09-05] Giảm dung lượng PDF offline — mode thứ 5 + tích hợp Party Mode**: hoàn thành, xem entry đầu `06-ai-working-log.md` (2026-09-05) và quyết định kỹ thuật trong `03-decisions.md`. Còn 2 known limitation không chặn merge: `exportAll()` không có cảnh báo >20MB theo từng file (chỉ `exportSingleDocument()`), và chưa nghiệm thu thiết bị di động thật.
+
 ---
 
 ## Chờ làm (backlog)

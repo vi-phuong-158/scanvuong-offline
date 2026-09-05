@@ -38,11 +38,20 @@ jobs:
       - name: node --check watermark-mode.js
         run: node --check watermark-mode.js
 
+      - name: node --check pdf-compress.js
+        run: node --check pdf-compress.js
+
+      - name: node --check compress-mode.js
+        run: node --check compress-mode.js
+
       - name: Regression harness (Party Mode PDF copy / hybrid / taxonomy)
         run: node scripts/regression_party_mode.cjs
 
       - name: Regression harness (Lossless Watermark Stripping)
         run: node scripts/regression_watermark.cjs
+
+      - name: Regression harness (PdfCompress engine — rounds/floor/page-count)
+        run: node scripts/regression_pdf_compress.cjs
 
       - name: node --check sw.js
         run: node --check sw.js
@@ -77,6 +86,9 @@ jobs:
 
       - name: Chromium Party Mode UI acceptance (mobile + desktop)
         run: node scripts/acceptance_party_ui.cjs
+
+      - name: Chromium PDF compression acceptance (Compress mode + Party >20MB detour)
+        run: node scripts/acceptance_pdf_compress.cjs
 
       - name: Mobile touch-target regression (>=44px hit areas across 5 viewports)
         run: node scripts/test_touch_targets.cjs

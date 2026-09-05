@@ -17,15 +17,23 @@
     viewerDialog: $('partyPreviewDialog'), viewerCanvas: $('partyPreviewCanvas'), viewerImage: $('partyPreviewImage'),
     viewerTitle: $('partyPreviewTitle'), viewerMeta: $('partyPreviewMeta'), viewerStatus: $('partyPreviewStatus'),
     viewerPrev: $('partyPreviewPrev'), viewerNext: $('partyPreviewNext'), viewerRotate: $('partyPreviewRotate'),
-    viewerClose: $('partyPreviewClose')
+    viewerClose: $('partyPreviewClose'),
+    largeFileDialog: $('partyLargeFileDialog'), largeFileStatus: $('partyLargeFileStatus'),
+    largeOriginalBtn: $('partyLargeOriginalBtn'), largeCompressBtn: $('partyLargeCompressBtn')
   };
 
   const state = {
     active: false, busy: false, sources: [], documents: [], selected: null,
     orderConfirmed: false, pendingAction: null, nextDocument: 1, selectedPages: new Set(),
     previewObserver: null, previewQueue: new Map(), previewRunning: false, previewGeneration: 0,
-    cachedThumbPages: [], viewer: { pageId: null, generation: 0 }
+    cachedThumbPages: [], viewer: { pageId: null, generation: 0 },
+    pendingLargeExport: null, largeExportBusy: false
   };
+
+  // Decimal MB, matching PdfCompress.PDF_COMPRESSION_DISPLAY_LIMIT_BYTES —
+  // Party Mode's default lossless export is unaffected by this check; it
+  // only decides whether to show the optional ">20MB" detour dialog.
+  const LARGE_FILE_THRESHOLD_BYTES = 20 * 1000 * 1000;
 
   const defaultCorners = [{ x: .045, y: .045 }, { x: .955, y: .045 }, { x: .955, y: .955 }, { x: .045, y: .955 }];
   const imageExt = /\.(jpe?g|png|webp)$/i;
@@ -856,13 +864,12 @@
         toast(`Đang xuất ${doc.pages.length}/${state.sources.length} trang nguồn. ${unassigned} trang còn lại chưa xử lý và vẫn được giữ nguyên trong phiên.`);
       }
       const result = await exportDocument(doc, sequence, total);
-      const url = URL.createObjectURL(result.blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = result.name;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      toast(`Đã xuất tài liệu: ${result.name}`);
+      if (result.blob.size > LARGE_FILE_THRESHOLD_BYTES) {
+        openLargeFileDialog(result);
+      } else {
+        downloadPartyBlob(result.blob, result.name);
+        toast(`Đã xuất tài liệu: ${result.name}`);
+      }
     } catch (error) {
       toast(`Không xuất được: ${error.message || error}`);
     } finally {
@@ -870,6 +877,82 @@
       updateExportState();
       render();
     }
+  }
+
+  function downloadPartyBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  // Explicit opt-in detour shown only when the DEFAULT lossless export (see
+  // exportDocument/exportSingleDocument above, unchanged) lands over 20MB.
+  // "Tải bản gốc" always downloads the same lossless blob already built;
+  // "Tạo bản dưới 20MB" is the only path that calls PdfCompress, so the
+  // shared engine in pdf-compress.js — not a second implementation here —
+  // is what actually recompresses.
+  function openLargeFileDialog(result) {
+    state.pendingLargeExport = result;
+    if (els.largeFileStatus) { els.largeFileStatus.textContent = ''; els.largeFileStatus.classList.add('hidden'); }
+    if (els.largeOriginalBtn) els.largeOriginalBtn.disabled = false;
+    if (els.largeCompressBtn) els.largeCompressBtn.disabled = false;
+    els.largeFileDialog?.showModal();
+  }
+
+  function closeLargeFileDialog() {
+    state.pendingLargeExport = null;
+    if (els.largeFileDialog?.open) els.largeFileDialog.close();
+  }
+
+  if (els.largeOriginalBtn) {
+    els.largeOriginalBtn.addEventListener('click', () => {
+      const pending = state.pendingLargeExport;
+      if (!pending || state.largeExportBusy) return;
+      downloadPartyBlob(pending.blob, pending.name);
+      toast(`Đã xuất tài liệu: ${pending.name}`);
+      closeLargeFileDialog();
+    });
+  }
+
+  if (els.largeCompressBtn) {
+    els.largeCompressBtn.addEventListener('click', async () => {
+      const pending = state.pendingLargeExport;
+      if (!pending || state.largeExportBusy) return;
+      if (!window.PdfCompress?.compressPdf) { toast('Công cụ giảm dung lượng chưa sẵn sàng.'); return; }
+      state.largeExportBusy = true;
+      els.largeOriginalBtn.disabled = true;
+      els.largeCompressBtn.disabled = true;
+      els.largeFileStatus.classList.remove('hidden');
+      els.largeFileStatus.textContent = 'Đang tối ưu để đạt dưới 20 MB…';
+      try {
+        const result = await window.PdfCompress.compressPdf(pending.blob, {
+          onProgress: info => {
+            if (!els.largeFileStatus) return;
+            if (info.phase === 'rendering') els.largeFileStatus.textContent = `Đang xử lý trang ${info.pageIndex + 1}/${info.pageCount}…`;
+            else if (info.phase === 'packaging') els.largeFileStatus.textContent = 'Đang đóng gói PDF…';
+          }
+        });
+        const compressedName = pending.name.replace(/\.pdf$/i, '') + '_duoi-20MB.pdf';
+        downloadPartyBlob(result.blob, compressedName);
+        toast(result.achievedTarget
+          ? `Đã tạo bản dưới 20 MB: ${compressedName}`
+          : `Đã nén ở mức an toàn nhất nhưng vẫn ${(result.outputBytes / 1e6).toFixed(1)} MB — chưa đạt dưới 20 MB.`);
+        closeLargeFileDialog();
+      } catch (error) {
+        toast(`Không tạo được bản dưới 20MB: ${error.message || error}`);
+      } finally {
+        state.largeExportBusy = false;
+      }
+    });
+  }
+
+  if (els.largeFileDialog) {
+    els.largeFileDialog.addEventListener('click', event => {
+      if (event.target === els.largeFileDialog && !state.largeExportBusy) closeLargeFileDialog();
+    });
   }
 
   async function exportAll() {

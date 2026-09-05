@@ -3,6 +3,21 @@
 > Ghi lại quyết định kỹ thuật quan trọng để agent sau không "phát minh lại" hoặc đảo ngược
 > mà không biết lý do. Mỗi entry: quyết định gì, vì sao, đánh đổi gì.
 
+## [2026-09-05] Giảm dung lượng PDF: adaptive target-size compression, target 19.000.000 byte, dùng lại `PartyPdf.renderThumbnail()` thay vì tự bootstrap PDF.js
+
+- **Quyết định:**
+  1. **Top-level mode thứ năm** (`state.mode==='compress'`), độc lập hoàn toàn với 4 workflow còn lại, không nhét vào Document/Party/Watermark.
+  2. **Module riêng `pdf-compress.js`** (`window.PdfCompress`) chứa toàn bộ logic nén (`compressPdf`, `resolveRounds`, `renderCompressionPage`, `encodePage`, `buildCompressedPdf`, `verifyTarget`); `compress-mode.js` chỉ là UI gọi vào đó; `party-mode.js` gọi thẳng cùng một `PdfCompress.compressPdf()` cho hành động "Tạo bản dưới 20MB" — không có bản sao logic nén thứ hai ở đâu cả.
+  3. **Target nội bộ 19.000.000 byte (decimal MB, không phải MiB)**, hằng số `PDF_COMPRESSION_TARGET_BYTES`, thấp hơn "20MB" dù hệ thống đích tính theo decimal (20.000.000) hay MiB (20×1024×1024 ≈ 20.971.520).
+  4. **Adaptive rounds giảm dần cả `maxEdge` và chất lượng JPEG** (`ROUNDS`, 5 mức, mức cuối là quality floor ~1400px/0.50), luôn build lại PDF thật và đo `blob.size` thật ở mỗi vòng thay vì ước lượng. Không có field grayscale — giữ màu mặc định tuyệt đối, không có đường tắt tự chuyển đen trắng.
+  5. **Vượt quality floor chỉ qua `options.rounds`/`options.allowBeyondFloor` tường minh** (nút "Nén mạnh hơn", thao tác rõ ràng của người dùng) — `resolveRounds()` tách thành hàm thuần riêng để bất biến này kiểm được bằng unit test không cần trình duyệt.
+  6. **Render từng trang bằng cách gọi lại `PartyPdf.renderThumbnail()`** (hàm Party Mode đã dùng cho thumbnail) thay vì tự viết một bootstrap PDF.js độc lập thứ hai. `buildCompressedPdf()` dùng lại `PartyPdf.buildPdf([], items)` (bộ ghi PDF cục bộ đã có, dùng chung với trang ảnh của Party Mode) thay vì viết bộ ghi PDF thứ ba.
+- **Lý do:** Trong quá trình phát triển, một bootstrap PDF.js độc lập (gọi thẳng `pdfjs.getDocument()`/`page.render()`) đã thất bại 100% trên một bản Chromium headless cụ thể dùng để kiểm thử (`Map.prototype.getOrInsertComputed is not a function` bên trong `pdf.mjs`, một API `Map` rất mới mà bản V8 đó chưa có) — trong khi `PartyPdf.renderThumbnail()` **đã có sẵn cơ chế fallback đúng cho chính lỗi này** (thử PDF.js trước, lỗi thì tự chuyển sang bộ dựng cổ điển của `party-pdf.js`), nên toàn bộ thumbnail Party Mode trong môi trường đó vẫn render đúng qua đường fallback mà không ai để ý PDF.js đang lỗi ngầm (chỉ `console.warn`, không phải `console.error`). Dùng lại hàm đã có khả năng phục hồi này thay vì viết một pipeline PDF.js "trần" thứ hai giúp tính năng nén không phụ thuộc vào việc `page.render()` phải chạy được 100% trên mọi bản trình duyệt — đúng tinh thần "không silently fail, luôn có fallback" mà `party-pdf.js` đã thiết lập.
+- **Đánh đổi:** `pdf-compress.js` phụ thuộc vào `party-pdf.js` đã tải trước (thứ tự script trong `index.html`: `party-pdf.js` trước `pdf-compress.js`) — chấp nhận được vì cả hai đều là script đồng bộ (`defer`, không phải module), và `inspectPdf()`/`compressPdf()` đọc `window.PartyPdf` tại **thời điểm gọi**, không phải lúc nạp file, nên thứ tự nạp script không quan trọng miễn cả hai file đã tải xong trước khi người dùng bấm nút.
+- **Người quyết định:** Claude Code, phát hiện qua browser acceptance thật (`scripts/acceptance_pdf_compress.cjs`) trước khi merge — không phải giả định lý thuyết.
+
+---
+
 ## [2026-09-04] Xóa Watermark / Logo CamScanner bằng Can thiệp Cấu trúc PDF (Structural Surgery) thay vì Re-encoding / Inpainting
 
 - **Quyết định:**
