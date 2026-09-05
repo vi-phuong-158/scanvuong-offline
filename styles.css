@@ -1542,6 +1542,16 @@ button {
     display: none;
   }
 
+  /* Up to 4 controls (Hướng dẫn, Đổi chế độ, Cài app + the Offline badge)
+     can be visible in .top-actions at once on a real phone — switchModeBtn
+     appears once a mode is active, installBtn whenever the browser's own
+     install prompt fires, independent of anything Help does. Icon + a11y
+     label survives; only the visible text label is dropped, so a phone
+     narrow enough to need it never overflows the topbar. */
+  .top-actions .btn.ghost.compact span {
+    display: none;
+  }
+
   .badge {
     padding: 4px 7px;
     font-size: 10px;
@@ -1950,76 +1960,86 @@ button {
 .party-help-example li { margin-bottom: 6px; font-size: 12.5px; }
 .party-help-content code { background: #f4eae4; color: var(--manager-navy); padding: 1px 5px; border-radius: 4px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 
-/* --- Global Help Center: offline, in-app screenshot walkthrough (Scan hồ sơ Đảng / Làm sạch chân trang) --- */
-.help-center-dialog { width: min(880px, calc(100vw - 24px)); max-height: min(880px, calc(100dvh - 32px)); border: 0; border-radius: var(--radius-lg); padding: 0; color: var(--ink); box-shadow: var(--shadow-lg); overflow: hidden; }
-.help-center-dialog::backdrop { background: var(--glass-dark-bg); }
-.help-center-sheet { display: grid; grid-template-rows: auto auto minmax(0, 1fr); max-height: inherit; background: var(--surface); }
-.help-center-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 18px 22px 14px; border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 2; }
-.help-center-head h2 { margin: 3px 0 0; color: var(--primary-active); font-size: 20px; font-weight: 700; }
-.help-center-kicker { display: block; color: var(--gold); font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
-.help-center-tabs { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 22px; border-bottom: 1px solid var(--line); background: var(--surface-2); position: sticky; top: 62px; z-index: 1; }
-.help-center-tab { border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-secondary); font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: var(--radius-pill); cursor: pointer; }
-.help-center-tab:hover { border-color: var(--primary-border); color: var(--primary-active); }
-/* Jumps are instant on purpose: smooth-scrolling several thousand pixels
-   between sections is slow and disorienting, and makes the landing position
-   non-deterministic while images are still settling. */
-.help-center-content { overflow-y: auto; overflow-x: hidden; padding: 20px 22px 32px; }
-.help-center-content section + section { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line); }
-.help-center-content h3 { margin: 0 0 12px; color: var(--primary-active); font-size: 16px; font-weight: 700; }
-.help-center-content > section > p { margin: 0 0 16px; color: var(--ink); font-size: 13.5px; line-height: 1.6; }
-.help-center-quicklist { margin: 0; padding-left: 20px; color: var(--ink); font-size: 13.5px; line-height: 1.9; }
-.help-center-tag { display: inline-block; padding: 1px 7px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-2); color: var(--primary-active); font-weight: 600; font-size: 12px; white-space: nowrap; line-height: 1.5; }
-.help-center-step { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 18px; }
-.help-center-step-num { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 13px; font-weight: 800; display: grid; place-items: center; margin-top: 2px; }
-.help-center-step-body { min-width: 0; flex: 1; }
-.help-center-step-body strong { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 4px; }
-.help-center-step-body p { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; line-height: 1.55; }
-.help-center-step-body img { display: block; width: 100%; max-width: 720px; height: auto; border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
-.help-center-beforeafter { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin: 4px 0 18px; }
-.help-center-beforeafter figure { margin: 0; }
-.help-center-beforeafter img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
-.help-center-hero { margin: 6px 0 0; }
-.help-center-hero img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-md); }
-.help-center-hint { margin: 14px 0 0; padding: 9px 12px; border-left: 3px solid var(--gold); background: var(--gold-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; color: var(--ink-secondary); font-size: 12.5px; line-height: 1.5; }
+.help-dialog { width: min(760px, calc(100vw - 24px)); max-height: min(840px, calc(100dvh - 32px)); border: 0; border-radius: 20px; padding: 0; color: var(--manager-ink); box-shadow: 0 24px 64px rgba(58,24,18,.24); overflow: hidden; }
+.help-dialog::backdrop { background: rgba(28,18,16,.6); }
+.help-sheet { display: grid; grid-template-rows: auto minmax(0, 1fr); max-height: inherit; background: #fff; }
+.help-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 18px 22px 15px; border-bottom: 1px solid var(--manager-line); background: #fff; position: sticky; top: 0; z-index: 2; }
+.help-head h2 { margin: 3px 0 0; color: var(--manager-navy); font-size: 20px; font-weight: 700; }
+.help-content { overflow-y: auto; overflow-x: hidden; padding: 18px 22px 28px; scroll-behavior: smooth; }
+.help-quickflow { background: linear-gradient(180deg, #fdf8f5 0%, #faf1ea 100%); border: 1px solid #ebdcd3; border-radius: 16px; padding: 16px 18px; margin-bottom: 22px; box-shadow: 0 2px 8px rgba(122,23,18,.04); }
+.help-quickflow-head h3 { margin: 4px 0 6px; color: var(--manager-navy); font-size: 16px; font-weight: 700; }
+.help-quickflow-head p { margin: 0 0 12px; color: var(--manager-muted); font-size: 12.5px; line-height: 1.5; }
+.help-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; background: var(--manager-teal); color: #fff; font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.help-steps-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.help-step-card { background: #fff; border: 1px solid #ebdcd3; border-radius: 11px; padding: 11px 12px; display: flex; gap: 10px; align-items: flex-start; }
+.help-step-num { flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--manager-navy); color: #fff; font-size: 12px; font-weight: 800; display: grid; place-items: center; margin-top: 1px; }
+.help-step-body strong { display: block; color: var(--manager-navy); font-size: 12.5px; line-height: 1.35; margin-bottom: 3px; }
+.help-step-body p { margin: 0; color: var(--manager-muted); font-size: 11.5px; line-height: 1.45; }
+.help-content section + section { margin-top: 20px; padding-top: 20px; border-top: 1px solid #efe4de; }
+.help-content h3 { margin: 0 0 8px; color: var(--manager-navy); font-size: 15px; font-weight: 700; }
+.help-content p, .help-content li { color: var(--manager-ink); font-size: 13px; line-height: 1.6; }
+.help-content p { margin: 7px 0; }
+.help-content ul, .help-content ol { margin: 8px 0 10px; padding-left: 20px; }
+.help-content li + li { margin-top: 5px; }
+.help-callout { border-left: 4px solid var(--manager-teal); background: #fdfaf6; padding: 10px 14px; border-radius: 0 10px 10px 0; margin: 10px 0; font-size: 12.5px; line-height: 1.55; }
+.help-callout.warning { border-left-color: var(--manager-amber); background: #fffcf5; }
+.help-callout.privacy { border-left-color: #2b7a4b; background: #f4faf6; }
+.help-callout strong { color: var(--manager-navy); }
+.help-btn-tag { display: inline-block; padding: 1px 6px; border: 1px solid var(--manager-line); border-radius: 4px; background: #fdfaf7; color: var(--manager-navy); font-weight: 600; font-size: 11.5px; white-space: nowrap; line-height: 1.5; }
+.help-example { background: #fdfaf8; border: 1px solid #ebdcd3; border-radius: 12px; padding: 12px 16px; margin: 10px 0; }
+.help-example ol { margin: 6px 0; padding-left: 18px; }
+.help-example li { margin-bottom: 6px; font-size: 12.5px; }
+.help-content code { background: #f4eae4; color: var(--manager-navy); padding: 1px 5px; border-radius: 4px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 
-/* Every guide screenshot opens full size in the lightbox */
-.help-center-step-body img,
-.help-center-beforeafter img,
-.help-center-hero img { cursor: zoom-in; }
+/* Global Help dialog — accordion landing sections (Bắt đầu nhanh / Scan tài
+   liệu / Scan hồ sơ Đảng / Scan ID / Làm sạch chân trang / Mẹo scan), reusing
+   the .help-* shell and content styles above. Native <details>/<summary> —
+   no JS needed to expand/collapse, and JS only sets .open + scrollIntoView()
+   for deep-linking (e.g. "Xem hướng dẫn Scan hồ sơ Đảng" -> #helpSectionParty). */
+.help-quickstart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.help-quickstart-btn { display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 10px 12px; border: 1px solid var(--manager-line); border-radius: 10px; background: #fff; color: var(--manager-navy); font-weight: 700; font-size: 12.5px; text-align: left; cursor: pointer; }
+.help-quickstart-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+.help-quickstart-btn:hover, .help-quickstart-btn:focus-visible { border-color: var(--manager-teal); }
+.help-section { border-top: 1px solid #efe4de; }
+.help-section:first-of-type { border-top: none; }
+.help-section summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 13px 2px; cursor: pointer; list-style: none; color: var(--manager-navy); font-weight: 700; font-size: 14.5px; }
+.help-section summary::-webkit-details-marker { display: none; }
+.help-section summary::after { content: ''; width: 8px; height: 8px; flex-shrink: 0; border-right: 2px solid var(--manager-muted); border-bottom: 2px solid var(--manager-muted); transform: rotate(-45deg); transition: transform .15s ease; }
+.help-section[open] summary::after { transform: rotate(45deg); }
+.help-section-body { padding: 0 2px 18px; }
+.help-section-body section + section { margin-top: 20px; padding-top: 20px; border-top: 1px solid #efe4de; }
 
-/* Thư viện ảnh: whole-library grid */
-.help-center-gallery-group { margin: 18px 0 10px; color: var(--ink); font-size: 13px; font-weight: 700; }
-.help-center-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
-.help-center-thumb { display: flex; flex-direction: column; gap: 8px; padding: 8px; min-height: var(--touch-min); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: zoom-in; }
-.help-center-thumb:hover { border-color: var(--primary-border); background: var(--primary-soft); }
-.help-center-thumb:focus-visible { outline: 2px solid var(--line-focus); outline-offset: 2px; }
-.help-center-thumb img { display: block; width: 100%; height: 116px; object-fit: cover; object-position: top center; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface-2); }
-.help-center-thumb span { font-size: 12px; font-weight: 600; line-height: 1.35; }
-.help-center-thumb.is-featured { border-color: var(--gold-border); background: var(--gold-soft); }
-.help-center-thumb.is-featured img { height: 92px; object-fit: contain; }
+/* Real screenshots embedded inside #helpSectionParty / #helpSectionWatermark.
+   Every one of these opens full size in #helpLightbox on click. */
+.help-step-body img,
+.help-shot,
+.help-beforeafter img,
+.help-hero img { cursor: zoom-in; }
+.help-step-body img { display: block; width: 100%; max-width: 640px; margin-top: 8px; border: 1px solid var(--manager-line); border-radius: 10px; box-shadow: 0 2px 8px rgba(58,24,18,.08); }
+.help-shot { display: block; width: 100%; max-width: 640px; margin: 8px 0 0; border: 1px solid var(--manager-line); border-radius: 10px; box-shadow: 0 2px 8px rgba(58,24,18,.08); }
+.help-beforeafter { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 10px 0; }
+.help-beforeafter figure { margin: 0; }
+.help-beforeafter img { display: block; width: 100%; height: auto; border: 1px solid var(--manager-line); border-radius: 10px; box-shadow: 0 2px 8px rgba(58,24,18,.08); }
+.help-hero { margin: 12px 0 0; }
+.help-hero img { display: block; width: 100%; height: auto; border: 1px solid var(--manager-line); border-radius: 12px; box-shadow: 0 6px 18px rgba(58,24,18,.14); }
 
-/* Lightbox */
-.help-lightbox { width: min(1440px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); border: 0; border-radius: var(--radius-lg); padding: 0; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg); overflow: hidden; }
-.help-lightbox::backdrop { background: rgba(28, 18, 16, 0.82); }
+/* Lightbox: full-size, navigable view for every screenshot in the Help dialog */
+.help-lightbox { width: min(1440px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); border: 0; border-radius: 20px; padding: 0; background: #fff; color: var(--manager-ink); box-shadow: 0 24px 64px rgba(58,24,18,.24); overflow: hidden; }
+.help-lightbox::backdrop { background: rgba(28,18,16,.82); }
 .help-lightbox-sheet { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: inherit; }
-.help-lightbox-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
-.help-lightbox-caption { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--ink); }
-.help-lightbox-stage { display: grid; place-items: center; overflow: auto; padding: 14px 18px; background: var(--surface-2); }
-.help-lightbox-stage img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); cursor: zoom-in; }
+.help-lightbox-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 18px; border-bottom: 1px solid var(--manager-line); }
+.help-lightbox-caption { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--manager-ink); }
+.help-lightbox-stage { display: grid; place-items: center; overflow: auto; padding: 14px 18px; background: #fdfaf7; }
+.help-lightbox-stage img { display: block; max-width: 100%; height: auto; border: 1px solid var(--manager-line); border-radius: 8px; background: #fff; cursor: zoom-in; }
 /* 1:1 view: image keeps its natural pixel size and the stage scrolls, so the
    text inside a screenshot is as readable as in the app itself. */
 .help-lightbox-stage.is-actual { place-items: start; }
 .help-lightbox-stage.is-actual img { max-width: none; cursor: zoom-out; }
-.help-lightbox-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; border-top: 1px solid var(--line); }
+.help-lightbox-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; border-top: 1px solid var(--manager-line); }
 .help-lightbox-nav-mid { display: flex; align-items: center; gap: 12px; }
-.help-lightbox-counter { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.help-lightbox-counter { font-size: 12.5px; font-weight: 600; color: var(--manager-muted); }
 
 @media (max-width: 720px) {
-  .help-center-head { padding: 14px 16px 12px; }
-  .help-center-tabs { padding: 10px 16px; top: 58px; }
-  .help-center-content { padding: 16px 16px 24px; }
-  .help-center-step { flex-direction: column; gap: 8px; }
-  .help-center-gallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
   .help-lightbox-head, .help-lightbox-nav { padding: 10px 14px; }
   .help-lightbox-stage { padding: 10px 12px; }
 }
@@ -2056,9 +2076,10 @@ button {
   .party-move-select { width: 100%; max-width: none; }
   .party-coverage > div:first-child { display: block; }
   .party-coverage strong { display: block; margin-top: 4px; }
-  .party-help-head { padding: 14px 16px; }
-  .party-help-content { padding: 14px 16px 20px; }
-  .party-help-steps-grid { grid-template-columns: 1fr; gap: 8px; }
+  .help-head { padding: 14px 16px; }
+  .help-content { padding: 14px 16px 20px; }
+  .help-steps-grid { grid-template-columns: 1fr; gap: 8px; }
+  .help-quickstart-grid { grid-template-columns: 1fr; }
   .party-selection-bar { flex-direction: column; align-items: stretch; gap: 8px; }
   .party-selection-actions { width: 100%; }
   .party-selection-actions .btn { flex: 1 1 120px; }

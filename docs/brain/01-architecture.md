@@ -53,10 +53,12 @@ scanvuong-offline/
 ├── docs/brain/                 # Bộ nhớ dự án dùng chung (thư mục này)
 └── docs/user-guide/            # Hướng dẫn sử dụng: HUONG_DAN_SU_DUNG.md, GIOI_THIEU_SAN_PHAM.md,
                                  # assets/raw + assets/annotated (screenshot thật, có chú thích).
-                                 # 12 ảnh trong assets/annotated/ được index.html#helpCenterDialog
-                                 # tham chiếu trực tiếp (không copy) và nằm trong ASSETS của sw.js —
-                                 # đây KHÔNG chỉ là tài liệu, mà là runtime dependency của app. Xem
-                                 # quyết định [2026-09-05] trong 03-decisions.md.
+                                 # 12 ảnh trong assets/annotated/ được nhúng thẳng vào #helpDialog
+                                 # (#helpSectionParty / #helpSectionWatermark, mở qua #helpBtn ở
+                                 # topbar) và vào #helpLightbox khi phóng to — tham chiếu trực tiếp
+                                 # (không copy), nằm trong ASSETS của sw.js. Đây KHÔNG chỉ là tài
+                                 # liệu, mà là runtime dependency của app. Xem quyết định
+                                 # [2026-09-05] "Hợp nhất Help Center ảnh thật..." trong 03-decisions.md.
 ```
 
 Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm phẳng ở gốc vì đây là static site không build.
@@ -69,8 +71,12 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 
 | Cụm | Hàm chính | Được gọi bởi | Gọi tới |
 |---|---|---|---|
-| **Import** | `addFiles()` | sự kiện `change` trên `#fileInput`/`#cameraInput`, `drop` trên `#dropZone` | `isSupportedImage()`, `detectPage()`, `sleepFrame()`, `updateShell()` |
-| **Detection** | `detectPage()` | `addFiles()`, nút `#detectBtn`, `#autoAllBtn` | `loadImage()`, `drawRotatedToCanvas()`, `DocumentDetector.detect()` |
+| **Import** | `addFiles()` | sự kiện `change` trên `#fileInput`/`#cameraInput`, `drop` trên `#dropZone` | `isSupportedImage()`, `detectPage()`, `sleepFrame()`, `updateShell()` — ảnh nào `detectPage()` ném lỗi giải mã thì bị **loại khỏi `state.pages`** ngay tại bước import, không để lại trang hỏng |
+| **Decode** | `loadImage()` | `detectPage()`, `renderSelected()`, `renderPageCanvas()` | `sniffImageSize()`, `sniffImageMime()`, `decodeBitmap()`, `decodeElement()`; ném `ImageDecodeError` khi mọi bậc thang đều thất bại |
+| | `decodeBitmap()` | `loadImage()` | `createImageBitmap()` với nhiều tổ hợp option (`imageOrientation`, `resizeWidth`), trả `null` thay vì ném |
+| | `decodeElement()` | `loadImage()` | `new Image()` + `decode()`/`onload` (đua với nhau — `decode()` chỉ được thắng sớm, không được làm hỏng) |
+| | `releaseImage()` | `detectPage()`, `renderSelected()`, `renderPageCanvas()`, `#switchModeBtn` | `ImageBitmap.close()` + `URL.revokeObjectURL()` của Object URL tạm do `loadImage()` cấp — **nơi duy nhất** được thu hồi URL đó |
+| **Detection** | `detectPage()` | `addFiles()`, `addIdFile()`, nút `#detectBtn`, `#autoAllBtn` | `loadImage()`, `drawRotatedToCanvas()`, `DocumentDetector.detect()`, `releaseImage()` — **hai miền lỗi tách biệt bằng try/catch lồng nhau**: lỗi từ `loadImage()` (giải mã ảnh thật) luôn được ném ra ngoài cho caller; lỗi từ khối `drawRotatedToCanvas()`+`DocumentDetector.detect()`/`detectDocument()`+`applyIdAspectHint()` (canvas render, ML/WASM, CV) bị bắt **tại chỗ**, không bao giờ thoát ra ngoài — ảnh coi như vẫn giải mã tốt, chỉ hạ về khung cắt toàn khung mặc định với `page.detectorSource = 'DETECTION_ERROR_FALLBACK'` và `confidence = 0.55` (dưới ngưỡng 0.58 nên tự động được đánh dấu cần kiểm tra). Đây là ranh giới cố ý: một lỗi trong bước nhận diện góc không bao giờ được phép hiện thành thông báo "Không đọc được ảnh này" |
 | | `DocumentDetector.detect()` | `detectPage()` | `detectMl()`, `validateGeometry()`, fallback sang `detectDocument()` |
 | | `detectMl()` | `DocumentDetector.detect()` | `initMlSession()`, `preprocessToTensor()`, session inference, `validateGeometry()` |
 | | `detectDocument()` (fallback) | `DocumentDetector.detect()` | `otsuThreshold()`, `componentQuad()` (light-mode), `edgeQuad()`, `orderCorners()` |
@@ -92,13 +98,16 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 | | `buildPdf()` | `exportPdf()` (qua `makeJpegs()`'s output, dùng `exportJob.pageSize`/`exportJob.margin`) | `concatBytes()`, `strBytes()` |
 | **PWA glue** | cuối file (ngoài mọi hàm) | tải trang | `navigator.serviceWorker.register('./sw.js')`, `beforeinstallprompt`, `online`/`offline` |
 | **Mode select** | `enterMode()` / `renderModeShell()` | `#modeDocBtn`/`#modeIdBtn` click, `#switchModeBtn` click | `relocateEditor()`, `updateShell()` (document) hoặc `updateIdShell()` (id) |
+| | `leaveActiveModeWithConfirm()` | `#switchModeBtn` click, Help's quick-start shortcuts (`#helpGotoDocBtn` v.v.) | Xác nhận (`confirm()`) khi có dữ liệu dở dang rồi dọn dẹp mode hiện tại + `state.mode = null` + `renderModeShell()`; trả về `false` nếu người dùng từ chối — **logic dùng chung duy nhất** để rời một mode, tách ra từ `#switchModeBtn`'s handler cũ để Help tái sử dụng chứ không tự chế một đường tắt bỏ qua xác nhận |
+| **Global Help** (`docs/brain/03-decisions.md`, mục "Hướng dẫn là cross-application support surface") | `openHelp(sectionId?)` / `closeHelp()` | `#helpBtn` (topbar, hiện ở MỌI màn hình, không riêng mode-select), `#partyHelpLinkEmpty`/`#partyHelpLinkToolbar` (Party), `#helpClose`, click ra ngoài `#helpDialog` | `els.helpDialog.showModal()`/`.close()`; khi có `sectionId`, mở `<details>` tương ứng (`$('#'+sectionId)`) và `scrollIntoView()` — **không bao giờ đọc/ghi `state.mode`** ngoại trừ qua `leaveActiveModeWithConfirm()` khi một quick-start shortcut yêu cầu chuyển thẳng vào một mode |
+| | `helpGotoDocBtn`/`helpGotoIdBtn`/`helpGotoPartyBtn`/`helpGotoWatermarkBtn` | click bên trong `#helpDialog`'s Quick-start | `closeHelp()` → `leaveActiveModeWithConfirm()` → `enterMode(mode)` nếu không bị từ chối |
 | **ID mode** | `activePage()` | mọi chỗ trong Editor/Corners/Filter cluster (`drawEditor`, `renderSelected`, pointer handlers, `detectBtn`/`resetCropBtn`/`rotateBtn`, filter-chip handler) — thay `selectedPage()` | `selectedPage()` (document) hoặc `state.idScan.front/back` theo `state.idScan.step` (id) |
-| | `addIdFile()` | `#idFileInput`/`#idCameraInput` change | `isSupportedImage()`, `detectPage()` (dùng chung với document), `renderModeShell()` |
+| | `addIdFile()` | `#idFileInput`/`#idCameraInput` change | `isSupportedImage()`, `detectPage()` (dùng chung với document), `renderModeShell()` — ảnh không giải mã được bị **gỡ khỏi `state.idScan[step]`** ngay tại bước chụp, wizard đứng nguyên tại mặt đó nên không thể đi tiếp tới preview/Xuất PDF với một mặt hỏng |
 | | `applyIdAspectHint()` | `detectPage()`, chỉ khi `state.mode==='id'` | chỉ đọc/hạ `detection.confidence`, không đổi `orderCorners()`/`detectDocument()` |
 | | `calculateIdA4Layout()` | `composeIdA4()` | pure layout geometry helper (tính toạ độ/kích thước front/back trên A4, target width ~65%) |
 | | `composeIdA4()` | `exportIdPdf()`, `renderIdPreview()` | gọi `calculateIdA4Layout()`, thuần canvas 2D, không gọi lại detect/homography |
 | | `exportIdPdf()` | `#idExportBtn` click | `renderPageCanvas()` ×2 (front, back — **dùng chung** với document export), `composeIdA4()`, `canvasToJpeg()`, `buildPdf()` (dùng chung) |
-| | `renderIdPreview()` | `updateIdShell()` khi `step==='preview'` | `renderPageCanvas()` ×2 (maxEdge thấp hơn), `composeIdA4()` |
+| | `renderIdPreview()` | `updateIdShell()` khi `step==='preview'` | `renderPageCanvas()` ×2 (maxEdge thấp hơn), `composeIdA4()`; lỗi được hiển thị ở `#idExportNotice` thay vì để lại khung xem trước trống |
 | **Watermark Stripper** | `detectCamScannerWatermarks()` | `stripWatermarks()` | phân tích XObjects trong `Resources`, kiểm tra kích thước/tỷ lệ logo, giải nén Content Stream qua `inflateSync` kiểm tra toạ độ `cm` ở dải lề dưới |
 | | `stripWatermarkFromContentStream()` | `copyPageObjects()` (khi `stripWatermarks: true`) | regex & token stripping loại bỏ khối `q ... cm /ImX Do Q` |
 | | `stripWatermarks()` | `watermark-mode.js` (`processPdfFile`) | `sourceFromBuffer()`, `detectCamScannerWatermarks()`, `copyPageObjects()`, `buildPdf()`, trả về kết quả hoặc fail-safe tệp gốc |
@@ -113,7 +122,7 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
    addFiles() ──► isSupportedImage() lọc file hợp lệ
         │
         ▼
-   detectPage() ──► loadImage() + drawRotatedToCanvas() (canvas làm việc ≤560px)
+   detectPage() ──► loadImage() (thang giải mã, xem cụm Decode) + drawRotatedToCanvas() (canvas làm việc ≤560px)
         │
         ▼
    DocumentDetector.detect() ──┬─► Scanic ML (DocCornerNet Lean ONNX WASM)

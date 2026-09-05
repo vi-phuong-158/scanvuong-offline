@@ -16,7 +16,46 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
-## [2026-09-05] Help Center: thư viện ảnh + lightbox phóng to
+## [2026-09-05] Merge origin/main (#helpDialog accordion) + hợp nhất ảnh thật/lightbox vào đó
+- **Agent:** Claude Code
+- **Thay đổi:**
+  1. `git merge origin/main` (5 commit mới, gồm PR #14 "refactor(ui): move help outside party record
+     scan" — xây `#helpDialog` accordion độc lập cùng lúc với `#helpCenterDialog` của phiên này).
+     Giải quyết conflict tại `index.html`, `styles.css`, `sw.js` (app.js/docs/brain tự merge sạch).
+  2. Xoá hẳn `#helpCenterDialog`/`#helpNavBtn`/`#helpCenterClose` và CSS `.help-center-*` — giữ
+     `#helpDialog`/`#helpBtn` của nhánh kia (đầy đủ hơn: 6 section accordion, 24 mục nghiệp vụ chi
+     tiết Party, có `regression_help_ia.js` 26/26 và `acceptance_help_ui.cjs` 22/22 riêng).
+  3. Giữ lại `#helpLightbox` (phóng ảnh full-size, next/prev, toggle "Phóng 100%"), đổi CSS sang
+     token `--manager-*` cho đồng bộ màu với các dialog khác, nhúng 6 ảnh thật vào 6 mục chi tiết
+     của `#helpSectionParty` (mục 3,4,5,6,17,21 — không nhét vào lưới 6-ô quickflow nhỏ) và viết lại
+     toàn bộ `#helpSectionWatermark` (nội dung cũ mô tả sai — không có bước "chọn vùng xử lý" thủ
+     công nào trong `watermark-mode.js` thật) kèm ảnh bước 1, before/after, ảnh so sánh hero, bước 2.
+  4. Sửa `els.helpDialog.querySelector(...)`/`querySelectorAll(...)` (gọi cấp phần tử — không tồn
+     tại trong DOM giả lập tối giản của `regression_export_busy.js`/`regression_scan_id.js`) thành
+     `$$('#helpDialog [data-help-image]')` + `els.helpContent` qua `$('.help-content')` cấp
+     `document` — hai regression này crash ngay khi load trước khi sửa.
+  5. Cập nhật `docs/brain/01-architecture.md`/`03-decisions.md` (đánh dấu entry `#helpCenterDialog`
+     hôm qua là SUPERSEDED, thêm entry mới mô tả quyết định hợp nhất). Không sửa
+     `party-pdf.js`/`document-detector.js`/logic xử lý PDF nào.
+- **File đã sửa:** `index.html`, `styles.css`, `app.js`, `sw.js` (bump `vigil-lens-v2.9.3`),
+  `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`.
+- **Lý do:** Người dùng phát hiện một phiên Claude Code khác đã làm cùng việc trên `origin/main`
+  (đầy đủ hơn) trong lúc phiên này đang chạy độc lập; quyết định kết hợp thay vì chọn một bên hoặc
+  ghi đè nhánh kia — xem chi tiết lý do trong `03-decisions.md`.
+- **Kiểm tra:** Toàn bộ suite chạy lại sau merge, tất cả PASS: `validate_static.py`;
+  `regression_export_busy.js` 29/29; `regression_scan_id.js` 52/52; `regression_party_mode.cjs`
+  69/69; `regression_watermark.cjs` 35/35; `regression_sw_update.cjs` 9/9;
+  `regression_detection_fallback.js` 17/17; `regression_image_decode.js` 32/32;
+  `regression_ml_detector.js` 53/53; `regression_help_ia.js` 26/26 (mới, của nhánh kia — không đổi
+  hành vi deep-link/mode-isolation dù nội dung Party/Watermark đã đổi); `acceptance_help_ui.cjs`
+  22/22 (Chromium thật, bao gồm assert `#partyHelpDialog no longer exists`); `acceptance_party_ui.cjs`
+  full PASS (18 case, viewport 390–1792px); `acceptance_offline_pwa.cjs` full PASS (Phase A+B, cắt
+  mạng thật); `acceptance_scan_id_photo.cjs` 17/17. Xác minh thủ công trên Chromium thật: mở Hướng
+  dẫn từ mode-select và từ trong Party mode (deep-link đúng `#helpSectionParty`), bấm 6 ảnh Party +
+  5 ảnh Watermark trong lightbox đều đúng thứ tự (`n/11`), next/prev/zoom hoạt động, không lỗi
+  console.
+
+## [2026-09-05, SUPERSEDED cùng ngày — xem entry mới nhất ở trên] Help Center: thư viện ảnh + lightbox phóng to
 - **Agent:** Claude Code
 - **Thay đổi:**
   1. Thêm tab thứ 4 **"Thư viện ảnh"** (`#help-gallery`) trong Help Center: lưới 12 thumbnail có
@@ -45,7 +84,7 @@
     wrap-around (1 → 12) đúng; đóng lightbox thì Help Center vẫn mở; "Phóng 100%" cho 1442px so với
     1180px ở chế độ vừa khung; tab "Thư viện ảnh" nhảy đúng `scrollTop === offsetTop`; không lỗi console.
 
-## [2026-09-05] Mục "Hướng dẫn" trực quan ngay trong app (Help Center)
+## [2026-09-05, SUPERSEDED cùng ngày — xem entry đầu file] Mục "Hướng dẫn" trực quan ngay trong app (Help Center)
 - **Agent:** Claude Code
 - **Thay đổi:**
   1. Thêm nút `#helpNavBtn` ("Hướng dẫn") luôn hiển thị trong topbar (`.top-actions`), mở
@@ -901,4 +940,54 @@
   - `node scripts/regression_export_busy.js`: PASS (29/29 checks)
   - `node scripts/regression_scan_id.js`: PASS (52/52 checks)
   - `node scripts/acceptance_party_ui.cjs`: PASS (bao gồm browser acceptance test với `Scan2026-08-24_150131.pdf` xuất thành công 3 trang).
+
+## [2026-09-05] Scan ID: ảnh chụp bằng điện thoại không xuất được PDF và không hiện bản xem trước
+- **Agent:** Claude Code
+- **Thay đổi:**
+  - `loadImage()` được viết lại thành **thang bậc giải mã**: `sniffImageSize()` đọc kích thước từ header (JPEG SOF / PNG IHDR / WEBP VP8·VP8L·VP8X) → `decodeBitmap()` thử `createImageBitmap` với `resizeWidth` khi cạnh dài vượt `MAX_DECODE_EDGE = 4096`, rồi không option → dựng lại `Blob` từ bytes (`sniffImageMime()`) và thử lại → hạ dần theo `DECODE_RETRY_WIDTHS = [3000, 2000, 1200]` → `decodeElement()` (`<img>` + Object URL, cho `decode()` đua với `onload`) → chỉ khi tất cả hỏng mới ném `ImageDecodeError` với hướng dẫn tiếng Việt.
+  - Thêm `releaseImage()` và dùng nó thay cho mọi `source.close?.()`: Object URL tạm do `loadImage()` cấp **chỉ** được thu hồi ở đây, không còn revoke ngay sau `decode()`.
+  - `addFiles()` loại trang không giải mã được khỏi `state.pages` ngay tại bước import; `addIdFile()` gỡ mặt lỗi khỏi `state.idScan` và giữ wizard đứng tại mặt đó.
+  - `renderIdPreview()` và `renderSelected()` không còn thất bại im lặng: lỗi hiện ở `#idExportNotice` / toast.
+  - `sw.js`: cache `vigil-lens-v2.8.1` → `vigil-lens-v2.8.2` để bản đã cài nhận được `app.js` mới.
+- **File đã sửa:** `app.js`, `sw.js`, `scripts/regression_image_decode.js` (mới), `scripts/acceptance_scan_id_photo.cjs` (mới), `.github/workflows/static-validation.yml`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/05-testing-and-deploy.md`, `docs/brain/04-current-tasks.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Người dùng tải ảnh chụp bằng điện thoại vào Scan ID: khung xem trước A4 trắng trơn, Xuất PDF dừng ở 5% ("Đang dựng mặt trước…") với thông báo *"Không xuất được PDF: The source image cannot be decoded."*. Đó là câu Chromium dùng chung cho mọi nguyên nhân giải mã hỏng (`File` kiểu `content://` của Android không còn đọc được, MIME rỗng/sai do picker, ảnh camera quá lớn để bung ở kích thước gốc). Bản cũ chỉ thử 2 lần rồi bỏ cuộc; `addIdFile()` lại nuốt lỗi của `detectPage()` nên một mặt hỏng vẫn đi tiếp được tới bước Xuất PDF — người dùng chỉ biết có chuyện ở bước cuối cùng.
+- **Kiểm tra:**
+  - `node scripts/regression_image_decode.js` — **32/32 PASS**. Harness nạp `app.js` thật vào fake DOM với `createImageBitmap`/`<img>` điều khiển được, tái hiện đúng từng chế độ hỏng: giải mã full-res bị từ chối vẫn cứu được ở bậc thu nhỏ; mọi bậc hỏng → `ImageDecodeError` mang câu tiếng Việt (không phải DOMException tiếng Anh); `File` không đọc được bytes vẫn tới được `<img>`; Object URL của `<img>` còn sống tới đúng `releaseImage()`; ảnh hỏng trong Scan ID bị gỡ ngay tại bước chụp, wizard đứng nguyên, `idConfirmBtn` vẫn disabled → **không thể tới được bước Xuất PDF với một mặt hỏng**.
+  - `node scripts/acceptance_scan_id_photo.cjs` — **17/17 PASS** trên Chromium 1194 headless thật, ảnh 6000×3783 (cạnh dài vượt `MAX_DECODE_EDGE`): xem trước A4 vẽ thật, PDF `%PDF-` đúng 1 trang **595.28×841.89** (A4 dọc), 19.4 KB; dấu đen bất đối xứng xác nhận **mặt trước ở trên (dấu trái-trên, x=0.269 y=0.406), mặt sau ở dưới (dấu phải-dưới, x=0.731 y=0.592)** — đúng thứ tự, không lật, không mirror; 0 lỗi console. *Lưu ý trung thực:* bản trước khi sửa cũng PASS đúng acceptance này (Chromium desktop giải mã ảnh 6000 px bình thường), nên đây là cổng chống hồi quy end-to-end, còn phần tái hiện lỗi nằm ở harness Node phía trên.
+  - Hồi quy không đổi: `regression_scan_id.js` 52/52 · `regression_export_busy.js` 29/29 · `regression_ml_detector.js` 53/53 · `regression_party_mode.cjs` 62/62 · `regression_watermark.cjs` 35/35 · `regression_sw_update.cjs` PASS · `test_touch_targets.cjs` 150/150 (cần `CHROME_PATH`) · `validate_static.py` 10/10 · `node --check app.js`/`sw.js`/`document-detector.js` PASS.
+  - **Chưa kiểm tra được ở đây:** chính thiết bị Android của người dùng. Cần xác nhận thủ công: sau khi Service Worker cập nhật lên `vigil-lens-v2.8.2` (bấm "Cập nhật" hoặc tải lại), chụp/chọn lại đúng tấm ảnh cũ trong Scan ID.
+
+## [2026-09-05] DEV MODE audit: tách "giải mã ảnh thất bại" khỏi "nhận diện góc thất bại" trong Scan ID
+- **Agent:** Claude Sonnet 5 (DEV MODE audit theo yêu cầu người dùng — không được mặc định nguyên nhân là HEIC/ảnh lớn/cloud)
+- **Bối cảnh:** Sau lần sửa thang bậc giải mã sáng cùng ngày, người dùng báo tiếp: ảnh JPEG chụp bằng Android — mở được bình thường trên máy, không phải HEIC, không quá lớn — vẫn bị Scan ID báo "Không đọc được ảnh này...". Yêu cầu: không được đoán nguyên nhân, phải audit lại toàn bộ pipeline ingest/decode/render và tìm root cause thật bằng bằng chứng.
+- **Root cause tìm được:** `detectPage()` (app.js) gọi `loadImage()` (giải mã ảnh) NGOÀI mọi try/catch riêng, nhưng khối phía sau — `drawRotatedToCanvas()` dựng canvas làm việc 560px + `DocumentDetector.detect()` (ML/WASM) hoặc `detectDocument()` (CV cổ điển) + `applyIdAspectHint()` — chạy trong CÙNG một try mà chỉ có `finally { releaseImage(source) }`, KHÔNG có catch riêng. Một lỗi bất kỳ ở khối nhận diện góc này (ML/WASM crash trên máy yếu, canvas `getImageData` ném `SecurityError`, hoặc bất kỳ bug tương lai nào trong `detectDocument()`) sẽ thoát thẳng ra ngoài `detectPage()`, và cả `addFiles()` lẫn `addIdFile()` chỉ có MỘT catch — gộp chung "ảnh không giải mã được" với "nhận diện góc bị lỗi" thành cùng một nhãn lỗi, xoá trang/mặt khỏi state và báo "Không đọc được ảnh này" dù ảnh đã giải mã hoàn toàn thành công.
+- **Thay đổi:**
+  - `detectPage()` trong `app.js`: bọc khối `drawRotatedToCanvas()`+detection trong try/catch **riêng**, tách khỏi `loadImage()`. Lỗi ở khối này hạ về khung cắt toàn khung mặc định (`FULL_FRAME_CORNERS`), `confidence = 0.55` (tự động vào diện cần kiểm tra), `detectorSource = 'DETECTION_ERROR_FALLBACK'` (phân biệt với `'DEFAULT_FALLBACK'` — hình học tồi nhưng không throw). `page.width`/`page.height` vẫn được điền qua `rotatedDimensions()` khi không dựng được canvas.
+  - Thêm `scripts/regression_detection_fallback.js` (mới, chạy trong CI): 4 case, dependency-free, nạp `app.js` thật vào fake DOM qua `vm` module.
+- **File đã sửa:** `app.js`, `scripts/regression_detection_fallback.js` (mới), `.github/workflows/static-validation.yml`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/04-current-tasks.md`, `docs/brain/06-ai-working-log.md`.
+- **Kiểm tra (bằng chứng root cause, không chỉ unit test sau khi sửa):**
+  - Chạy `scripts/regression_detection_fallback.js` trên code TRƯỚC khi sửa (stash tạm thời): **4/11 PASS** — đúng 3 case dự đoán thất bại thật (`DocumentDetector.detect()` throw ở Document mode, ở Scan ID, và `detectDocument()`'s `getImageData()` throw) đều khiến trang/mặt bị xoá và hiện thông báo giải mã sai; case baseline (ảnh thật sự không giải mã được) vẫn đúng như cũ.
+  - Chạy lại SAU khi sửa: **17/17 PASS** — page/side được giữ lại, gắn `DETECTION_ERROR_FALLBACK`, không còn thông báo "Không đọc được ảnh này" cho lỗi detection; baseline decode-failure thật vẫn đúng như trước (không làm yếu đường xử lý lỗi giải mã thật).
+  - Hồi quy không đổi: `regression_image_decode.js` 32/32 · `regression_scan_id.js` 52/52 · `regression_export_busy.js` 29/29 · `regression_ml_detector.js` 53/53 · `regression_party_mode.cjs` 62/62 · `regression_watermark.cjs` 35/35 · `regression_sw_update.cjs` PASS · `test_touch_targets.cjs` 150/150 (Chromium thật) · `acceptance_scan_id_photo.cjs` 17/17 (Chromium thật, không regress) · `validate_static.py` 10/10 · `node --check app.js`/`sw.js`/`document-detector.js` PASS.
+  - **Chưa kiểm tra được ở đây:** chính thiết bị Android của người dùng, và liệu ML/WASM có thực sự crash trên máy đó hay không (không có log thiết bị thật để xác nhận cơ chế crash cụ thể — bằng chứng ở đây chứng minh ĐƯỜNG XỬ LÝ LỖI sai, không chứng minh nguyên nhân crash gốc trên máy cụ thể của người dùng). Xem `docs/brain/04-current-tasks.md`.
+
+## [2026-09-05] Tách "Hướng dẫn" khỏi Scan hồ sơ Đảng — thành khu vực độc lập toàn ứng dụng
+- **Agent:** Claude Sonnet 5
+- **Bối cảnh:** Sau khi operator xác nhận SCAN_ID_JPEG_ANDROID_RUNTIME_ACCEPTANCE_PASS trên điện thoại thật, yêu cầu tiếp theo: "Hướng dẫn" đang nằm/cảm giác như một tính năng bên trong "Scan hồ sơ Đảng" — operator không muốn vậy. Yêu cầu: đưa Hướng dẫn thành một khu vực độc lập của toàn bộ Vigil Lens, giữ nguyên nội dung giá trị đã có, không sửa thuật toán scan/edge detection/export/business logic Party.
+- **Thay đổi:**
+  - `index.html`: đổi tên toàn bộ class `party-help-*` → `help-*` (rename cơ học, xác nhận 84 occurrence, không đụng ID/JS). Xoá `<dialog id="partyHelpDialog">` khỏi vị trí cũ (sau `#partyWorkspace`); di chuyển nguyên vẹn nội dung "QUY TRÌNH NHANH 6 BƯỚC" + 24 section nghiệp vụ chi tiết vào `#helpSectionParty` bên trong `<dialog id="helpDialog">` mới (đặt sau `</main>`); bỏ khối "TỔNG QUAN 4 CHẾ ĐỘ" (trùng lặp với "Bắt đầu nhanh" mới). Thêm 4 section landing mới: Scan tài liệu, Scan ID (7 bước theo đúng yêu cầu), Làm sạch chân trang (không gọi là "watermark" trong UI), Mẹo scan. Thêm nút `#helpBtn` vào topbar (luôn hiện, không ẩn theo mode). Đổi 2 nút `? Hướng dẫn` trong Party thành "Xem hướng dẫn Scan hồ sơ Đảng"/"Xem hướng dẫn" (`#partyHelpLinkEmpty`/`#partyHelpLinkToolbar`).
+  - `app.js`: thêm `openHelp(sectionId)`/`closeHelp()` (không đụng `state.mode`); tách `leaveActiveModeWithConfirm()` từ handler cũ của `#switchModeBtn` để dùng chung với 4 nút Quick-start (`#helpGotoDocBtn` v.v.) trong Hướng dẫn — đảm bảo Quick-start dùng đúng cơ chế xác nhận "xóa ảnh đang xử lý" đã có, không có đường tắt bỏ qua.
+  - `party-mode.js`: xoá `els.helpDialog`/`els.helpClose`, hàm `openHelp()` riêng, và wiring `[data-party-help]` cũ — Party không còn giữ bất kỳ tham chiếu nào tới dialog/nội dung Hướng dẫn.
+  - `styles.css`: rename class shell (`.help-dialog`/`.help-sheet`/`.help-head`/`.help-content`), thêm CSS mới cho accordion `<details>`/`<summary>` và lưới nút Quick-start. Thêm 1 rule mobile: ẩn label chữ của nút `.btn.ghost.compact` trong `.top-actions` ở `≤768px` — sửa lỗi tràn ngang phát hiện được khi thêm `#helpBtn` (xem bên dưới).
+  - `scripts/regression_help_ia.js` (mới, CI): 26/26, chạy trên fake DOM Node, chứng minh state machine của kiến trúc thông tin mới.
+  - `scripts/acceptance_help_ui.cjs` (mới, cần Chromium thật): 22/22, dùng đúng kỹ thuật CDP `Emulation.setDeviceMetricsOverride` (đặt TRƯỚC `Page.navigate`) để đo viewport chính xác — tự xác nhận `window.innerWidth` đúng 390px/360px trước khi tin phép đo tràn ngang; `--window-size` khi khởi động Chromium headless bị đo được là không đáng tin ở môi trường này (~500px thực tế bất kể giá trị truyền vào).
+  - `scripts/acceptance_party_ui.cjs`: cập nhật `runHelpUxAcceptance()` để trỏ vào `#helpDialog`/`#helpSectionParty`/`#partyHelpLinkToolbar` mới thay vì `#partyHelpDialog`/`#partyHelpClose`/`[data-party-help]` cũ (test cũ nhắm đúng vào phần đã di chuyển nên phải cập nhật theo).
+  - `.github/workflows/static-validation.yml`: thêm bước `regression_help_ia.js`.
+- **Lỗi phát hiện được trong lúc kiểm thử (không phải yêu cầu ban đầu, nhưng là regression thật do thay đổi này gây ra):** Thêm `#helpBtn` luôn hiện vào topbar khiến `.top-actions` tràn ngang ở 390px khi `#installBtn` (nút "Cài app") cũng đang hiện — `acceptance_party_ui.cjs`'s mode-selector check bắt được (`overflow:true`, xác nhận bằng diagnostic tạm thời: `#installBtn` bị đẩy ra ngoài viewport). Xác nhận đây LÀ regression bằng cách chạy chính test đó trên code CŨ (chưa có `#helpBtn`) → PASS ở 390px, rồi trên code MỚI → FAIL — chứng minh nguyên nhân chính xác trước khi sửa. Sửa bằng cách ẩn label chữ (`<span>`) của mọi nút `.btn.ghost.compact` trong `.top-actions` ở `≤768px`, giữ icon + `aria-label`. Xác nhận lại: PASS.
+- **Kiểm tra:**
+  - `node scripts/regression_help_ia.js` — **26/26 PASS**. Chạy trên code TRƯỚC khi sửa (stash `app.js`) trước tiên: 18/26, tái hiện đúng — Hướng dẫn không tồn tại độc lập, Quick-start/guard không hoạt động.
+  - `node scripts/acceptance_help_ui.cjs` — **22/22 PASS** trên Chromium 1194 thật, viewport 390×844 và 360×800 đã xác nhận chính xác (`innerWidth` đo được đúng 390/360, không phải số ước lượng sai từ `--window-size`).
+  - `node scripts/acceptance_party_ui.cjs` — toàn bộ PASS đến bước `runPreviewLifecycleAcceptance`, thất bại ở đây với thông điệp **y hệt** khi chạy trên code trước khi sửa (đã xác minh bằng cách chạy lại trên code gốc) — flake môi trường có sẵn, không liên quan tới thay đổi này, xem `docs/brain/04-current-tasks.md`.
+  - Hồi quy không đổi: `regression_image_decode` 32/32 · `regression_scan_id` 52/52 · `regression_export_busy` 29/29 · `regression_detection_fallback` 17/17 · `regression_ml_detector` 53/53 · `regression_party_mode.cjs` 62/62 · `regression_watermark` 35/35 · `regression_sw_update` PASS · `test_touch_targets` 175/175 (Chromium thật, `helpBtn` 44×44px trên mobile) · `validate_static.py` 10/10 · `node --check` tất cả file JS PASS.
+  - **Chưa kiểm tra được ở đây:** cảm nhận UX thực tế trên thiết bị Android của operator (chỉ có bằng chứng Chromium headless, không phải phiên cầm tay thật).
 
