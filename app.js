@@ -32,7 +32,12 @@
     helpBtn: $('#helpBtn'), helpDialog: $('#helpDialog'), helpClose: $('#helpClose'),
     partyHelpLinkEmpty: $('#partyHelpLinkEmpty'), partyHelpLinkToolbar: $('#partyHelpLinkToolbar'),
     helpGotoDocBtn: $('#helpGotoDocBtn'), helpGotoIdBtn: $('#helpGotoIdBtn'),
-    helpGotoPartyBtn: $('#helpGotoPartyBtn'), helpGotoWatermarkBtn: $('#helpGotoWatermarkBtn')
+    helpGotoPartyBtn: $('#helpGotoPartyBtn'), helpGotoWatermarkBtn: $('#helpGotoWatermarkBtn'),
+    // Lightbox: full-size, navigable view for every screenshot embedded in #helpDialog
+    helpLightbox: $('#helpLightbox'), helpLightboxImage: $('#helpLightboxImage'), helpLightboxCaption: $('#helpLightboxCaption'),
+    helpLightboxCounter: $('#helpLightboxCounter'), helpLightboxClose: $('#helpLightboxClose'),
+    helpLightboxPrev: $('#helpLightboxPrev'), helpLightboxNext: $('#helpLightboxNext'),
+    helpLightboxZoom: $('#helpLightboxZoom'), helpLightboxStage: $('.help-lightbox-stage'), helpContent: $('.help-content')
   };
 
   const state = {
@@ -1525,6 +1530,54 @@
   els.helpGotoIdBtn.addEventListener('click', () => helpQuickstartTo('id'));
   els.helpGotoPartyBtn.addEventListener('click', () => helpQuickstartTo('party'));
   els.helpGotoWatermarkBtn.addEventListener('click', () => helpQuickstartTo('watermark'));
+
+  // Lightbox: every real screenshot embedded in #helpDialog (Scan hồ sơ Đảng
+  // and Làm sạch chân trang sections) opens full size on click, with
+  // prev/next across the whole ordered set and a 1:1 zoom toggle for reading
+  // the text inside a screenshot as clearly as in the app itself.
+  let helpLightboxIndex = 0;
+  function helpImageList() {
+    return $$('#helpDialog [data-help-image]').map(el => ({
+      src: el.dataset.helpImage,
+      caption: el.dataset.helpCaption || ''
+    }));
+  }
+  function setHelpZoom(actualSize) {
+    els.helpLightboxStage?.classList.toggle('is-actual', actualSize);
+    if (els.helpLightboxZoom) {
+      els.helpLightboxZoom.textContent = actualSize ? 'Vừa khung' : 'Phóng 100%';
+      els.helpLightboxZoom.setAttribute('aria-pressed', String(actualSize));
+    }
+    if (els.helpLightboxStage) els.helpLightboxStage.scrollTop = 0;
+  }
+  function showHelpImage(index) {
+    const items = helpImageList();
+    if (!items.length || !els.helpLightbox?.showModal) return;
+    helpLightboxIndex = (index + items.length) % items.length;
+    const item = items[helpLightboxIndex];
+    els.helpLightboxImage.src = item.src;
+    els.helpLightboxImage.alt = item.caption;
+    els.helpLightboxCaption.textContent = item.caption;
+    els.helpLightboxCounter.textContent = `${helpLightboxIndex + 1}/${items.length}`;
+    setHelpZoom(false);
+    if (!els.helpLightbox.open) els.helpLightbox.showModal();
+  }
+  els.helpContent?.addEventListener('click', event => {
+    const target = event.target.closest('[data-help-image]');
+    if (!target) return;
+    const index = helpImageList().findIndex(item => item.src === target.dataset.helpImage);
+    if (index >= 0) showHelpImage(index);
+  });
+  els.helpLightboxClose?.addEventListener('click', () => els.helpLightbox.close());
+  els.helpLightboxZoom?.addEventListener('click', () => setHelpZoom(!els.helpLightboxStage.classList.contains('is-actual')));
+  els.helpLightboxImage?.addEventListener('click', () => setHelpZoom(!els.helpLightboxStage.classList.contains('is-actual')));
+  els.helpLightboxPrev?.addEventListener('click', () => showHelpImage(helpLightboxIndex - 1));
+  els.helpLightboxNext?.addEventListener('click', () => showHelpImage(helpLightboxIndex + 1));
+  els.helpLightbox?.addEventListener('click', event => { if (event.target === els.helpLightbox) els.helpLightbox.close(); });
+  els.helpLightbox?.addEventListener('keydown', event => {
+    if (event.key === 'ArrowLeft') { event.preventDefault(); showHelpImage(helpLightboxIndex - 1); }
+    if (event.key === 'ArrowRight') { event.preventDefault(); showHelpImage(helpLightboxIndex + 1); }
+  });
 
   els.idChooseBtn.addEventListener('click', () => { if (state.busy) return; els.idFileInput.click(); });
   els.idCameraBtn.addEventListener('click', () => { if (state.busy) return; els.idCameraInput.click(); });

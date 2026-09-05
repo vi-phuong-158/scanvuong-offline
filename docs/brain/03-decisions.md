@@ -41,6 +41,49 @@
 
 ---
 
+## [2026-09-05, SUPERSEDED cùng ngày] Global in-app Help Center: `<dialog>` thay vì trang riêng, ảnh đặt trong `docs/user-guide/`
+
+> **Đã thay thế bởi hai entry bên dưới** ("Hướng dẫn là cross-application support surface" +
+> "Hợp nhất Help Center ảnh thật vào #helpDialog"). `#helpCenterDialog`/`#helpNavBtn`/`#helpLightbox`
+> mô tả ở đây **không còn tồn tại trong code** — một agent khác trên `origin/main` độc lập xây một
+> `#helpDialog` accordion đầy đủ hơn cùng lúc; hai nhánh được merge và nội dung ảnh/lightbox ở đây
+> được chuyển sang gắn vào `#helpDialog` của họ thay vì dialog riêng. Giữ lại entry này chỉ để biết
+> lý do ban đầu — đừng dựng lại `#helpCenterDialog`.
+
+- **Quyết định (lịch sử, không còn áp dụng):**
+  1. **Một `<dialog id="helpCenterDialog">` toàn cục** (`index.html`) thay vì route/trang riêng —
+     giữ đúng kiến trúc single-file, không router, mở qua `#helpNavBtn` luôn hiển thị trong topbar
+     (`.top-actions`) ở mọi màn hình, kể cả mode-select.
+  2. **Không sửa/hợp nhất với `#partyHelpDialog` đã có sẵn.** Dialog cũ (nội dung text-only, mở qua
+     `[data-party-help]`) giữ nguyên — `scripts/acceptance_party_ui.cjs` đã assert đúng hành vi của
+     nó. Help Center mới là một điểm vào bổ sung, có ảnh chụp thật, nội dung không mâu thuẫn với
+     `docs/user-guide/HUONG_DAN_SU_DUNG.md` (cùng nguồn nội dung).
+  3. **Điều hướng theo ngữ cảnh dùng gán trực tiếp `scrollTop`, không dùng `scrollIntoView()`.**
+     `scrollIntoView()` không đáng tin cậy cho nội dung cuộn bên trong một `<dialog>` mở bằng
+     `showModal()` trên một số bản Chromium — quan sát được khi debug: gọi hàm không báo lỗi nhưng
+     `scrollTop` không đổi. Thay bằng `content.scrollTop = target.offsetTop` (hàm
+     `jumpToHelpSection()` trong `app.js`), luôn hoạt động đúng.
+  4. **Ảnh chụp màn hình dùng lại nguyên vẹn `docs/user-guide/assets/annotated/*.png`** (không copy
+     sang `assets/help/`) — tránh nhân đôi ảnh nhị phân, đảm bảo nội dung trong app và trong
+     `HUONG_DAN_SU_DUNG.md` luôn khớp nhau vì cùng trỏ tới một file. 12 đường dẫn này đã được thêm
+     vào mảng `ASSETS` trong `sw.js` để tải offline (xem mục "Khi thay đổi kiến trúc" trong
+     `CLAUDE.md`/`AGENTS.md` — thay đổi danh sách asset của `sw.js` bắt buộc cập nhật doc này).
+  5. **Cache version bump `vigil-lens-v2.9.1`** để trình duyệt tải lại toàn bộ asset mới.
+- **Lý do:** Yêu cầu thêm mục Hướng dẫn sử dụng trực quan ngay trong app, dùng ảnh thật, hoạt động
+  100% offline, không phá vỡ thiết kế dependency-free / không router hiện có.
+- **Đánh đổi:**
+  - Repo giờ có một phụ thuộc runtime (không chỉ tài liệu) vào thư mục `docs/user-guide/assets/`;
+    xoá hoặc đổi tên ảnh trong thư mục đó sẽ làm hỏng Help Center trong app — phải sửa đồng thời
+    `index.html` và `sw.js` nếu đổi tên/đường dẫn ảnh.
+  - Topbar giờ có 3 nút khả kiến đồng thời tại màn hình hẹp (badge + `#helpNavBtn` +
+    `#installBtn`/`#switchModeBtn` khi hiện) → đã thêm CSS ẩn nhãn chữ (`.top-actions .btn.ghost.compact span { display:none }`)
+    ở `≤768px` để tránh tràn ngang; phát hiện được nhờ `scripts/acceptance_party_ui.cjs` fail ở
+    viewport 390px trước khi fix (`#installBtn` — "Cài app" — là phần tử vượt mép, không phải nút
+    Hướng dẫn mới, nhưng cả ba nút cộng lại mới vượt ngưỡng 390px).
+- **Người quyết định:** Claude Code theo yêu cầu người dùng.
+
+---
+
 ## [2026-09-04] Xóa Watermark / Logo CamScanner bằng Can thiệp Cấu trúc PDF (Structural Surgery) thay vì Re-encoding / Inpainting
 
 - **Quyết định:**
@@ -445,4 +488,47 @@
 - **Đánh đổi:**
   Đổi tên hàng loạt class CSS `party-help-*` → `help-*` (rename cơ học thuần class name, xác minh không đụng ID/JS nào, không đổi bất kỳ giá trị style nào) để nội dung Party dùng chung style shell với các section khác mà không cần viết lại CSS. Phát hiện và sửa kèm: thêm `#helpBtn` luôn hiện vào topbar làm `.top-actions` có thể chứa tới 4 nút cùng lúc trên điện thoại hẹp (badge + Hướng dẫn + Đổi chế độ + Cài app, cái cuối xuất hiện độc lập với Hướng dẫn mỗi khi trình duyệt tự đề xuất cài PWA) — tràn ngang tại 390px đã được `acceptance_party_ui.cjs`'s mode-selector check bắt được; sửa bằng cách ẩn label chữ của các nút `.btn.ghost.compact` trong `.top-actions` ở `@media (max-width:768px)` (giữ icon + `aria-label`), không đổi hành vi hay layout ở màn hình rộng.
 - **Người quyết định:** Claude Sonnet 5 (theo yêu cầu người dùng, xác minh bằng regression Node chạy trên code trước/sau và acceptance Chromium thật ở viewport 390×844/360×800 dùng CDP `Emulation.setDeviceMetricsOverride` chính xác).
+
+## [2026-09-05] Hợp nhất Help Center ảnh thật + lightbox vào `#helpDialog` (thay vì `#helpCenterDialog` riêng)
+
+- **Bối cảnh:** Hai phiên Claude Code làm việc độc lập, cùng lúc, trên cùng một nhu cầu ("thêm mục
+  Hướng dẫn trực quan"). Phiên này xây `#helpCenterDialog` (3 tab, ảnh chụp thật, thư viện ảnh,
+  lightbox). Phiên kia (đã merge trước qua PR #14, xem entry "Hướng dẫn là cross-application support
+  surface" ở trên) xây `#helpDialog` (accordion `<details>`, 6 section đầy đủ, 24 mục nghiệp vụ chi
+  tiết, deep-link từ Party). Khi `git merge origin/main`, cả hai dialog cùng tồn tại song song trong
+  index.html — người dùng chọn **kết hợp cả hai**: giữ cấu trúc accordion của `#helpDialog` (đầy đủ
+  hơn, có regression riêng `regression_help_ia.js`/`acceptance_help_ui.cjs`), nhúng ảnh thật +
+  lightbox của phiên này vào đúng hai mục "Scan hồ sơ Đảng" và "Làm sạch chân trang".
+- **Quyết định:**
+  1. **Xoá hẳn `#helpCenterDialog`/`#helpNavBtn`/`#helpCenterClose`** và toàn bộ CSS `.help-center-*`
+     — không giữ hai dialog Hướng dẫn cùng lúc. Nút topbar giữ nguyên `#helpBtn` (icon sách của
+     nhánh kia), không phải icon dấu hỏi của phiên này.
+  2. **Giữ nguyên `#helpLightbox`** (dialog phóng ảnh full-size, điều hướng ảnh trước/sau, toggle
+     "Phóng 100%" xem đúng kích thước gốc) — không đụng hàng với `#helpDialog`, gắn thêm vào cuối.
+     CSS đổi từ token toàn cục (`--ink`/`--surface`/`--line`) sang token `--manager-*` để đồng bộ
+     màu với `party-preview-dialog`/`help-dialog` xung quanh (cùng là overlay ảnh trong app).
+  3. **Nhúng 6 ảnh thật vào `#helpSectionParty`** (`docs/user-guide/assets/annotated/02,03,04,05,06,07`)
+     — đặt ngay dưới đoạn văn bản mô tả đúng thao tác đó trong 24 mục chi tiết (mục 3, 4, 5, 6, 17,
+     21), **không** nhét vào lưới `.help-steps-grid` 6-ô nhỏ ở đầu (ảnh 1440px sẽ phá vỡ layout lưới
+     compact 200px/ô).
+  4. **Viết lại toàn bộ `#helpSectionWatermark`** thay vì chỉ nhúng ảnh vào nội dung cũ — nội dung cũ
+     ("Chọn đúng vùng cần xử lý") mô tả sai hành vi thật: Làm sạch chân trang **tự động hoàn toàn**,
+     không có bước chọn vùng thủ công nào trong `watermark-mode.js`. Nội dung mới khớp hành vi thật,
+     có ảnh bước 1 (chọn tệp), before/after cạnh nhau, ảnh so sánh hero, và ảnh bước 2 (kết quả).
+  5. **`data-help-image`/`data-help-caption`** là điểm nối duy nhất giữa nội dung tĩnh và lightbox —
+     `helpImageList()` tìm mọi phần tử này bên trong `#helpDialog` theo đúng thứ tự DOM, nên thứ tự
+     next/prev trong lightbox tự động khớp thứ tự đọc của tài liệu, không cần danh sách cứng.
+  6. **Không dùng `els.helpDialog.querySelector(...)`/`querySelectorAll(...)` (gọi trên phần tử).**
+     `scripts/regression_export_busy.js`/`regression_scan_id.js` giả lập DOM tối giản
+     (`makeEl()`/`makeDialogEl()`) chỉ có `addEventListener`/`classList`/... — không có
+     `querySelector` ở cấp phần tử. Đổi sang `$$('#helpDialog [data-help-image]')` và một `els.helpContent`
+     lấy qua `$('.help-content')` ở cấp `document` (hàm `$`/`$$` top-level đã được stub sẵn trong
+     harness, trả `null`/`[]` an toàn thay vì ném lỗi) — hai regression này crash trước khi sửa.
+  7. **Cache version bump `vigil-lens-v2.9.3`.**
+- **Lý do:** Người dùng chủ động yêu cầu kết hợp thay vì chọn một bên; tránh hai Hướng dẫn cạnh tranh
+  nhau trong cùng một app, đồng thời không lãng phí công chụp/chú thích 12 ảnh thật đã làm.
+- **Đánh đổi:** `#helpSectionParty` giờ dài hơn đáng kể (24 mục text + 6 ảnh 1440px) — thời gian mở
+  dialog lần đầu chậm hơn một chút do ảnh tải (đã có `loading="lazy"`, không chặn hiển thị text).
+- **Người quyết định:** Claude Sonnet 5, theo yêu cầu người dùng ("kết hợp cả 2... giữ cấu trúc
+  #helpDialog accordion của họ nhưng nhúng thêm ảnh thật + lightbox của em").
 
