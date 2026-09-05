@@ -367,3 +367,16 @@
   Không có. Thuật toán nhân ma trận Affine 6 tham số chạy tức thì ($<0.01\text{ms}$/trang), bảo toàn 100% bit stream JPEG của ảnh scan gốc và hoàn toàn không có âm tính giả trên các bộ kiểm thử hồi quy.
 - **Người quyết định:** Codex (theo yêu cầu người dùng).
 
+## [2026-09-05] Giải mã ảnh điện thoại theo "thang bậc" thay vì một lần thử duy nhất
+
+- **Quyết định:**
+  1. **`loadImage()` là một thang bậc giải mã, không phải một lần gọi.** Thứ tự: (a) `createImageBitmap` có `resizeWidth` khi ảnh vượt `MAX_DECODE_EDGE = 4096`, (b) `createImageBitmap` không option (engine cũ có thể từ chối chính cái options bag), (c) dựng lại `Blob` từ bytes đã đọc rồi thử lại, (d) hạ dần bề rộng theo `DECODE_RETRY_WIDTHS = [3000, 2000, 1200]`, (e) `<img>` + Object URL. Chỉ khi **toàn bộ** thất bại mới ném `ImageDecodeError`.
+  2. **Đọc kích thước từ header (`sniffImageSize`) trước khi giải mã.** Đọc SOF của JPEG, IHDR của PNG, VP8/VP8L/VP8X của WEBP — thuần byte, không giải mã, không phụ thuộc thư viện. Nhờ vậy một tấm 108 MP được yêu cầu giải mã **đã thu nhỏ**, thay vì bung ra RGBA (~430 MB) rồi bị trình duyệt di động từ chối.
+  3. **`decode()` của `<img>` chỉ được phép thắng sớm, không được phép làm hỏng.** Trên một số bản Android, `img.decode()` reject cho ảnh mà chính element đó sau đó `onload` bình thường. Nên `decodeElement()` cho `decode()` đua với `onload`/`onerror`: `decode()` reject bị bỏ qua.
+  4. **Object URL tạm chỉ được thu hồi trong `releaseImage()`.** Trước đây `loadImage()` revoke ngay trong `finally` sau `await img.decode()`. Ảnh đã giải mã vẫn có thể bị trình duyệt loại khỏi bộ nhớ khi thiếu RAM; khi đó element đọc lại URL đã bị thu hồi và `drawImage` hỏng. Vòng đời URL vì thế phải bằng vòng đời sử dụng ảnh.
+  5. **Ảnh không giải mã được bị từ chối tại bước import/chụp, không phải tại bước xuất.** `addFiles()` loại trang lỗi khỏi `state.pages`; `addIdFile()` gỡ mặt lỗi khỏi `state.idScan` và giữ wizard đứng tại mặt đó. Thông báo là tiếng Việt, nêu nguyên nhân có thể (HEIC/HEIF, ảnh quá lớn, ảnh chỉ có trên đám mây) và cách xử lý.
+- **Lý do:**
+  Người dùng tải ảnh chụp bằng điện thoại vào Scan ID: khung xem trước A4 trống trơn và bước Xuất PDF dừng ở 5% với đúng một dòng tiếng Anh của trình duyệt — *"Không xuất được PDF: The source image cannot be decoded."*. Đó là thông điệp Chromium dùng chung cho **mọi** nguyên nhân: `File` kiểu `content://` của Android không còn đọc được, MIME rỗng/sai do picker, và ảnh camera quá lớn để bung ở kích thước gốc. Bản cũ chỉ thử đúng hai lần (`createImageBitmap` với `imageOrientation`, rồi `<img>.decode()`), nuốt mọi lỗi ở `addIdFile()` — nên một mặt hỏng vẫn đi tiếp được tới bước Xuất PDF, và người dùng chỉ biết có chuyện ở bước cuối cùng.
+- **Đánh đổi:**
+  Mỗi lần `loadImage()` đọc thêm `blob.arrayBuffer()` (một bản sao trong RAM, ~2–8 MB với ảnh điện thoại, giải phóng ngay sau đó) và chỉ đọc khi trình duyệt có `createImageBitmap`. Ảnh có cạnh dài vượt 4096 px được giải mã ở 4096 px thay vì kích thước gốc: không mất chi tiết thực tế vì `renderPageCanvas()` vốn đã hạ xuống `maxEdge` 1600 khi xuất PDF và 900 khi xem trước.
+- **Người quyết định:** Claude Code (theo báo lỗi của người dùng).

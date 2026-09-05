@@ -66,12 +66,19 @@ Không nằm trong phạm vi công việc thường xuyên — dự án là stat
 
 ## CI
 
-`.github/workflows/static-validation.yml` chạy trên `push`/`pull_request`: `node --check app.js`/`sw.js`, `node scripts/regression_export_busy.js`, `node scripts/regression_scan_id.js`, parse JSON của `manifest.webmanifest`/`vercel.json`, `ast.parse` `server.py`, xác nhận asset trong `ASSETS` của `sw.js` tồn tại trên đĩa, quét không có URL runtime CDN/external, và quét ranh giới riêng tư (không `XMLHttpRequest`/`sendBeacon`/`WebSocket`/`localStorage`/`sessionStorage`/`indexedDB`/cookie/`fetch` trong `app.js`). Logic quét nằm trong `scripts/validate_static.py` (Python stdlib only, không dependency mới).
+`.github/workflows/static-validation.yml` chạy trên `push`/`pull_request`: `node --check app.js`/`sw.js`, `node scripts/regression_export_busy.js`, `node scripts/regression_scan_id.js`, `node scripts/regression_image_decode.js`, parse JSON của `manifest.webmanifest`/`vercel.json`, `ast.parse` `server.py`, xác nhận asset trong `ASSETS` của `sw.js` tồn tại trên đĩa, quét không có URL runtime CDN/external, và quét ranh giới riêng tư (không `XMLHttpRequest`/`sendBeacon`/`WebSocket`/`localStorage`/`sessionStorage`/`indexedDB`/cookie/`fetch` trong `app.js`). Logic quét nằm trong `scripts/validate_static.py` (Python stdlib only, không dependency mới).
 
 ## Regression harnesses
 
 - `node scripts/regression_export_busy.js` — script Node dependency-free cho Document mode: chứng minh export snapshot đóng băng trang và export settings (`pageSize`/`margin`/`fileName`/`quality`), và mọi mutation handler bị khoá khi `state.busy === true`.
 - `node scripts/regression_scan_id.js` — script Node dependency-free cho Scan ID: chứng minh front/back tách biệt khỏi `state.pages`, state machine `front→back→preview` và "Sửa mặt trước/sau", từ chối xuất khi thiếu mặt, khoá busy toàn diện, export snapshot isolation, thu hồi Object URL, bất biến hình học layout A4 (equal width 65% độc lập resolution nguồn, khoảng cách 28 mm, căn giữa dọc toàn block, bảo toàn aspect ratio, trong viền trang), và PDF 1 trang A4 portrait. Chạy trong CI.
+- `node scripts/regression_image_decode.js` — script Node dependency-free cho thang giải mã ảnh (`loadImage`/`releaseImage`/`sniffImageSize`): đọc kích thước từ header JPEG/PNG/WEBP, ảnh quá lớn được giải mã **đã thu nhỏ** (`resizeWidth ≤ MAX_DECODE_EDGE`), giải mã full-res thất bại vẫn cứu được bằng các bậc thu nhỏ, Object URL của `<img>` fallback sống tới đúng `releaseImage()`, `File` không đọc được bytes vẫn đi tiếp được, và ảnh không giải mã được **bị từ chối ngay tại bước chụp Scan ID** (mặt lỗi bị gỡ, wizard đứng nguyên, không tới được Xuất PDF). Chạy trong CI.
+
+## Scan ID validation với ảnh chụp điện thoại (browser acceptance)
+
+    node scripts/acceptance_scan_id_photo.cjs
+
+Cần Chromium/Chrome thật (tự tìm, hoặc đặt `CHROME_PATH`) nên **không** chạy trong CI. Script dựng ảnh 6000×3783 (cạnh dài vượt `MAX_DECODE_EDGE`) ngay trong trình duyệt, chạy đúng luồng Scan ID thật, rồi kiểm tra: khung xem trước A4 có vẽ thật (không trắng trơn), Xuất PDF ra file `%PDF-` đúng **1 trang A4 dọc**, và — bằng một dấu đen bất đối xứng trên từng mặt — **mặt trước nằm trên, mặt sau nằm dưới, không mặt nào bị lật hay mirror**, không lỗi console.
 
 ## Lưu ý
 

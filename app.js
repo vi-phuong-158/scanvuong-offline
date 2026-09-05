@@ -191,36 +191,183 @@
     updateShell();
 
     setBusy(true, `Đang nhận mép 1/${newPages.length}…`);
+    const undecodable = [];
     try {
       for (let i = 0; i < newPages.length; i++) {
         els.processingText.textContent = `Đang nhận mép ${i + 1}/${newPages.length}…`;
-        await detectPage(newPages[i], false);
+        // An unreadable photo must fail here, where the operator is still
+        // looking at the import, instead of silently becoming a page that only
+        // blows up at export time.
+        try { await detectPage(newPages[i], false); }
+        catch (err) { console.error(err); undecodable.push(newPages[i]); }
         if (i % 2 === 1) await sleepFrame();
       }
     } finally {
+      if (undecodable.length) {
+        const dropped = new Set(undecodable.map(p => p.id));
+        undecodable.forEach(p => URL.revokeObjectURL(p.url));
+        state.pages = state.pages.filter(p => !dropped.has(p.id));
+        if (dropped.has(state.selectedId)) state.selectedId = state.pages.length ? state.pages[0].id : null;
+      }
       setBusy(false);
       updateShell();
-      const review = newPages.filter(p => p.confidence < 0.58).length;
-      toast(review ? `Đã thêm ${newPages.length} trang · ${review} trang cần kiểm tra.` : `Đã thêm ${newPages.length} trang.`);
+      const kept = newPages.length - undecodable.length;
+      const review = newPages.filter(p => p.confidence < 0.58 && !undecodable.includes(p)).length;
+      if (!kept) toast(DECODE_HELP, 7000);
+      else if (undecodable.length) toast(`Đã thêm ${kept} trang · ${undecodable.length} ảnh không đọc được và đã bị bỏ qua.`, 6000);
+      else toast(review ? `Đã thêm ${kept} trang · ${review} trang cần kiểm tra.` : `Đã thêm ${kept} trang.`);
     }
   }
 
-  async function loadImage(fileOrUrl) {
-    if (fileOrUrl instanceof Blob && 'createImageBitmap' in window) {
-      try {
-        const bmp = await createImageBitmap(fileOrUrl, { imageOrientation: 'from-image' });
-        return bmp;
-      } catch (_) {}
+  // ---------- Image decoding ----------
+  // A photo taken on a phone can fail to decode for reasons that have nothing
+  // to do with it being a bad image: an Android picker hands over a content://
+  // File whose bytes are no longer readable by the time we ask for them, or an
+  // empty/wrong MIME type, or a 50-200 MP camera shot the mobile decoder
+  // refuses to expand at full resolution. Chrome reports every one of those
+  // with the same opaque "The source image cannot be decoded.". So decoding is
+  // a ladder: each rung falls through to the next, and only when all of them
+  // fail do we raise ImageDecodeError, whose message tells the operator what
+  // to actually do about it.
+  const MAX_DECODE_EDGE = 4096;
+  const DECODE_RETRY_WIDTHS = [3000, 2000, 1200];
+  const DECODE_HELP = 'Không đọc được ảnh này. Ảnh có thể ở định dạng HEIC/HEIF của điện thoại, kích thước quá lớn, hoặc chưa tải về máy (ảnh chỉ nằm trên đám mây). Hãy mở ảnh trong thư viện, lưu hoặc chia sẻ lại dưới dạng JPG rồi thử lại.';
+
+  class ImageDecodeError extends Error {
+    constructor(cause) { super(DECODE_HELP); this.name = 'ImageDecodeError'; this.cause = cause; }
+  }
+
+  // Object URLs handed to an <img> must outlive the decode: Chrome may drop a
+  // decoded copy under memory pressure and re-read the URL, so revoking right
+  // after decode() is what turns a good photo into a broken one later on.
+  // releaseImage() is the single place that frees them.
+  const imageObjectUrls = new WeakMap();
+
+  function releaseImage(source) {
+    if (!source) return;
+    const url = imageObjectUrls.get(source);
+    if (url) { imageObjectUrls.delete(source); URL.revokeObjectURL(url); }
+    source.close?.();
+  }
+
+  // Reads width/height straight out of the file header, so an oversized photo
+  // can be decoded downscaled instead of being expanded to RGBA first (a 108 MP
+  // shot is ~430 MB of pixels — the allocation mobile Chrome refuses).
+  function sniffImageSize(buffer) {
+    const b = new Uint8Array(buffer);
+    if (b.length < 16) return null;
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) {
+      const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+      return { width: dv.getUint32(16), height: dv.getUint32(20) };
     }
-    const url = fileOrUrl instanceof Blob ? URL.createObjectURL(fileOrUrl) : fileOrUrl;
-    try {
+    if (b[0] === 0xFF && b[1] === 0xD8) {
+      let i = 2;
+      while (i + 9 < b.length) {
+        if (b[i] !== 0xFF) { i++; continue; }
+        const marker = b[i + 1];
+        if (marker === 0xFF || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD9)) { i += 2; continue; }
+        const len = (b[i + 2] << 8) | b[i + 3];
+        if (len < 2) return null;
+        const isSof = marker >= 0xC0 && marker <= 0xCF && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC;
+        if (isSof) return { height: (b[i + 5] << 8) | b[i + 6], width: (b[i + 7] << 8) | b[i + 8] };
+        if (marker === 0xDA) return null;
+        i += 2 + len;
+      }
+      return null;
+    }
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+        b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) {
+      const fourcc = String.fromCharCode(b[12], b[13], b[14], b[15]);
+      if (fourcc === 'VP8 ' && b.length > 29) return { width: (b[26] | (b[27] << 8)) & 0x3FFF, height: (b[28] | (b[29] << 8)) & 0x3FFF };
+      if (fourcc === 'VP8L' && b.length > 24) {
+        const bits = (b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24)) >>> 0;
+        return { width: (bits & 0x3FFF) + 1, height: ((bits >>> 14) & 0x3FFF) + 1 };
+      }
+      if (fourcc === 'VP8X' && b.length > 29) {
+        return { width: (b[24] | (b[25] << 8) | (b[26] << 16)) + 1, height: (b[27] | (b[28] << 8) | (b[29] << 16)) + 1 };
+      }
+    }
+    return null;
+  }
+
+  function sniffImageMime(buffer) {
+    const b = new Uint8Array(buffer);
+    if (b.length < 12) return '';
+    if (b[0] === 0x89 && b[1] === 0x50) return 'image/png';
+    if (b[0] === 0xFF && b[1] === 0xD8) return 'image/jpeg';
+    if (b[0] === 0x52 && b[1] === 0x49 && b[8] === 0x57 && b[9] === 0x45) return 'image/webp';
+    return '';
+  }
+
+  // Every createImageBitmap shape worth trying, cheapest-correct first. An
+  // older engine can reject the options bag itself, so a bare call is the last
+  // attempt rather than the first.
+  async function decodeBitmap(blob, resizeWidth) {
+    if (typeof createImageBitmap !== 'function') return null;
+    const attempts = [];
+    if (resizeWidth > 0) {
+      attempts.push({ imageOrientation: 'from-image', resizeWidth, resizeQuality: 'high' });
+      attempts.push({ resizeWidth, resizeQuality: 'high' });
+    }
+    attempts.push({ imageOrientation: 'from-image' }, null);
+    for (const opts of attempts) {
+      try { return opts ? await createImageBitmap(blob, opts) : await createImageBitmap(blob); }
+      catch (_) { /* next rung */ }
+    }
+    return null;
+  }
+
+  // decode() rejects spuriously on some Android builds for images the element
+  // then loads fine, so it only ever wins the race early — never loses it.
+  function decodeElement(url) {
+    return new Promise((resolve, reject) => {
       const img = new Image();
       img.decoding = 'async';
+      let settled = false;
+      const succeed = () => { if (!settled) { settled = true; resolve(img); } };
+      const fail = () => { if (!settled) { settled = true; reject(new Error('image element failed to load')); } };
+      img.onload = succeed;
+      img.onerror = fail;
       img.src = url;
-      await img.decode();
+      if (typeof img.decode === 'function') img.decode().then(succeed, () => {});
+    });
+  }
+
+  async function loadImage(fileOrUrl) {
+    if (!(fileOrUrl instanceof Blob)) return decodeElement(fileOrUrl);
+
+    let blob = fileOrUrl;
+    if (typeof createImageBitmap === 'function') {
+      // Pulling the bytes here does double duty: it yields the dimensions
+      // without paying for a full decode, and it is the only way to survive a
+      // content:// File that has gone unreadable since it was picked.
+      let bytes = null;
+      try { bytes = await blob.arrayBuffer(); } catch (_) { bytes = null; }
+      const size = bytes ? sniffImageSize(bytes) : null;
+      const longEdge = size ? Math.max(size.width, size.height) : 0;
+      const resizeWidth = longEdge > MAX_DECODE_EDGE
+        ? Math.max(1, Math.round(size.width * (MAX_DECODE_EDGE / longEdge)))
+        : 0;
+
+      let bitmap = await decodeBitmap(blob, resizeWidth);
+      if (!bitmap && bytes && bytes.byteLength) {
+        blob = new Blob([bytes], { type: sniffImageMime(bytes) || fileOrUrl.type || 'image/jpeg' });
+        bitmap = await decodeBitmap(blob, resizeWidth);
+        for (let i = 0; !bitmap && i < DECODE_RETRY_WIDTHS.length; i++) {
+          bitmap = await decodeBitmap(blob, DECODE_RETRY_WIDTHS[i]);
+        }
+      }
+      if (bitmap) return bitmap;
+    }
+
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = await decodeElement(url);
+      imageObjectUrls.set(img, url);
       return img;
-    } finally {
-      if (fileOrUrl instanceof Blob && url !== fileOrUrl) URL.revokeObjectURL(url);
+    } catch (err) {
+      URL.revokeObjectURL(url);
+      throw new ImageDecodeError(err);
     }
   }
 
@@ -277,7 +424,7 @@
       page.width = rotated.width;
       page.height = rotated.height;
     } finally {
-      source.close?.();
+      releaseImage(source);
     }
     if (rerender) { renderThumbs(); renderSelected(); updateSummaryOnly(); }
   }
@@ -478,7 +625,7 @@
   async function renderSelected() {
     const page = activePage();
     if (!page) {
-      state.preview.image?.close?.();
+      releaseImage(state.preview.image);
       state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
       state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';
       return;
@@ -487,9 +634,18 @@
     $$('.filter-chip').forEach(b => b.classList.toggle('active', b.dataset.filter === page.filter));
     renderConfidenceHint();
 
-    const img = await loadImage(page.file);
-    if (token !== state.renderToken) { img.close?.(); return; }
-    state.preview.image?.close?.();
+    let img;
+    try {
+      img = await loadImage(page.file);
+    } catch (err) {
+      // Editor preview is best-effort: a page can only get here with a
+      // readable file, but a file can still go unreadable underneath us.
+      console.error(err);
+      toast(err instanceof ImageDecodeError ? err.message : DECODE_HELP, 7000);
+      return;
+    }
+    if (token !== state.renderToken) { releaseImage(img); return; }
+    releaseImage(state.preview.image);
     state.preview.image = img; state.preview.pageId = page.id;
     drawEditor();
   }
@@ -897,7 +1053,7 @@
         ctx.drawImage(warped,0,0,outW,outH);ctx.filter='none';
       }
       return final;
-    }finally{source.close?.();}
+    }finally{releaseImage(source);}
   }
 
   function canvasToJpeg(canvas,quality){return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('Không tạo được ảnh JPEG.')),'image/jpeg',quality));}
@@ -996,7 +1152,16 @@
     state.idScan[step] = side;
     renderModeShell();
     setBusy(true, 'Đang nhận mép…');
-    try { await detectPage(side, false); } finally { setBusy(false); }
+    try {
+      await detectPage(side, false);
+    } catch (err) {
+      // Same reason as addFiles(): reject the photo at capture time rather
+      // than letting the operator reach the A4 preview with a side that can
+      // never be rendered.
+      console.error(err);
+      if (state.idScan[step] === side) { URL.revokeObjectURL(side.url); state.idScan[step] = null; }
+      toast(err instanceof ImageDecodeError ? err.message : DECODE_HELP, 7000);
+    } finally { setBusy(false); }
     renderModeShell();
   }
 
@@ -1036,7 +1201,9 @@
       toast(`Đã xuất ${name} · ${(pdf.size / 1024 / 1024).toFixed(2)} MB`, 3500);
     } catch (err) {
       console.error(err);
-      els.idExportNotice.textContent = `Không xuất được PDF: ${err.message || err}`;
+      els.idExportNotice.textContent = err instanceof ImageDecodeError
+        ? err.message
+        : `Không xuất được PDF: ${err.message || err}`;
       els.idExportNotice.classList.remove('hidden');
       toast('Có lỗi khi xuất PDF.');
     } finally {
@@ -1060,6 +1227,7 @@
     ctx.clearRect(0, 0, cssW, cssH); ctx.fillStyle = '#1c1210'; ctx.fillRect(0, 0, cssW, cssH);
     if (!front || !back) return;
     setBusy(true, 'Đang dựng trang A4…');
+    els.idExportNotice.classList.add('hidden');
     try {
       const [fc, bc] = await Promise.all([renderPageCanvas(front, 900), renderPageCanvas(back, 900)]);
       const composed = composeIdA4(fc, bc);
@@ -1067,6 +1235,14 @@
       const dw = composed.width * scale, dh = composed.height * scale, ox = (cssW - dw) / 2, oy = (cssH - dh) / 2;
       ctx.fillStyle = '#fff'; ctx.fillRect(ox, oy, dw, dh);
       ctx.drawImage(composed, ox, oy, dw, dh);
+    } catch (err) {
+      // A blank preview stage with no explanation is what made this failure
+      // look like "the app just does nothing" — say what went wrong instead.
+      console.error(err);
+      els.idExportNotice.textContent = err instanceof ImageDecodeError
+        ? err.message
+        : `Không dựng được bản xem trước: ${err.message || err}`;
+      els.idExportNotice.classList.remove('hidden');
     } finally { setBusy(false); }
   }
 
@@ -1255,7 +1431,7 @@
     if (state.mode === 'id') resetIdScan();
     if (state.mode === 'party') window.VigilLensParty?.deactivate();
     if (state.mode === 'watermark') window.VigilLensWatermark?.deactivate();
-    state.preview.image?.close?.();
+    releaseImage(state.preview.image);
     state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
     state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';
     state.mode = null;
