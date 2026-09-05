@@ -551,6 +551,12 @@ button {
   border: 1px solid var(--success-border);
 }
 
+.mode-icon-box.compress-box {
+  background: var(--gold-soft);
+  color: var(--gold-hover);
+  border: 1px solid var(--gold-border);
+}
+
 .mode-pill {
   font-size: 9px;
   font-weight: 700;
@@ -1164,6 +1170,13 @@ button {
   font-size: 12px;
   line-height: 1.4;
   margin: 0;
+  white-space: pre-line;
+}
+
+.notice.notice-danger {
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+  color: var(--danger-dark) !important;
 }
 
 /* --- 10. Scan ID Workspace & Preview Section --- */
@@ -2142,6 +2155,13 @@ button {
   right: 22px;
   bottom: 22px;
 }
+@media (min-width: 1100px) {
+  /* 5 mode cards no longer fit a clean 2x2 in a 2-column grid — widen the
+     container slightly and go to 3 columns so wide desktop still reads as
+     two short rows (3+2) instead of cascading into three. */
+  .mode-select-container { width: min(100%, 1200px); max-width: 1200px; }
+  .mode-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 1099px) and (min-width: 721px) {
   .mode-select-container { width: min(100%, 760px); }
   .mode-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2368,6 +2388,96 @@ button {
     width: 100%;
   }
   .watermark-actions button {
+    width: 100%;
+  }
+}
+
+/* Giảm dung lượng PDF — reuses .watermark-* card/dropzone/result layout above */
+.compress-quality-box {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.compress-quality-box .watermark-meta-label {
+  align-self: center;
+}
+
+.compress-check-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13.5px;
+}
+
+.compress-check-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compress-check-list li svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.compress-check-list li.text-success {
+  color: var(--success-dark);
+}
+
+.compress-check-list li.text-danger {
+  color: var(--danger-dark);
+}
+
+.party-large-dialog {
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: 0;
+  max-width: 420px;
+  width: calc(100% - 32px);
+}
+
+.party-large-dialog::backdrop {
+  background: rgba(15, 12, 10, 0.5);
+}
+
+.party-large-dialog-body {
+  padding: 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.party-large-dialog-body h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.party-large-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 600px) {
+  .compress-quality-box {
+    grid-template-columns: 1fr;
+  }
+  .party-large-dialog-actions {
+    flex-direction: column;
+  }
+  .party-large-dialog-actions button {
     width: 100%;
   }
 }

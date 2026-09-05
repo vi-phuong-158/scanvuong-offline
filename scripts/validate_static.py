@@ -90,7 +90,7 @@ check("every sw.js ASSETS entry exists on disk")(_sw_assets_exist)
 # anywhere in these files — including inside a comment — is worth failing CI
 # over, since this project's rule is that none should ever appear here.
 EXTERNAL_URL_RE = re.compile(r"https?://")
-SCANNED_FOR_EXTERNAL_URLS = ['index.html', 'app.js', 'party-pdf.js', 'party-mode.js', 'party-taxonomy.js', 'document-detector.js', 'styles.css', 'sw.js', 'manifest.webmanifest']
+SCANNED_FOR_EXTERNAL_URLS = ['index.html', 'app.js', 'party-pdf.js', 'party-mode.js', 'party-taxonomy.js', 'document-detector.js', 'styles.css', 'sw.js', 'manifest.webmanifest', 'pdf-compress.js', 'compress-mode.js']
 
 
 def _no_external_urls():
@@ -121,7 +121,7 @@ PRIVACY_FORBIDDEN_PATTERNS = {
 
 
 def _no_network_or_storage_in_app_js():
-    app_js = '\\n'.join(read(f) for f in ['app.js', 'party-pdf.js', 'party-mode.js', 'party-taxonomy.js'])
+    app_js = '\\n'.join(read(f) for f in ['app.js', 'party-pdf.js', 'party-mode.js', 'party-taxonomy.js', 'pdf-compress.js', 'compress-mode.js'])
     hits = []
     for label, pattern in PRIVACY_FORBIDDEN_PATTERNS.items():
         for m in re.finditer(pattern, app_js):
@@ -144,7 +144,7 @@ check("sw.js fetch usage stays same-origin (documented guard present)")(_sw_fetc
 
 # UI Emoji Guard: ensure all UI icons use consistent SVG and no emojis linger in app shell
 EMOJI_RE = re.compile(r'[\U0001F300-\U0001F9FF\U00002700-\U000027BF\U00002600-\U000026FF\U0001FA00-\U0001FAFF\U00002B50\U00002B55\U000025FD-\U000025FE\U000026AA-\U000026AB]')
-SCANNED_FOR_EMOJIS = ['index.html', 'styles.css', 'app.js', 'party-pdf.js', 'party-mode.js', 'party-taxonomy.js', 'document-detector.js']
+SCANNED_FOR_EMOJIS = ['index.html', 'styles.css', 'app.js', 'party-pdf.js', 'party-mode.js', 'party-taxonomy.js', 'document-detector.js', 'pdf-compress.js', 'compress-mode.js']
 
 
 def _no_ui_emojis():

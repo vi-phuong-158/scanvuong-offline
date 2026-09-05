@@ -176,6 +176,29 @@
               </svg>
             </div>
           </button>
+
+          <button id="modeCompressBtn" class="mode-card compress-mode-card" type="button">
+            <div class="mode-card-visual">
+              <div class="mode-icon-box compress-box" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="8 3 4 7 8 11" />
+                  <polyline points="16 3 20 7 16 11" />
+                  <line x1="4" y1="7" x2="20" y2="7" />
+                  <path d="M12 14v7M9 18l3 3 3-3" />
+                </svg>
+              </div>
+              <span class="mode-pill">Dưới 20 MB</span>
+            </div>
+            <div class="mode-card-content">
+              <strong>Giảm dung lượng PDF</strong>
+              <p>Đưa PDF lớn xuống dưới 20 MB · Tự động, vẫn đủ rõ để đọc</p>
+            </div>
+            <div class="mode-card-arrow" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 4l6 6-6 6" />
+              </svg>
+            </div>
+          </button>
         </div>
         <div class="mode-footer-privacy">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -486,6 +509,21 @@
         </footer>
       </div>
     </dialog>
+
+    <!-- Party Mode: shown only when a lossless-copy export lands over 20MB.
+         The default export path above stays untouched; this is an explicit
+         opt-in detour into the shared PdfCompress engine (see pdf-compress.js). -->
+    <dialog id="partyLargeFileDialog" class="party-large-dialog" aria-labelledby="partyLargeFileTitle">
+      <div class="party-large-dialog-body">
+        <h3 id="partyLargeFileTitle">Tệp này có dung lượng lớn hơn 20 MB.</h3>
+        <p class="muted">Một số hệ thống có thể không tiếp nhận.</p>
+        <p id="partyLargeFileStatus" class="muted hidden"></p>
+        <div class="party-large-dialog-actions">
+          <button id="partyLargeOriginalBtn" class="btn secondary touch-lg" type="button">Tải bản gốc</button>
+          <button id="partyLargeCompressBtn" class="btn primary touch-lg" type="button">Tạo bản dưới 20MB</button>
+        </div>
+      </div>
+    </dialog>
     <!-- 4. Scan ID Workspace -->
     <section id="idWorkspace" class="workspace id-workspace hidden">
       <aside class="sidebar card id-sidebar">
@@ -667,6 +705,103 @@
           </div>
         </div>
 
+      </div>
+    </section>
+
+    <!-- 5. Giảm dung lượng PDF: independent, top-level workflow -->
+    <section id="compressWorkspace" class="watermark-workspace hidden" aria-label="Giảm dung lượng PDF">
+      <div class="watermark-card card">
+        <div class="watermark-header">
+          <div class="watermark-badge">DƯỚI 20 MB</div>
+          <h2>Giảm dung lượng PDF</h2>
+          <p class="muted">Đưa PDF lớn xuống dưới 20 MB · Tài liệu được xử lý hoàn toàn trên thiết bị.</p>
+        </div>
+
+        <!-- Dropzone state -->
+        <div id="compressDropZone" class="drop-zone watermark-drop-zone" tabindex="0" role="button" aria-label="Chọn PDF cần giảm dung lượng">
+          <div class="drop-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+              <path d="M12 12v9" />
+              <path d="m8 16 4-4 4 4" />
+            </svg>
+          </div>
+          <h3>Chọn hoặc kéo PDF vào đây</h3>
+          <p class="drop-subtitle">Tài liệu được xử lý hoàn toàn trên thiết bị.</p>
+          <div class="empty-buttons">
+            <button id="compressChooseBtn" class="btn primary touch-lg" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              <span>Chọn tệp PDF</span>
+            </button>
+          </div>
+          <div class="privacy-note">
+            <span>Không tải lên mạng · 100% xử lý tại chỗ</span>
+          </div>
+        </div>
+
+        <!-- File-info state: shown after a PDF is chosen, before compressing -->
+        <div id="compressInfo" class="watermark-result hidden">
+          <div class="watermark-meta-grid">
+            <div class="watermark-meta-item">
+              <span class="watermark-meta-label">Tên file:</span>
+              <strong id="compressMetaName" class="watermark-meta-value">-</strong>
+            </div>
+            <div class="watermark-meta-item">
+              <span class="watermark-meta-label">Số trang:</span>
+              <strong id="compressMetaPages" class="watermark-meta-value">-</strong>
+            </div>
+            <div class="watermark-meta-item">
+              <span class="watermark-meta-label">Dung lượng hiện tại:</span>
+              <strong id="compressMetaSize" class="watermark-meta-value">-</strong>
+            </div>
+          </div>
+          <p id="compressAlreadySmallNotice" class="notice hidden">File hiện đã dưới 20 MB. Bạn vẫn có thể giảm thêm nếu muốn.</p>
+          <p id="compressMemoryRiskNotice" class="notice notice-danger hidden"></p>
+
+          <div class="compress-quality-box">
+            <span class="watermark-meta-label">Mục tiêu</span>
+            <strong>Dưới 20 MB</strong>
+            <span class="watermark-meta-label">Chất lượng</span>
+            <strong>Tự động — khuyến nghị</strong>
+          </div>
+
+          <div id="compressProgress" class="progress-wrap hidden" aria-live="polite">
+            <div class="progress-track"><div id="compressProgressBar" class="progress-bar"></div></div>
+            <span id="compressProgressLabel">Đang chuẩn bị…</span>
+          </div>
+
+          <div class="watermark-actions">
+            <button id="compressStartBtn" class="btn primary touch-lg" type="button">Giảm dung lượng</button>
+            <button id="compressChangeFileBtn" class="btn secondary touch-lg" type="button">Chọn tệp khác</button>
+          </div>
+        </div>
+
+        <!-- Result state -->
+        <div id="compressResult" class="watermark-result hidden">
+          <div class="watermark-status-banner">
+            <div class="watermark-status-text">
+              <strong id="compressResultSizes">-</strong>
+              <p id="compressResultReduction" class="muted"></p>
+            </div>
+          </div>
+          <ul id="compressResultChecks" class="compress-check-list"></ul>
+          <p id="compressResultNotice" class="notice hidden"></p>
+          <div class="watermark-actions">
+            <button id="compressDownloadBtn" class="btn primary touch-lg" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>Tải PDF</span>
+            </button>
+            <button id="compressStrongerBtn" class="btn secondary touch-lg hidden" type="button">Nén mạnh hơn</button>
+            <button id="compressResetBtn" class="btn ghost touch-lg" type="button">Chọn tệp khác</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1156,6 +1291,7 @@
   <input id="partyCameraInput" type="file" accept="image/*" capture="environment" hidden />
   <input id="partyPdfInput" type="file" accept="application/pdf,.pdf" hidden />
   <input id="watermarkFileInput" type="file" accept="application/pdf,.pdf" hidden />
+  <input id="compressFileInput" type="file" accept="application/pdf,.pdf" hidden />
 
   <footer class="app-footer">
     <span>Vigil Lens by VPH</span><span class="app-footer-separator" aria-hidden="true">·</span>
@@ -1173,5 +1309,7 @@
   <script src="party-pdf.js" defer></script>
   <script src="party-mode.js" defer></script>
   <script src="watermark-mode.js" defer></script>
+  <script src="pdf-compress.js" defer></script>
+  <script src="compress-mode.js" defer></script>
 </body>
 </html>

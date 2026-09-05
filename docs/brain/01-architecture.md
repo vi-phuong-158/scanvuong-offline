@@ -25,6 +25,8 @@ scanvuong-offline/
 ├── party-pdf.js            # Engine PDF nhị phân local: bóc tách/copy page object, decompress, watermark stripper
 ├── party-taxonomy.js       # Danh mục 104 loại văn bản tài liệu Đảng
 ├── watermark-mode.js       # Workflow bóc tách watermark CamScanner lossless
+├── pdf-compress.js         # Engine nén PDF thích ứng theo dung lượng mục tiêu (dùng chung)
+├── compress-mode.js        # Workflow "Giảm dung lượng PDF" — UI only, gọi pdf-compress.js
 ├── assets/
 │   ├── fonts/              # Typography tiếng Việt cục bộ (100% offline)
 │   │   ├── BeVietnamPro-Regular.woff2    # 400 Regular
@@ -112,6 +114,10 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 | | `stripWatermarkFromContentStream()` | `copyPageObjects()` (khi `stripWatermarks: true`) | regex & token stripping loại bỏ khối `q ... cm /ImX Do Q` |
 | | `stripWatermarks()` | `watermark-mode.js` (`processPdfFile`) | `sourceFromBuffer()`, `detectCamScannerWatermarks()`, `copyPageObjects()`, `buildPdf()`, trả về kết quả hoặc fail-safe tệp gốc |
 | | `VigilLensWatermark` | `#watermarkChooseBtn`, drag-drop, `enterMode('watermark')` | `PartyPdf.stripWatermarks()`, render thống kê kết quả, tải file PDF sạch, thu hồi Object URL |
+| **Giảm dung lượng PDF** | `PdfCompress.compressPdf()` | `VigilLensCompress` (`compress-mode.js`), `party-mode.js`'s `#partyLargeCompressBtn` handler | `PartyPdf.sourceFromBuffer()` (parse), `renderRound()` → `renderCompressionPage()` → `PartyPdf.renderThumbnail()` (dùng lại renderer PDF.js-kèm-fallback-cổ-điển của Party Mode, không tự bootstrap PDF.js riêng) → `encodePage()` (canvas→JPEG) → `buildCompressedPdf()` (`PartyPdf.buildPdf([], items)`) → `verifyTarget()`, lặp qua `resolveRounds()` cho tới khi đạt target hoặc hết rounds |
+| | `resolveRounds(options)` | `compressPdf()`, `scripts/regression_pdf_compress.cjs` | thuần hàm: `options.rounds` tường minh, hoặc `ROUNDS` (+`BEYOND_FLOOR_ROUNDS` chỉ khi `options.allowBeyondFloor===true`) — nơi DUY NHẤT quyết định có vượt quality floor hay không |
+| | `VigilLensCompress` | `#modeCompressBtn`, `enterMode('compress')`, drop-zone `#compressDropZone` | `PdfCompress.inspectPdf()` (hiện tên/số trang/dung lượng), `PdfCompress.compressPdf()`, tải kết quả, không chứa logic nén |
+| | Party Mode `>20MB` dialog | `exportSingleDocument()` khi `result.blob.size > 20.000.000 byte` | `openLargeFileDialog()` → `#partyLargeOriginalBtn` (tải đúng blob lossless đã có, không đổi) hoặc `#partyLargeCompressBtn` (gọi thẳng `PdfCompress.compressPdf()`, KHÔNG có bản sao logic nén trong `party-mode.js`) |
 
 ### Luồng xử lý chính
 
@@ -191,7 +197,7 @@ bán kính lớn cho bước 1 không tốn thêm chi phí đáng kể so với 
 ### ID mode (Scan ID: mặt trước + mặt sau → 1 trang A4)
 
 Workflow độc lập với document mode, chọn ở màn hình bắt đầu (`#modeSelect`) và giữ trong
-`state.mode` (`null` | `'document'` | `'id'`):
+`state.mode` (`null` | `'document'` | `'id'` | `'party'` | `'watermark'` | `'compress'`):
 
 ```
 [chọn "Scan ID"]
@@ -274,7 +280,7 @@ Không có API hay database. Cấu trúc dữ liệu trung tâm là một object
 }
 ```
 
-`state.mode` (`null` | `'document'` | `'id'`) chọn workflow đang active. `state.idScan` giữ trạng
+`state.mode` (`null` | `'document'` | `'id'` | `'party'` | `'watermark'` | `'compress'`) chọn workflow đang active. `state.idScan` giữ trạng
 thái Scan ID, độc lập hoàn toàn với `state.pages`:
 
 ```js
@@ -364,3 +370,30 @@ The fourth workflow provides automated, bit-for-bit lossless removal of CamScann
     - **Object Pruning & Serialization (`copyPageObjects`):** Removes the watermark reference `/ImX <id> 0 R` from the page's `/Resources/XObject` dictionary (direct or indirect). Because the watermark XObject is no longer reachable from the page dictionary, it is excluded from object copying, reducing the output file size by the exact byte length of the watermark asset.
     - **Annotation Sanitization (`cleanCamScannerAnnotations`):** Removes `/Subtype /Link` annotations pointing to `camscanner.com` or positioned directly over the watermark rectangle, pruning the `/Annots` key when empty to prevent invisible click traps.
     - **Fail-Safe Integrity:** If 0 watermarks are detected, `stripWatermarks` immediately returns the original PDF buffer unmodified (`unmodified: true`).
+
+## Giảm dung lượng PDF (Compress Mode) architecture (2026-09-05)
+
+The fifth top-level workflow, `state.mode==='compress'`, is a standalone tool independent from Document/ID/Party/Watermark — it never touches `state.pages`/`state.idScan`. `enterMode('compress')` calls `window.VigilLensCompress.activate()`, mirroring exactly how `'watermark'` wires `window.VigilLensWatermark` (same pattern in `renderModeShell()`/`leaveActiveModeWithConfirm()`).
+
+### Split: engine vs. UI
+
+- **`pdf-compress.js` (`window.PdfCompress`)** is the only place compression logic exists. Public contract: `inspectPdf(fileOrBlob)` (cheap page-count/size lookup), `compressPdf(fileOrBlob, options)` (the adaptive loop), `resolveRounds(options)`, `renderCompressionPage`, `encodePage`, `buildCompressedPdf`, `verifyTarget`, plus the constants `PDF_COMPRESSION_TARGET_BYTES` (19,000,000 bytes — decimal MB, not MiB, chosen so the margin below 20MB survives either a decimal or MiB reading of "20MB" on a receiving system), `PDF_COMPRESSION_DISPLAY_LIMIT_BYTES` (20,000,000), `ROUNDS`, `BEYOND_FLOOR_ROUNDS`.
+- **`compress-mode.js` (`window.VigilLensCompress`)** is UI-only: drop-zone → file-info screen (name/pages/size, "đã dưới 20MB" notice if applicable, never auto-compresses) → progress → result (before/after size, reduction %, page-count/target checkmarks, download, and a "Nén mạnh hơn" button that only appears once `!achievedTarget`). It never re-implements any part of the compression loop.
+- **`party-mode.js`** calls `window.PdfCompress.compressPdf()` directly from the `>20MB` dialog's "Tạo bản dưới 20MB" button (see the "Giảm dung lượng PDF" row in the Code Graph table above) — there is exactly one compression implementation in the codebase, reused by both callers, per the task's hard "không duplicate compression logic" requirement.
+
+### Why the renderer reuses `PartyPdf.renderThumbnail()` instead of a second PDF.js bootstrap
+
+`renderCompressionPage(source, pageIndex, maxEdge)` does **not** load PDF.js itself. It calls `PartyPdf.renderThumbnail(ref, canvas, maxEdge)` — the exact same function Party Mode's own page thumbnails use — which already tries `page.render()` (PDF.js) first and, if that throws for any reason (WASM/runtime failure, an unsupported filter, or a genuine `page.render()` incompatibility observed on one specific headless Chromium build during this task's development, missing `Map.prototype.getOrInsertComputed`), falls back to `party-pdf.js`'s own classical content-stream renderer. This was a deliberate design change from an initial version that bootstrapped PDF.js independently: that version had no fallback, so any PDF.js/WASM hiccup took the entire compression feature down even though Party Mode's preview pipeline already had a proven, tested recovery path for exactly this failure mode. Reusing `renderThumbnail()` means:
+- One rendering pipeline, one place that knows how to recover from a broken `page.render()` — not two.
+- `inspectPdf()`/`compressPdf()` get page count and MediaBox/CropBox/Rotate handling from `PartyPdf.sourceFromBuffer()`'s classical parser, so a bad PDF is rejected with the same, already-tested Vietnamese error messages `party-pdf.js` already produces (`'Tệp không phải PDF.'`, `'PDF có mật khẩu/mã hóa chưa được hỗ trợ.'`, `'PDF page thiếu MediaBox/CropBox hợp lệ.'`) instead of a second copy of that validation.
+- `compressPdf()` calls `PartyPdf.releasePreviewCache(source)` in a `finally` block, reusing Party Mode's already-audited per-source cache/`ImageBitmap`/pdf.js-document cleanup instead of writing a second memory-lifecycle path.
+
+### Adaptive loop
+
+`compressPdf()` resolves a round table via `resolveRounds(options)` (pure function, unit-tested in isolation — see `scripts/regression_pdf_compress.cjs`): `options.rounds` verbatim if given, else `ROUNDS` and, only when `options.allowBeyondFloor===true`, `ROUNDS.concat(BEYOND_FLOOR_ROUNDS)`. For each round in order it re-renders **every** page (`renderRound()`: render → JPEG-encode → drop the *canvas* — only one full-resolution canvas pixel buffer is ever resident at a time, never all of them at once), assembles the whole PDF via `PartyPdf.buildPdf([], items, {})` (the same local writer Party Mode already uses for its own image pages — reused rather than a third hand-rolled PDF assembler), and checks the **real** `blob.size` against the target; it stops at the first round that fits, or returns the last (floor) round's result with `achievedTarget:false` if none did. Color is never dropped (no grayscale field anywhere in the round tables — this is a deliberate scope decision to avoid adding a black/white option that isn't asked for, not an oversight); page count/order/orientation come for free from iterating `source.pageCount` in index order and letting `buildPdf` derive each output page's size from that page's own rendered width/height (so a landscape source page doesn't get force-fit into a portrait A4, matching the AGENTS.md task brief's "giữ đúng aspect ratio của source page").
+
+**Peak memory is not small just because only one canvas is held at a time** (docs/brain/03-decisions.md, "Compress mode memory audit", 2026-09-06 — corrects an earlier overclaim): `renderRound()`'s `items` array still holds every page's *encoded JPEG bytes* for the current round, and the dominant cost by far is the shared `PartyPdf.sourceFromBuffer()` classical parser, which decodes the whole source file into a JS string twice and keeps a byte-slice *and* text-slice copy of every PDF object alive for the entire `compressPdf()` call (all rounds) because `source` must stay alive throughout. Real Chromium measurement (`scripts/benchmark_pdf_compress.cjs`, `--single-process` + `/proc/<pid>/status` VmRSS — `performance.memory`/`Performance.getMetrics` JSHeapUsedSize does not see this at all, since large TypedArray/Blob backing stores are V8 external allocations) showed RSS growing ~4.6–5× the input file size for realistic 20–80MB inputs. `estimateMemoryRisk(inputBytes)` uses that measured 5× multiplier (`PARSE_MEMORY_MULTIPLIER`) to fail closed — before ever calling `sourceFromBuffer()` — on files estimated to risk crashing a mobile tab (`SAFE_MOBILE_PEAK_BYTES = 500,000,000`, chosen so the full 20–80MB requested range passes with headroom). `inspectPdf()` runs this same check *before* parsing too (an earlier version of `inspectPdf()` parsed first and checked risk after, defeating the point of an early warning for the info screen — fixed), returning `{pageCount: null, memoryRisk}` for an oversized file rather than paying the same expensive/risky parse just to refuse it. Both callers surface the exact message `PdfCompress.MEMORY_RISK_MESSAGE` ("Tệp này quá lớn để xử lý an toàn trên thiết bị hiện tại. Hãy thử trên máy tính hoặc chia tài liệu thành các phần nhỏ hơn."), never a silent crash. This guard's threshold is a same-order-of-magnitude proxy from desktop-class Chromium, not a substitute for real-device measurement — see decisions.md for the honest caveat on the 80MB tier.
+
+### Party Mode integration (`>20MB` detour)
+
+`exportSingleDocument()`'s existing lossless export path (`exportDocument()` → `PartyPdf.buildMixedPdf()`, page-object copy for PDF pages / canvas+JPEG for image pages — **unchanged**) is untouched. Only the point right before the automatic download changed: if `result.blob.size > 20,000,000`, `openLargeFileDialog(result)` shows `#partyLargeFileDialog` instead of auto-downloading. "Tải bản gốc" downloads that exact same lossless blob (no re-encode). "Tạo bản dưới 20MB" is the only path that calls `PdfCompress.compressPdf(pending.blob, {onProgress})`, then downloads the compressed result named `<type>_duoi-20MB.pdf`. `exportAll()` (bulk multi-document export) is intentionally left untouched — a per-file size-check interstitial would break its batch download loop; this is a scoped limitation, not an oversight (see `06-ai-working-log.md`).

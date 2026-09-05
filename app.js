@@ -18,7 +18,7 @@
     progressBar: $('#progressBar'), progressLabel: $('#progressLabel'), exportSummary: $('#exportSummary'),
     exportNotice: $('#exportNotice'), toast: $('#toast'), installBtn: $('#installBtn'), offlineBadge: $('#offlineBadge'),
     // Mode select + Scan ID (front/back → single A4 PDF)
-    modeSelect: $('#modeSelect'), modeDocBtn: $('#modeDocBtn'), modeIdBtn: $('#modeIdBtn'), modePartyBtn: $('#modePartyBtn'), modeWatermarkBtn: $('#modeWatermarkBtn'), switchModeBtn: $('#switchModeBtn'),
+    modeSelect: $('#modeSelect'), modeDocBtn: $('#modeDocBtn'), modeIdBtn: $('#modeIdBtn'), modePartyBtn: $('#modePartyBtn'), modeWatermarkBtn: $('#modeWatermarkBtn'), modeCompressBtn: $('#modeCompressBtn'), switchModeBtn: $('#switchModeBtn'),
     idWorkspace: $('#idWorkspace'), idStepBadge: $('#idStepBadge'), idStepHint: $('#idStepHint'),
     idChooseBtn: $('#idChooseBtn'), idCameraBtn: $('#idCameraBtn'), idFileInput: $('#idFileInput'), idCameraInput: $('#idCameraInput'),
     idBackStepBtn: $('#idBackStepBtn'), idConfirmBtn: $('#idConfirmBtn'), idEditorSlot: $('#idEditorSlot'),
@@ -1296,10 +1296,11 @@
 
   function enterMode(mode) {
     state.mode = mode;
-    if (mode !== 'party' && mode !== 'watermark') relocateEditor(mode);
+    if (mode !== 'party' && mode !== 'watermark' && mode !== 'compress') relocateEditor(mode);
     renderModeShell();
     if (mode === 'party') window.VigilLensParty?.activate();
     if (mode === 'watermark') window.VigilLensWatermark?.activate();
+    if (mode === 'compress') window.VigilLensCompress?.activate();
   }
 
   // Confirms (when there's work to lose) and tears down whatever mode is
@@ -1313,11 +1314,13 @@
     const hasIdWork = state.mode === 'id' && (state.idScan.front || state.idScan.back);
     const hasPartyWork = state.mode === 'party' && !!window.VigilLensParty?.hasWork();
     const hasWatermarkWork = state.mode === 'watermark' && !!window.VigilLensWatermark?.hasWork();
-    if ((hasDocWork || hasIdWork || hasPartyWork || hasWatermarkWork) && !confirm('Chuyển chế độ sẽ xóa ảnh đang xử lý. Tiếp tục?')) return false;
+    const hasCompressWork = state.mode === 'compress' && !!window.VigilLensCompress?.hasWork();
+    if ((hasDocWork || hasIdWork || hasPartyWork || hasWatermarkWork || hasCompressWork) && !confirm('Chuyển chế độ sẽ xóa ảnh đang xử lý. Tiếp tục?')) return false;
     if (state.mode === 'document') { state.pages.forEach(p => URL.revokeObjectURL(p.url)); state.pages = []; state.selectedId = null; }
     if (state.mode === 'id') resetIdScan();
     if (state.mode === 'party') window.VigilLensParty?.deactivate();
     if (state.mode === 'watermark') window.VigilLensWatermark?.deactivate();
+    if (state.mode === 'compress') window.VigilLensCompress?.deactivate();
     releaseImage(state.preview.image);
     state.preview.image = null; state.preview.pageId = null; state.preview.mapping = null;
     state.preview.enhancedCanvas = null; state.preview.enhancedKey = '';
@@ -1374,6 +1377,10 @@
     if (state.mode !== 'watermark') {
       const wmWs = $('#watermarkWorkspace');
       if (wmWs) wmWs.classList.add('hidden');
+    }
+    if (state.mode !== 'compress') {
+      const cpWs = $('#compressWorkspace');
+      if (cpWs) cpWs.classList.add('hidden');
     }
     if (state.mode === 'document') updateShell();
     else if (state.mode === 'id') updateIdShell();
@@ -1501,6 +1508,7 @@
   els.modeIdBtn.addEventListener('click', () => { if (state.busy) return; enterMode('id'); });
   if (els.modePartyBtn) els.modePartyBtn.addEventListener('click', () => { if (state.busy) return; enterMode('party'); });
   if (els.modeWatermarkBtn) els.modeWatermarkBtn.addEventListener('click', () => { if (state.busy) return; enterMode('watermark'); });
+  if (els.modeCompressBtn) els.modeCompressBtn.addEventListener('click', () => { if (state.busy) return; enterMode('compress'); });
 
   els.switchModeBtn.addEventListener('click', () => { if (state.busy) return; leaveActiveModeWithConfirm(); });
 
