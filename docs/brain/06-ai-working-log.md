@@ -16,6 +16,35 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-05] Help Center: thư viện ảnh + lightbox phóng to
+- **Agent:** Claude Code
+- **Thay đổi:**
+  1. Thêm tab thứ 4 **"Thư viện ảnh"** (`#help-gallery`) trong Help Center: lưới 12 thumbnail có
+     nhãn tiếng Việt, chia 3 nhóm (Tổng quan / Scan hồ sơ Đảng / Làm sạch chân trang).
+  2. Thêm **lightbox** (`#helpLightbox`) — bấm bất kỳ ảnh nào trong hướng dẫn (ảnh trong bước,
+     ảnh before/after, ảnh hero, hoặc thumbnail trong thư viện) đều mở ảnh lớn kèm chú thích,
+     bộ đếm `n/12`, nút Ảnh trước/Ảnh sau (có wrap-around), phím ←/→, đóng bằng nút/Esc/bấm nền.
+  3. Nút **"Phóng 100%"** trong lightbox: chuyển giữa chế độ vừa khung (~82% trên màn 1440px) và
+     kích thước gốc 1:1 có thể cuộn — để đọc rõ chữ trong ảnh chụp màn hình. Tự reset về "vừa
+     khung" khi chuyển sang ảnh khác.
+  4. Thêm `width`/`height` gốc cho toàn bộ 23 thẻ `<img>` của hướng dẫn → hết layout shift khi ảnh
+     lazy-load, và `offsetTop` của các mục ổn định ngay từ đầu (điều hướng theo tab luôn nhảy đúng).
+  5. Bỏ `scroll-behavior: smooth` ở `.help-center-content`: cuộn mượt qua vài nghìn pixel vừa chậm
+     vừa làm vị trí đích không xác định trong lúc ảnh đang tải. Nhảy tức thì, đúng vị trí.
+  6. Không thêm ảnh mới, không thêm mục nào vào `ASSETS` của `sw.js` — dùng lại đúng 12 ảnh đã
+     precache. Chỉ bump `CACHE` lên `vigil-lens-v2.9.2`.
+- **File đã sửa:** `index.html`, `styles.css`, `app.js`, `sw.js`.
+- **Lý do:** Ảnh 1440×964 hiển thị inline chỉ rộng ~700px (~48%), chữ trong ảnh gần như không đọc
+  được; nội dung lại là một mạch cuộn ~6000px nên khó tra cứu nhanh.
+- **Kiểm tra:**
+  - `node --check app.js`/`sw.js` PASS; `python scripts/validate_static.py` PASS (39/39 asset).
+  - Regression: export_busy 29/29, scan_id 52/52, party_mode 69/69, watermark 35/35, sw_update 9/9.
+  - `acceptance_party_ui.cjs` PASS toàn bộ; `acceptance_offline_pwa.cjs` PASS cả 2 phase.
+  - Trình duyệt thật: mở lightbox từ thumbnail (5/12), từ ảnh trong bước (`06` → 6/12), từ ảnh
+    before/after (`09` → 9/12), từ ảnh hero (`12` → 12/12) — tất cả ánh xạ đúng chỉ số; next/prev và
+    wrap-around (1 → 12) đúng; đóng lightbox thì Help Center vẫn mở; "Phóng 100%" cho 1442px so với
+    1180px ở chế độ vừa khung; tab "Thư viện ảnh" nhảy đúng `scrollTop === offsetTop`; không lỗi console.
+
 ## [2026-09-05] Mục "Hướng dẫn" trực quan ngay trong app (Help Center)
 - **Agent:** Claude Code
 - **Thay đổi:**

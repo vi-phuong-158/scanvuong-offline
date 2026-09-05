@@ -18,6 +18,10 @@
     progressBar: $('#progressBar'), progressLabel: $('#progressLabel'), exportSummary: $('#exportSummary'),
     exportNotice: $('#exportNotice'), toast: $('#toast'), installBtn: $('#installBtn'), offlineBadge: $('#offlineBadge'),
     helpNavBtn: $('#helpNavBtn'), helpCenterDialog: $('#helpCenterDialog'), helpCenterClose: $('#helpCenterClose'),
+    helpLightbox: $('#helpLightbox'), helpLightboxImage: $('#helpLightboxImage'), helpLightboxCaption: $('#helpLightboxCaption'),
+    helpLightboxCounter: $('#helpLightboxCounter'), helpLightboxClose: $('#helpLightboxClose'),
+    helpLightboxPrev: $('#helpLightboxPrev'), helpLightboxNext: $('#helpLightboxNext'),
+    helpLightboxZoom: $('#helpLightboxZoom'), helpLightboxStage: $('.help-lightbox-stage'),
     // Mode select + Scan ID (front/back → single A4 PDF)
     modeSelect: $('#modeSelect'), modeDocBtn: $('#modeDocBtn'), modeIdBtn: $('#modeIdBtn'), modePartyBtn: $('#modePartyBtn'), modeWatermarkBtn: $('#modeWatermarkBtn'), switchModeBtn: $('#switchModeBtn'),
     idWorkspace: $('#idWorkspace'), idStepBadge: $('#idStepBadge'), idStepHint: $('#idStepHint'),
@@ -1284,6 +1288,54 @@
   els.helpCenterDialog?.addEventListener('click', event => { if (event.target === els.helpCenterDialog) els.helpCenterDialog.close(); });
   els.helpCenterDialog?.querySelectorAll('[data-help-jump]').forEach(btn => {
     btn.addEventListener('click', () => jumpToHelpSection(btn.dataset.helpJump.replace('#', '')));
+  });
+
+  // Lightbox: every guide screenshot can be opened at full size. The "Thư viện
+  // ảnh" buttons are the canonical ordered list; an inline step image resolves
+  // to its position in that list so prev/next stays consistent everywhere.
+  let helpLightboxIndex = 0;
+  function helpImageList() {
+    return [...(els.helpCenterDialog?.querySelectorAll('[data-help-image]') || [])].map(btn => ({
+      src: btn.dataset.helpImage,
+      caption: btn.dataset.helpCaption || ''
+    }));
+  }
+  function setHelpZoom(actualSize) {
+    els.helpLightboxStage?.classList.toggle('is-actual', actualSize);
+    if (els.helpLightboxZoom) {
+      els.helpLightboxZoom.textContent = actualSize ? 'Vừa khung' : 'Phóng 100%';
+      els.helpLightboxZoom.setAttribute('aria-pressed', String(actualSize));
+    }
+    if (els.helpLightboxStage) els.helpLightboxStage.scrollTop = 0;
+  }
+  function showHelpImage(index) {
+    const items = helpImageList();
+    if (!items.length || !els.helpLightbox?.showModal) return;
+    helpLightboxIndex = (index + items.length) % items.length;
+    const item = items[helpLightboxIndex];
+    els.helpLightboxImage.src = item.src;
+    els.helpLightboxImage.alt = item.caption;
+    els.helpLightboxCaption.textContent = item.caption;
+    els.helpLightboxCounter.textContent = `${helpLightboxIndex + 1}/${items.length}`;
+    setHelpZoom(false);
+    if (!els.helpLightbox.open) els.helpLightbox.showModal();
+  }
+  els.helpCenterDialog?.querySelector('.help-center-content')?.addEventListener('click', event => {
+    const thumb = event.target.closest('[data-help-image]');
+    const src = thumb ? thumb.dataset.helpImage : event.target.closest('img')?.getAttribute('src');
+    if (!src) return;
+    const index = helpImageList().findIndex(item => item.src === src);
+    if (index >= 0) showHelpImage(index);
+  });
+  els.helpLightboxClose?.addEventListener('click', () => els.helpLightbox.close());
+  els.helpLightboxZoom?.addEventListener('click', () => setHelpZoom(!els.helpLightboxStage.classList.contains('is-actual')));
+  els.helpLightboxImage?.addEventListener('click', () => setHelpZoom(!els.helpLightboxStage.classList.contains('is-actual')));
+  els.helpLightboxPrev?.addEventListener('click', () => showHelpImage(helpLightboxIndex - 1));
+  els.helpLightboxNext?.addEventListener('click', () => showHelpImage(helpLightboxIndex + 1));
+  els.helpLightbox?.addEventListener('click', event => { if (event.target === els.helpLightbox) els.helpLightbox.close(); });
+  els.helpLightbox?.addEventListener('keydown', event => {
+    if (event.key === 'ArrowLeft') { event.preventDefault(); showHelpImage(helpLightboxIndex - 1); }
+    if (event.key === 'ArrowRight') { event.preventDefault(); showHelpImage(helpLightboxIndex + 1); }
   });
 
   els.idChooseBtn.addEventListener('click', () => { if (state.busy) return; els.idFileInput.click(); });
