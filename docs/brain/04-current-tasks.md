@@ -18,8 +18,11 @@
 ## Chờ làm (backlog)
 
 ### Xác nhận trên thiết bị thật: Scan ID với ảnh chụp bằng điện thoại
-- **Mô tả:** Lỗi "Không xuất được PDF: The source image cannot be decoded." + khung xem trước A4 trắng đã được sửa bằng thang bậc giải mã trong `loadImage()` (xem [03-decisions.md](03-decisions.md), mục 2026-09-05). Đã nghiệm thu bằng harness Node và Chromium headless thật, **chưa** nghiệm thu trên chính máy Android của người dùng.
-- **Việc cần làm:** Cập nhật app lên cache `vigil-lens-v2.8.2` (bấm "Cập nhật" khi hiện banner, hoặc tải lại trang), rồi chọn lại **đúng tấm ảnh đã gây lỗi** trong Scan ID. Nếu vẫn hỏng, giờ đây thông báo sẽ hiện **ngay ở bước chụp** kèm nguyên nhân — chụp lại màn hình đó là đủ để lần tiếp theo khoanh vùng.
+- **Mô tả:** Hai lớp sửa liên tiếp cho cùng một luồng báo lỗi của người dùng:
+  1. [2026-09-05, sáng] Thang bậc giải mã trong `loadImage()` — sửa cho ảnh THẬT SỰ khó giải mã (quá lớn, HEIC, bytes không đọc được).
+  2. [2026-09-05, DEV MODE audit] Tách miền lỗi "giải mã" khỏi miền lỗi "nhận diện góc" trong `detectPage()` — sửa cho đúng root cause thật: một ảnh JPEG Android **hợp lệ, giải mã tốt** vẫn bị báo "Không đọc được ảnh này" vì bộ nhận diện góc (ML/WASM hoặc canvas) crash và lỗi đó bị `addFiles()`/`addIdFile()` gộp chung với lỗi giải mã. Xem [03-decisions.md](03-decisions.md), mục 2026-09-05 (cả hai).
+  Cả hai đã nghiệm thu bằng harness Node (bao gồm chạy trên code TRƯỚC khi sửa để chứng minh tái hiện đúng lỗi) và Chromium headless thật, **chưa** nghiệm thu trên chính máy Android của người dùng.
+- **Việc cần làm:** Cập nhật app lên bản mới nhất (bấm "Cập nhật" khi hiện banner, hoặc tải lại trang), rồi chọn lại **đúng tấm ảnh đã gây lỗi** trong Scan ID. Nếu vẫn hỏng, thông báo giờ hiện **ngay ở bước chụp**; nếu lần này ảnh vẫn bị từ chối dù mở được bình thường trên máy, đó là dấu hiệu của một nguyên nhân thứ ba chưa lường tới — chụp màn hình thông báo gửi lại để khoanh vùng tiếp.
 - **Ưu tiên:** Cao — đây là đường xác nhận duy nhất còn lại cho lỗi người dùng báo.
 
 ### GATE-01: Nghiệm thu PWA Installability thủ công trên trình duyệt thật (OS Launcher)

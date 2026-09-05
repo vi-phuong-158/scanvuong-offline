@@ -396,33 +396,59 @@
     return canvas;
   }
 
+  // detectPage() has two independent failure domains that must never be
+  // confused: loadImage() above can genuinely fail to decode the file (bad
+  // format, unreadable bytes) — that is real and must reach the caller. But
+  // the corner-detection block below (canvas draw of a working thumbnail, ML
+  // inference, classical CV, geometry math) is a *best-effort estimate* on an
+  // image that already decoded fine. A crash in there — a WASM/ONNX runtime
+  // failure on a low-end device, a canvas edge case, a future regression in
+  // detectDocument() — is not evidence the photo is unreadable, so it must
+  // never surface as "cannot decode the image". It degrades to the same
+  // full-frame default crop the app already offers when detectors return low-
+  // confidence geometry, just tagged with its own detectorSource so the two
+  // situations stay distinguishable in diagnostics.
+  const FULL_FRAME_CORNERS = [{ x: 0.045, y: 0.045 }, { x: 0.955, y: 0.045 }, { x: 0.955, y: 0.955 }, { x: 0.045, y: 0.955 }];
+
   async function detectPage(page, rerender = true) {
     const source = await loadImage(page.file);
     try {
-      const rotated = drawRotatedToCanvas(source, page.rotation, 560);
-      let detection;
-      if (typeof DocumentDetector !== 'undefined') {
-        const detRes = await DocumentDetector.detect(rotated, {
-          rotation: 0,
-          fallbackDetector: (c) => detectDocument(c)
-        });
-        detection = {
-          corners: detRes.corners,
-          confidence: detRes.documentScore !== null && detRes.documentScore !== undefined ? detRes.documentScore : 0.55,
-          source: detRes.source
-        };
-      } else {
-        detection = detectDocument(rotated);
+      let rotated, detection;
+      try {
+        rotated = drawRotatedToCanvas(source, page.rotation, 560);
+        if (typeof DocumentDetector !== 'undefined') {
+          const detRes = await DocumentDetector.detect(rotated, {
+            rotation: 0,
+            fallbackDetector: (c) => detectDocument(c)
+          });
+          detection = {
+            corners: detRes.corners,
+            confidence: detRes.documentScore !== null && detRes.documentScore !== undefined ? detRes.documentScore : 0.55,
+            source: detRes.source
+          };
+        } else {
+          detection = detectDocument(rotated);
+        }
+        if (state.mode === 'id') applyIdAspectHint(detection, rotated.width, rotated.height);
+      } catch (err) {
+        console.error('detectPage: edge detection failed on a decoded image, falling back to manual crop', err);
+        rotated = null;
+        detection = null;
       }
-      if (state.mode === 'id') applyIdAspectHint(detection, rotated.width, rotated.height);
       const safeCorners = (detection && detection.corners && Array.isArray(detection.corners) && detection.corners.length === 4)
         ? detection.corners
-        : [{ x: 0.045, y: 0.045 }, { x: 0.955, y: 0.045 }, { x: 0.955, y: 0.955 }, { x: 0.045, y: 0.955 }];
+        : FULL_FRAME_CORNERS;
       page.corners = safeCorners;
       page.confidence = detection && typeof detection.confidence === 'number' ? detection.confidence : 0.55;
-      page.detectorSource = detection && detection.source ? detection.source : 'DEFAULT_FALLBACK';
-      page.width = rotated.width;
-      page.height = rotated.height;
+      page.detectorSource = rotated ? (detection && detection.source ? detection.source : 'DEFAULT_FALLBACK') : 'DETECTION_ERROR_FALLBACK';
+      if (rotated) {
+        page.width = rotated.width;
+        page.height = rotated.height;
+      } else {
+        const dims = rotatedDimensions(source.width || source.naturalWidth, source.height || source.naturalHeight, page.rotation);
+        page.width = dims.w;
+        page.height = dims.h;
+      }
     } finally {
       releaseImage(source);
     }

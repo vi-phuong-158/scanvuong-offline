@@ -380,3 +380,17 @@
 - **Đánh đổi:**
   Mỗi lần `loadImage()` đọc thêm `blob.arrayBuffer()` (một bản sao trong RAM, ~2–8 MB với ảnh điện thoại, giải phóng ngay sau đó) và chỉ đọc khi trình duyệt có `createImageBitmap`. Ảnh có cạnh dài vượt 4096 px được giải mã ở 4096 px thay vì kích thước gốc: không mất chi tiết thực tế vì `renderPageCanvas()` vốn đã hạ xuống `maxEdge` 1600 khi xuất PDF và 900 khi xem trước.
 - **Người quyết định:** Claude Code (theo báo lỗi của người dùng).
+
+## [2026-09-05] Tách "giải mã ảnh thất bại" khỏi "nhận diện góc thất bại" trong detectPage()
+
+- **Quyết định:**
+  1. **`detectPage()` có hai miền lỗi độc lập, không được để lẫn vào nhau.** `loadImage()` (giải mã file thật) chạy TRƯỚC, ngoài mọi try/catch nội bộ — lỗi ở đây là thật, phải ném ra ngoài cho `addFiles()`/`addIdFile()`. Khối phía sau (`drawRotatedToCanvas()` dựng canvas làm việc + `DocumentDetector.detect()`/`detectDocument()` nhận diện góc + `applyIdAspectHint()`) chạy trong try/catch **của riêng nó**: bất kỳ lỗi nào ở đây — ONNX/WASM crash, canvas `getImageData` ném `SecurityError`, lỗi hình học — đều bị bắt tại chỗ, không bao giờ thoát ra ngoài `detectPage()`.
+  2. **Lỗi nhận diện góc hạ về khung cắt toàn khung mặc định**, y hệt nhánh "corners hình học không hợp lệ" đã có sẵn: `page.corners = FULL_FRAME_CORNERS`, `page.confidence = 0.55` (dưới ngưỡng 0.58 nên tự động vào diện "cần kiểm tra"), nhưng gắn `page.detectorSource = 'DETECTION_ERROR_FALLBACK'` — khác với `'DEFAULT_FALLBACK'` (dùng khi detector trả về hình học tồi chứ không throw) — để hai nguyên nhân vẫn phân biệt được khi debug.
+  3. **`page.width`/`page.height` vẫn được điền** ngay cả khi không dựng được canvas làm việc, bằng `rotatedDimensions()` tính thẳng từ kích thước ảnh đã giải mã — không cần canvas.
+- **Lý do:**
+  Trước sửa, `detectPage()` chạy toàn bộ khối nhận diện góc bên trong CÙNG một try mà `finally` chỉ lo `releaseImage()`, không có catch riêng. Một lỗi bất kỳ ở khối này (ML/WASM lỗi trên máy yếu, một bug tương lai trong `detectDocument()`, canvas render thất bại) sẽ thoát thẳng ra `addFiles()`/`addIdFile()`, nơi CHỈ có một catch — không phân biệt được "ảnh không giải mã được" với "nhận diện góc bị lỗi". Cả hai đều bị gắn nhãn "không đọc được ảnh" và trang/mặt bị xoá khỏi state, dù ảnh **hoàn toàn đọc được**. Đây là root cause thật của việc một ảnh JPEG Android hợp lệ, mở được ngoài máy, vẫn bị Scan ID báo "Không đọc được ảnh này. Ảnh có thể ở định dạng HEIC/HEIF..." — thông báo sai vì nó chỉ đúng cho lỗi giải mã, còn nguyên nhân thật là detector crash hoặc canvas edge case.
+  Đã tái hiện bằng chứng cụ thể: `scripts/regression_detection_fallback.js` chạy trên code TRƯỚC khi sửa cho kết quả 4/11 PASS, đúng ba trường hợp thất bại dự đoán (`DocumentDetector.detect()` throw ở Document mode và Scan ID, `getImageData()` throw) đều khiến trang/mặt bị xoá và hiện thông báo giải mã sai; chạy lại SAU khi sửa cho 17/17 PASS.
+- **Đánh đổi:**
+  Không có chi phí runtime đáng kể — thêm đúng một lớp try/catch bọc quanh khối vốn đã tồn tại, không thay đổi đường đi khi mọi thứ thành công. Nhánh lỗi mới dùng lại chính xác pattern "full-frame default + review threshold" đã có sẵn cho trường hợp hình học tồi, không thêm khái niệm mới cho UI.
+- **Người quyết định:** Claude Code (DEV MODE audit theo yêu cầu người dùng, không tự suy đoán nguyên nhân HEIC/ảnh lớn/cloud khi chưa có bằng chứng).
+
