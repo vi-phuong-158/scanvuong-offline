@@ -56,6 +56,9 @@ jobs:
       - name: Regression harness (Scan ID front/back / A4 / busy lock)
         run: node scripts/regression_scan_id.js
 
+      - name: Regression harness (image decode ladder / phone photos)
+        run: node scripts/regression_image_decode.js
+
       - name: Regression harness (Service Worker update safety)
         run: node scripts/regression_sw_update.cjs
 

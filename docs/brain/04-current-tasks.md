@@ -17,6 +17,11 @@
 
 ## Chờ làm (backlog)
 
+### Xác nhận trên thiết bị thật: Scan ID với ảnh chụp bằng điện thoại
+- **Mô tả:** Lỗi "Không xuất được PDF: The source image cannot be decoded." + khung xem trước A4 trắng đã được sửa bằng thang bậc giải mã trong `loadImage()` (xem [03-decisions.md](03-decisions.md), mục 2026-09-05). Đã nghiệm thu bằng harness Node và Chromium headless thật, **chưa** nghiệm thu trên chính máy Android của người dùng.
+- **Việc cần làm:** Cập nhật app lên cache `vigil-lens-v2.8.2` (bấm "Cập nhật" khi hiện banner, hoặc tải lại trang), rồi chọn lại **đúng tấm ảnh đã gây lỗi** trong Scan ID. Nếu vẫn hỏng, giờ đây thông báo sẽ hiện **ngay ở bước chụp** kèm nguyên nhân — chụp lại màn hình đó là đủ để lần tiếp theo khoanh vùng.
+- **Ưu tiên:** Cao — đây là đường xác nhận duy nhất còn lại cho lỗi người dùng báo.
+
 ### GATE-01: Nghiệm thu PWA Installability thủ công trên trình duyệt thật (OS Launcher)
 - **Mô tả:** Kiểm tra thủ công prompt cài đặt PWA ("Cài đặt ứng dụng" / "Add to Home Screen") trên trình duyệt Chrome/Edge thực tế ngoài môi trường headless, xác nhận icon launcher xuất hiện trên màn hình chính và mở ứng dụng standalone khi không có mạng.
 - **Trạng thái kỹ thuật (Automated Headless Acceptance):** **PASS**

@@ -63,8 +63,12 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 
 | Cụm | Hàm chính | Được gọi bởi | Gọi tới |
 |---|---|---|---|
-| **Import** | `addFiles()` | sự kiện `change` trên `#fileInput`/`#cameraInput`, `drop` trên `#dropZone` | `isSupportedImage()`, `detectPage()`, `sleepFrame()`, `updateShell()` |
-| **Detection** | `detectPage()` | `addFiles()`, nút `#detectBtn`, `#autoAllBtn` | `loadImage()`, `drawRotatedToCanvas()`, `DocumentDetector.detect()` |
+| **Import** | `addFiles()` | sự kiện `change` trên `#fileInput`/`#cameraInput`, `drop` trên `#dropZone` | `isSupportedImage()`, `detectPage()`, `sleepFrame()`, `updateShell()` — ảnh nào `detectPage()` ném lỗi giải mã thì bị **loại khỏi `state.pages`** ngay tại bước import, không để lại trang hỏng |
+| **Decode** | `loadImage()` | `detectPage()`, `renderSelected()`, `renderPageCanvas()` | `sniffImageSize()`, `sniffImageMime()`, `decodeBitmap()`, `decodeElement()`; ném `ImageDecodeError` khi mọi bậc thang đều thất bại |
+| | `decodeBitmap()` | `loadImage()` | `createImageBitmap()` với nhiều tổ hợp option (`imageOrientation`, `resizeWidth`), trả `null` thay vì ném |
+| | `decodeElement()` | `loadImage()` | `new Image()` + `decode()`/`onload` (đua với nhau — `decode()` chỉ được thắng sớm, không được làm hỏng) |
+| | `releaseImage()` | `detectPage()`, `renderSelected()`, `renderPageCanvas()`, `#switchModeBtn` | `ImageBitmap.close()` + `URL.revokeObjectURL()` của Object URL tạm do `loadImage()` cấp — **nơi duy nhất** được thu hồi URL đó |
+| **Detection** | `detectPage()` | `addFiles()`, `addIdFile()`, nút `#detectBtn`, `#autoAllBtn` | `loadImage()`, `drawRotatedToCanvas()`, `DocumentDetector.detect()`, `releaseImage()` |
 | | `DocumentDetector.detect()` | `detectPage()` | `detectMl()`, `validateGeometry()`, fallback sang `detectDocument()` |
 | | `detectMl()` | `DocumentDetector.detect()` | `initMlSession()`, `preprocessToTensor()`, session inference, `validateGeometry()` |
 | | `detectDocument()` (fallback) | `DocumentDetector.detect()` | `otsuThreshold()`, `componentQuad()` (light-mode), `edgeQuad()`, `orderCorners()` |
@@ -87,12 +91,12 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 | **PWA glue** | cuối file (ngoài mọi hàm) | tải trang | `navigator.serviceWorker.register('./sw.js')`, `beforeinstallprompt`, `online`/`offline` |
 | **Mode select** | `enterMode()` / `renderModeShell()` | `#modeDocBtn`/`#modeIdBtn` click, `#switchModeBtn` click | `relocateEditor()`, `updateShell()` (document) hoặc `updateIdShell()` (id) |
 | **ID mode** | `activePage()` | mọi chỗ trong Editor/Corners/Filter cluster (`drawEditor`, `renderSelected`, pointer handlers, `detectBtn`/`resetCropBtn`/`rotateBtn`, filter-chip handler) — thay `selectedPage()` | `selectedPage()` (document) hoặc `state.idScan.front/back` theo `state.idScan.step` (id) |
-| | `addIdFile()` | `#idFileInput`/`#idCameraInput` change | `isSupportedImage()`, `detectPage()` (dùng chung với document), `renderModeShell()` |
+| | `addIdFile()` | `#idFileInput`/`#idCameraInput` change | `isSupportedImage()`, `detectPage()` (dùng chung với document), `renderModeShell()` — ảnh không giải mã được bị **gỡ khỏi `state.idScan[step]`** ngay tại bước chụp, wizard đứng nguyên tại mặt đó nên không thể đi tiếp tới preview/Xuất PDF với một mặt hỏng |
 | | `applyIdAspectHint()` | `detectPage()`, chỉ khi `state.mode==='id'` | chỉ đọc/hạ `detection.confidence`, không đổi `orderCorners()`/`detectDocument()` |
 | | `calculateIdA4Layout()` | `composeIdA4()` | pure layout geometry helper (tính toạ độ/kích thước front/back trên A4, target width ~65%) |
 | | `composeIdA4()` | `exportIdPdf()`, `renderIdPreview()` | gọi `calculateIdA4Layout()`, thuần canvas 2D, không gọi lại detect/homography |
 | | `exportIdPdf()` | `#idExportBtn` click | `renderPageCanvas()` ×2 (front, back — **dùng chung** với document export), `composeIdA4()`, `canvasToJpeg()`, `buildPdf()` (dùng chung) |
-| | `renderIdPreview()` | `updateIdShell()` khi `step==='preview'` | `renderPageCanvas()` ×2 (maxEdge thấp hơn), `composeIdA4()` |
+| | `renderIdPreview()` | `updateIdShell()` khi `step==='preview'` | `renderPageCanvas()` ×2 (maxEdge thấp hơn), `composeIdA4()`; lỗi được hiển thị ở `#idExportNotice` thay vì để lại khung xem trước trống |
 | **Watermark Stripper** | `detectCamScannerWatermarks()` | `stripWatermarks()` | phân tích XObjects trong `Resources`, kiểm tra kích thước/tỷ lệ logo, giải nén Content Stream qua `inflateSync` kiểm tra toạ độ `cm` ở dải lề dưới |
 | | `stripWatermarkFromContentStream()` | `copyPageObjects()` (khi `stripWatermarks: true`) | regex & token stripping loại bỏ khối `q ... cm /ImX Do Q` |
 | | `stripWatermarks()` | `watermark-mode.js` (`processPdfFile`) | `sourceFromBuffer()`, `detectCamScannerWatermarks()`, `copyPageObjects()`, `buildPdf()`, trả về kết quả hoặc fail-safe tệp gốc |
@@ -107,7 +111,7 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
    addFiles() ──► isSupportedImage() lọc file hợp lệ
         │
         ▼
-   detectPage() ──► loadImage() + drawRotatedToCanvas() (canvas làm việc ≤560px)
+   detectPage() ──► loadImage() (thang giải mã, xem cụm Decode) + drawRotatedToCanvas() (canvas làm việc ≤560px)
         │
         ▼
    DocumentDetector.detect() ──┬─► Scanic ML (DocCornerNet Lean ONNX WASM)
