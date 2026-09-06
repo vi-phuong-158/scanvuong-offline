@@ -1072,10 +1072,37 @@
     while (graphics.length) { graphics.pop(); ctx.restore(); }
   }
 
+  // Vendored pdf.js 5.7.284 uses the still-early TC39 Map method
+  // `getOrInsertComputed()` internally (WorkerTransport's #methodPromises
+  // cache, PDFPageProxy.render()'s per-intent state cache). Some Chromium
+  // builds don't implement it yet — observed directly during this task's
+  // own acceptance testing (`TypeError: ...getOrInsertComputed is not a
+  // function` inside `PDFPageProxy.render()`), the same underlying gap
+  // already documented in docs/brain/03-decisions.md (2026-09-05) that
+  // motivated renderThumbnail()'s classical-renderer fallback in the first
+  // place. That fallback needs a working classical `source`/`ref`, which
+  // is exactly what the PDF compatibility path (pdf-compress.js
+  // repairPdfViaPdfJs) does NOT have — the classical parser is what failed
+  // to get here — so pdf.js itself must be able to render. Polyfilled here
+  // (additive only, no-op if already present) rather than patching the
+  // vendored file, and gated behind the single lazy-init choke point all
+  // pdf.js usage in this app already goes through.
+  function ensureMapGetOrInsertComputed() {
+    if (typeof Map.prototype.getOrInsertComputed !== 'function') {
+      Map.prototype.getOrInsertComputed = function (key, callbackfn) {
+        if (this.has(key)) return this.get(key);
+        const value = callbackfn(key);
+        this.set(key, value);
+        return value;
+      };
+    }
+  }
+
   let pdfJsLibraryPromise = null;
 
   function pdfJsLibrary() {
     if (!pdfJsLibraryPromise) {
+      ensureMapGetOrInsertComputed();
       pdfJsLibraryPromise = import('./assets/vendor/pdfjs/pdf.mjs').then(pdfjs => {
         pdfjs.GlobalWorkerOptions.workerSrc = new URL('./assets/vendor/pdfjs/pdf.worker.mjs', document.baseURI).href;
         return pdfjs;
@@ -1084,17 +1111,50 @@
     return pdfJsLibraryPromise;
   }
 
+  // Opens raw PDF bytes through pdf.js directly, independent of PartyPdf's
+  // own classical object-graph parser (`parseObjects`/`sourceFromBuffer`).
+  // pdf.js does its own structural recovery (rebuilds xref, tolerates a
+  // stream /Length a few bytes off, etc.), so this is the compatibility
+  // fallback other modules (pdf-compress.js) reach for when the classical
+  // parser — intentionally strict, since it byte-copies streams for
+  // lossless page export — throws on a malformed-but-renderable scan PDF.
+  async function loadPdfJsDocument(bytes) {
+    const pdfjs = await pdfJsLibrary();
+    // Bitonal scans (CCITTFax/JBIG2) and JPEG 2000 scans decode inside these
+    // wasm modules; without a local wasmUrl pdf.js paints the page white.
+    const wasmUrl = new URL('./assets/vendor/pdfjs/wasm/', document.baseURI).href;
+    return pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false, useWorkerFetch: false, wasmUrl }).promise;
+  }
+
   async function pdfJsDocument(source) {
     if (!source.previewPdfDocument) {
-      const pdfjs = await pdfJsLibrary();
-      // Bitonal scans (CCITTFax/JBIG2) and JPEG 2000 scans decode inside these
-      // wasm modules; without a local wasmUrl pdf.js paints the page white.
-      const wasmUrl = new URL('./assets/vendor/pdfjs/wasm/', document.baseURI).href;
-      const task = pdfjs.getDocument({ data: source.bytes.slice(), isEvalSupported: false, useWorkerFetch: false, wasmUrl });
-      source.previewPdfLoadingTask = task;
-      source.previewPdfDocument = task.promise;
+      source.previewPdfDocument = loadPdfJsDocument(source.bytes);
     }
     return source.previewPdfDocument;
+  }
+
+  // Renders one page straight from a pdf.js documentProxy opened via
+  // loadPdfJsDocument() — used by the compatibility fallback, which has no
+  // classical `source`/`ref` (the classical parse is exactly what failed).
+  async function renderPdfJsPageDirect(documentProxy, pageIndex, maxEdge) {
+    const page = await documentProxy.getPage(pageIndex + 1);
+    try {
+      const rotation = ((Number(page.rotate || 0) % 360) + 360) % 360;
+      let viewport = page.getViewport({ scale: 1, rotation });
+      const maxDim = Math.max(viewport.width, viewport.height);
+      const scale = maxEdge && maxDim > 0 ? (maxEdge / maxDim) : 1;
+      viewport = page.getViewport({ scale, rotation });
+      const width = Math.max(1, Math.round(viewport.width));
+      const height = Math.max(1, Math.round(viewport.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const context = canvas.getContext('2d', { alpha: false });
+      context.fillStyle = '#fff'; context.fillRect(0, 0, width, height);
+      await page.render({ canvasContext: context, viewport, background: '#fff' }).promise;
+      return canvas;
+    } finally {
+      page.cleanup();
+    }
   }
 
   function hasContentPixels(canvas) {
@@ -1163,7 +1223,8 @@
     const page = await documentProxy.getPage(ref.index + 1);
     const rotation = ((Number(page.rotate || 0) + Number(extraRotation || 0)) % 360 + 360) % 360;
     let viewport = page.getViewport({ scale: 1, rotation });
-    const scale = Math.min(1, maxEdge / Math.max(viewport.width, viewport.height));
+    const maxDim = Math.max(viewport.width, viewport.height);
+    const scale = maxEdge && maxDim > 0 ? (maxEdge / maxDim) : 1;
     viewport = page.getViewport({ scale, rotation });
     const width = Math.max(1, Math.round(viewport.width));
     const height = Math.max(1, Math.round(viewport.height));
@@ -1197,7 +1258,8 @@
     if (!ref?.source || !canvas?.getContext) throw new Error('Thumbnail PDF không hợp lệ.');
     const info = pageInfo(ref.source, ref.index);
     const rotation = ((info.rotation + Number(extraRotation || 0)) % 360 + 360) % 360;
-    const scale = Math.min(1, maxEdge / Math.max(info.width, info.height));
+    const maxDim = Math.max(info.width, info.height);
+    const scale = maxEdge && maxDim > 0 ? (maxEdge / maxDim) : 1;
     const outputWidth = Math.max(1, Math.round((rotation % 180 ? info.height : info.width) * scale));
     const outputHeight = Math.max(1, Math.round((rotation % 180 ? info.width : info.height) * scale));
     const baseWidth = Math.max(1, Math.round(info.rawWidth * scale));
@@ -1811,6 +1873,8 @@
     detectCamScannerWatermarks,
     stripWatermarkFromContentStream,
     stripWatermarks,
+    loadPdfJsDocument,
+    renderPdfJsPageDirect,
     _inflateSync: inflateSync
   };
 })();

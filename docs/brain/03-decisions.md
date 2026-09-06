@@ -3,6 +3,48 @@
 > Ghi lại quyết định kỹ thuật quan trọng để agent sau không "phát minh lại" hoặc đảo ngược
 > mà không biết lý do. Mỗi entry: quyết định gì, vì sao, đánh đổi gì.
 
+## [2026-09-06] Compress mode: điều chỉnh target nén 14–17 MB (sweet spot 15–16 MB, ceiling < 20 MB) & gỡ bỏ giới hạn 72 DPI trong PartyPdf
+
+- **Bối cảnh:** Sau khi sửa compatibility fallback, file scan thật `02.Ly_lich_dang_vien.pdf` (10 trang, 43.58 MB) nén được nhưng kết quả chỉ đạt ~583.7 KB. Mức nén này quá sâu, làm mờ chữ nhỏ, chữ viết tay, con dấu và chi tiết scan.
+- **Nguyên nhân gốc:** `party-pdf.js` trong `renderPdfJsPageDirect()`, `renderPdfJsThumbnail()` và `renderThumbnailFallback()` tính scale bằng:
+  `const scale = Math.min(1, maxEdge / Math.max(viewport.width, viewport.height));`
+  Trong PDF.js, toạ độ viewport tính bằng PostScript points (72 DPI, ví dụ 595 × 417 pt). Do `Math.min(1, ...)`, scale bị kẹp cứng ở mức 1.0 (72 DPI) dù `maxEdge` được truyền vào là 2200, 2600 hay 3400. Toàn bộ độ phân giải quét gốc của máy scan (~600 DPI, ảnh nhúng 6820 × 4760 px) bị cắt gọt chỉ còn 595 × 417 px, sinh ra file nén chỉ ~580 KB.
+- **Quyết định:**
+  1. **Gỡ bỏ giới hạn `Math.min(1, ...)` trong `party-pdf.js`:** Cho phép `scale = maxEdge / Math.max(viewport.width, viewport.height)` khi `maxEdge` được truyền vào, giải phóng khả năng render ảnh độ phân giải cao thực sự theo yêu cầu.
+  2. **Điều chỉnh target nén:**
+     - Preferred target: **15–16 MB**
+     - Acceptable target band: **14–17 MB**
+     - Hard ceiling: **< 20 MB** (`PDF_COMPRESSION_TARGET_BYTES = 17 * 1000 * 1000`, `PDF_COMPRESSION_DISPLAY_LIMIT_BYTES = 20 * 1000 * 1000`).
+  3. **Thang nén mới (`ROUNDS`):** Bắt đầu từ mức phân giải cao:
+     - Round 1: `{ maxEdge: 3000, jpeg: 0.90 }` (đo thật trên 10 trang file scan đạt **16.58 decimal MB / 15.82 MiB**, đúng sweet spot 15–16 MB, dừng ngay ở round 1).
+     - Round 2: `{ maxEdge: 2800, jpeg: 0.86 }`
+     - Round 3: `{ maxEdge: 2500, jpeg: 0.82 }`
+     - Round 4: `{ maxEdge: 2200, jpeg: 0.76 }`
+     - Round 5: `{ maxEdge: 1800, jpeg: 0.68 }` (quality floor)
+     - Beyond floor: `[{ maxEdge: 1400, jpeg: 0.52 }, { maxEdge: 1000, jpeg: 0.40 }]`
+  4. **Tối ưu single-pass khi tương thích:** `COMPAT_REPAIR_MAX_EDGE = 3000` và `COMPAT_REPAIR_JPEG_QUALITY = 0.90`. Nếu bản sửa tương thích `repairedBlob` đã nằm trong target (<= 17 MB hoặc <= 20 MB đối với file vốn <= 20 MB), trả về trực tiếp kết quả này, tránh re-rasterize lần thứ hai gây suy giảm chất lượng JPEG (generation loss) và tiết kiệm 50% thời gian xử lý (chỉ ~18s thay vì ~45s).
+  5. **Quy tắc file <= 20 MB:** Không tự ý rasterize/nén file hợp lệ <= 20 MB trừ khi có yêu cầu tường minh; nếu cần fallback để sửa tương thích thì giữ chất lượng rất cao (3000px/0.90), không ép xuống band nén thấp.
+- **Kiểm chứng:** Đo đạc và kiểm thử thật trên file thật `02.Ly_lich_dang_vien.pdf`: 10/10 trang, kích thước 16,583,576 bytes (15.82 MiB / 16.58 decimal MB), chữ viết tay và con dấu sắc nét, `pypdf` đọc tốt, SHA-256 file gốc giữ nguyên tuyệt đối.
+
+---
+
+## [2026-09-06] Compress mode: compatibility fallback qua PDF.js cho scanner PDF có /Length khai báo sai lệch nhẹ
+
+- **Bối cảnh:** File scan thật (`02.Ly_lich_dang_vien.pdf`, PDF 1.4, 10 trang, ~50MB) không nén được — `party-pdf.js`'s `sourceFromBuffer()` ném `"PDF stream không tìm thấy endstream sau declared length."` vì một số stream khai báo `/Length` ngắn hơn dữ liệu thực tế 3 byte (lỗi firmware scanner, nội dung vẫn render tốt bằng reader tolerant).
+- **Quyết định:**
+  1. **Không nới lỏng `party-pdf.js`'s classical parser.** Nó cố tình strict (byte-copy stream chính xác cho Party Mode xuất trang lossless) — nới lỏng ở đây sẽ rủi ro cho tính năng khác. Thay vào đó, compress mode (vốn LUÔN rasterize lại mọi trang thành JPEG, không cần byte-exact) tự thêm một đường tolerant riêng của nó.
+  2. **`pdf-compress.js`'s `resolveSource()`**: thử `sourceFromBuffer()` bình thường trước; chỉ khi lỗi thuộc nhóm "có thể phục hồi" (`isRecoverableParseError()` — loại trừ "Tệp không phải PDF."/"mật khẩu/mã hóa", vì một reader tolerant hơn không giúp được hai trường hợp đó) mới chuyển sang `repairPdfViaPdfJs()`.
+  3. **`repairPdfViaPdfJs()`** mở file trực tiếp qua PDF.js (`PartyPdf.loadPdfJsDocument()`, bỏ qua hoàn toàn classical parser), rasterize TỪNG trang tuần tự ở độ phân giải cao hơn mọi round nén (2600px/0.92 — cao hơn round đầu 2200px/0.84, để round-loop hiện có vẫn là bước giảm dung lượng thật, không phải bước này), đóng gói lại bằng `PartyPdf.buildPdf()` có sẵn (không viết PDF writer thứ hai), rồi **parse lại PDF sạch này bằng CHÍNH `sourceFromBuffer()` không đổi** — từ điểm đó, toàn bộ pipeline `compressPdf()` (rounds/renderRound/buildCompressedPdf/verifyTarget) chạy y hệt luồng cũ, không có bản sao logic nén thứ hai.
+  4. **`inspectPdf()` cũng tolerant**, nhưng chỉ "peek" rẻ: mở PDF.js lấy `numPages` mà KHÔNG render trang nào, để màn hình thông tin file (trước khi người dùng bấm nén) không phải trả chi phí một lần repair-render đầy đủ chỉ để hiện số trang.
+  5. **UX**: không hiện thuật ngữ kỹ thuật (endstream/xref/declared length) — chỉ "PDF có cấu trúc scan không chuẩn. Đang sửa tương thích trên thiết bị…" rồi "Đã sửa tương thích PDF. Đang tối ưu dung lượng…" (giữ 500ms để đọc được, tránh bị round nén đầu tiên ghi đè cùng tick). Lỗi kỹ thuật chỉ còn trong `console.warn`/`console.error`. Chỉ báo lỗi cho người dùng khi CẢ HAI parser đều thất bại, bằng thông điệp `COMPAT_UNREADABLE_MESSAGE` không kỹ thuật.
+  6. **Sửa kèm một lỗi môi trường chặn cả tính năng này lẫn pdf.js nói chung**: vendor `pdf.mjs` 5.7.284 dùng `Map.prototype.getOrInsertComputed()` (API TC39 rất mới) — bản Chromium headless dùng để test không có, gây `TypeError` ngay trong `PDFPageProxy.render()`. Đây chính là gốc rễ của lỗi đã ghi nhận ngày 2026-09-05 (khiến Party Mode preview âm thầm rơi vào classical fallback, chỉ `console.warn`). Đường compatibility fallback mới không có classical fallback nào để rơi vào (đó chính là thứ đã fail), nên PDF.js bắt buộc phải chạy được — thêm polyfill tối thiểu additive-only (`ensureMapGetOrInsertComputed()` trong `party-pdf.js`, tại điểm lazy-init `pdfJsLibrary()` duy nhất), không sửa file vendor.
+- **Lý do:** Task yêu cầu rõ: không hard-fail loại PDF scan malformed nhẹ, giữ 100% offline, không hạ safety/privacy, không thêm server, không đổi luồng cho PDF hợp lệ, không giữ bitmap toàn bộ trang cùng lúc.
+- **Đánh đổi:** Trang được nén qua đường compatibility phải trải qua HAI lượt rasterize (một lượt "repair" ở độ phân giải cao để có PDF sạch, một lượt nữa trong round-loop nén bình thường) thay vì một lượt duy nhất — chấp nhận được vì đường này chỉ kích hoạt khi classical parser đã thất bại thật sự (không ảnh hưởng PDF hợp lệ), và độ phân giải repair cao hơn mọi round nên chất lượng không bị giới hạn bởi bước repair.
+- **Giới hạn chưa kiểm chứng:** File thật `02.Ly_lich_dang_vien.pdf` KHÔNG có sẵn trong phiên làm việc thực hiện thay đổi này — toàn bộ acceptance dùng fixture tổng hợp (synthetic) tái tạo đúng root cause (declared /Length ngắn hơn thực tế 3 byte trên mọi stream). Chưa PASS trên chính file thật — xem `06-ai-working-log.md` entry cùng ngày để biết việc owner cần tự làm trước khi coi task đóng.
+- **Người quyết định:** Claude Code, qua browser acceptance thật (`scripts/acceptance_pdf_compat_fallback.cjs`) với fixture synthetic tái tạo đúng bug — chưa chạy trên file thật do file không có trong phiên làm việc.
+
+---
+
 ## [2026-09-06] Compress mode memory audit — sửa overclaim "one page at a time", thêm peak-memory guard dựa trên đo thật
 
 - **Bối cảnh:** Báo cáo trước (2026-09-05) nói compression "chỉ giữ một full-resolution Canvas tại một thời điểm" — đúng nhưng **không đầy đủ**: chỉ đúng cho *canvas pixel buffer* (được release ngay sau `encodePage()`), không đúng cho toàn bộ pipeline. Audit vòng này đo lại trung thực.

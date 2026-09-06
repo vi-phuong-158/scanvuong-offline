@@ -90,6 +90,9 @@ jobs:
       - name: Chromium PDF compression acceptance (Compress mode + Party >20MB detour)
         run: node scripts/acceptance_pdf_compress.cjs
 
+      - name: Chromium PDF compatibility fallback acceptance (malformed scanner /Length)
+        run: node scripts/acceptance_pdf_compat_fallback.cjs
+
       - name: Mobile touch-target regression (>=44px hit areas across 5 viewports)
         run: node scripts/test_touch_targets.cjs
 

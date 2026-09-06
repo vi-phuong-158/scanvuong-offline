@@ -16,7 +16,70 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
-## [2026-09-06] Compress mode: honest memory audit, peak-RAM hardening, mobile-safety guard, realistic benchmark
+## [2026-09-06] UI/Accessibility: Đáp ứng chuẩn touch target tối thiểu 44x44px cho nút Hướng dẫn (#helpBtn) trên thiết bị di động
+- **Agent:** Codex
+- **Bối cảnh & vấn đề:** GitHub Actions CI workflow `static-validation.yml` bị fail ở bước `Mobile touch-target regression (>=44px hit areas across 5 viewports)` do `#helpBtn` có kích thước hit area `38x44px` (thiếu 6px chiều rộng so với chuẩn tối thiểu 44x44px trên 5 viewport di động 360x800, 375x812, 390x844, 412x915, 430x932).
+- **Nguyên nhân gốc:** Trong `styles.css` tại media query `@media (max-width: 768px)`, nút `.top-actions .btn.ghost.compact` ẩn text `span` và áp dụng `padding: 0 9px`. Với icon SVG 18px và viền 2px, tổng chiều rộng đạt 18 + 9 + 9 + 2 = 38px, trong khi chiều cao đã đạt 44px từ `min-height: var(--touch-min)` của `.btn`.
+- **Thay đổi:**
+  - **`styles.css`:** Bổ sung `min-width: var(--touch-min);` (44px) và giữ `min-height: var(--touch-min);` cho `.top-actions .btn.ghost.compact` trên di động. Giữ nguyên kích thước icon (18px) được căn giữa hoàn hảo bên trong nút, mở rộng tappable area thêm 3px mỗi bên mà không làm icon to bất thường và không gây tràn ngang topbar.
+- **File đã sửa:** `styles.css`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Đạt chuẩn trợ năng / touch target >= 44px, làm CI GitHub Actions xanh hoàn toàn trên nhánh `claude/pdf-compatibility-fallback-kozxmr` mà không sửa test hay ảnh hưởng logic PDF.
+- **Kiểm tra:**
+  - `scripts/test_touch_targets.cjs`: PASS 180/180 checks (`✓ ALL 180 TOUCH TARGET CHECKS PASSED (Every mobile interactive hit area >= 44px)`).
+  - `scripts/acceptance_help_ui.cjs`: PASS 22/22 checks (bao gồm no overflow ở 390px và 360px).
+  - `scripts/acceptance_party_ui.cjs`: PASS 19/19 checks.
+  - `scripts/acceptance_pdf_compress.cjs`: PASS.
+  - `scripts/acceptance_pdf_compat_fallback.cjs`: PASS.
+  - `scripts/regression_pdf_compress.cjs`: PASS 45/45.
+  - `scripts/regression_party_mode.cjs`: PASS 62/62.
+  - `scripts/test_benchmark_engine.cjs`: PASS 12/12.
+  - `python scripts/validate_static.py`: PASS 10/10.
+  - `node --check app.js`, `node --check sw.js`: PASS.
+
+## [2026-09-06] Compress mode: điều chỉnh target nén 14–17 MB (sweet spot 15–16 MB, ceiling < 20 MB) & nghiệm thu file thật 02.Ly_lich_dang_vien.pdf
+- **Agent:** Codex
+- **Bối cảnh & vấn đề:** Sau khi sửa compatibility fallback, file scan thật `02.Ly_lich_dang_vien.pdf` (10 trang, 43.58 MB) nén được nhưng kết quả chỉ đạt ~583.7 KB. Mức nén này quá sâu, làm mất độ nét chữ viết tay, chữ nhỏ, con dấu và chi tiết scan.
+- **Nguyên nhân gốc:** `party-pdf.js` trong `renderPdfJsPageDirect()`, `renderPdfJsThumbnail()` và `renderThumbnailFallback()` tính scale bằng:
+  `const scale = Math.min(1, maxEdge / Math.max(viewport.width, viewport.height));`
+  Trong PDF.js, toạ độ viewport tính bằng PostScript points (72 DPI). `Math.min(1, ...)` kẹp cứng scale ở mức 1.0 (72 DPI), bỏ qua hoàn toàn `maxEdge` (dù là 2200, 2600 hay 3400). Độ phân giải máy quét gốc (~600 DPI, ảnh nhúng 6820 × 4760 px) bị ép về 595 × 417 px.
+- **Thay đổi:**
+  1. **`party-pdf.js`:** Gỡ bỏ kẹp `Math.min(1, ...)`, cho phép `scale = maxEdge / Math.max(viewport.width, viewport.height)` khi `maxEdge` được truyền vào trong cả 3 hàm render.
+  2. **`pdf-compress.js`:**
+     - Điều chỉnh target: `PDF_COMPRESSION_TARGET_BYTES = 17 * 1000 * 1000` (17.0 MB ceiling của band chấp nhận 14–17 MB, sweet spot 15–16 MB, hard ceiling < 20 MB).
+     - Thang nén `ROUNDS` mới bắt đầu từ mức phân giải cao: Round 1 `{ maxEdge: 3000, jpeg: 0.90 }` (đo thực nghiệm trên toàn bộ 10 trang file scan đạt **16.58 decimal MB / 15.82 MiB**, đúng sweet spot 15–16 MB, dừng ngay ở round 1), giảm dần qua 2800/0.86, 2500/0.82, 2200/0.76, 1800/0.68 (floor).
+     - `COMPAT_REPAIR_MAX_EDGE = 3000`, `COMPAT_REPAIR_JPEG_QUALITY = 0.90`: Bản sửa tương thích `repairedBlob` đạt chất lượng cao ngay từ đầu.
+     - Tối ưu single-pass: Nếu file cần compatibility repair và `repairedBlob` đã nằm trong target ceiling (<= 17 MB, hoặc <= 20 MB với file vốn <= 20 MB), trả về `repairedBlob` trực tiếp, tránh re-rasterize lần thứ hai (loại bỏ hoàn toàn generation loss JPEG và giảm thời gian nén từ ~45s xuống ~18s).
+     - Quy tắc file <= 20 MB: Không tự ý nén/rasterize file hợp lệ <= 20 MB; nếu cần fallback tương thích thì giữ chất lượng rất cao (3000px/0.90), không ép xuống band nén thấp.
+  3. **`scripts/regression_pdf_compress.cjs`:** Cập nhật kiểm tra target 17,000,000 bytes và các cận min/max của target band. 45/45 checks PASS.
+- **File đã sửa:** `party-pdf.js`, `pdf-compress.js`, `scripts/regression_pdf_compress.cjs`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`.
+- **Kiểm tra & Nghiệm thu:**
+  - `node scripts/regression_pdf_compress.cjs`: 45/45 PASS.
+  - `node scripts/regression_party_mode.cjs`: 62/62 PASS.
+  - `node scripts/acceptance_pdf_compat_fallback.cjs`: PASS toàn bộ.
+  - `node scripts/acceptance_pdf_compress.cjs`: PASS toàn bộ (bao gồm Compress mode, Party Mode >20MB detour, và mobile viewports).
+  - **Nghiệm thu trên file thật `02.Ly_lich_dang_vien.pdf` (SHA-256: `b2d6126dba890e5d84a7446540cea75917a5a25be8c7ec31678aba5ab4fdc8e5`, 43.58 MB, 10 trang):**
+    - Chạy end-to-end trên Chrome thật qua CDP: 10/10 trang được sửa tương thích và nén thành công trong 18.7 giây.
+    - Dung lượng đầu ra: **16,583,576 bytes (15.82 MiB / 16.58 decimal MB)** — nằm chuẩn xác trong dải **14–17 MB**, đúng sweet spot **15–16 MB**, dưới ngưỡng trần **20 MB**.
+    - File đầu ra: `02.Ly_lich_dang_vien_duoi-20MB.pdf` có 10/10 trang đọc tốt bởi strict parser và `pypdf`, không trang trắng, MediaBox/tỷ lệ giữ nguyên.
+    - Kiểm tra trực quan ảnh crop: chữ in, chữ viết tay, con dấu đỏ, thớ giấy đều rõ nét vượt trội so với mức 72 DPI trước đây.
+    - SHA-256 file nguồn giữ nguyên tuyệt đối (`PASS`).
+
+## [2026-09-06] Compress mode: compatibility fallback for scanner PDFs with a malformed content-stream /Length
+- **Agent:** Claude Code
+- **Bối cảnh / root cause:** File thật `02.Ly_lich_dang_vien.pdf` (PDF 1.4, 10 trang, ~50MB, không mã hóa) không nén được — UI báo "Không đọc được PDF: PDF stream không tìm thấy endstream sau declared length." Root cause: một số stream có `/Length` khai báo NGẮN HƠN dữ liệu thực tế 3 byte (lỗi firmware scanner, không phải file hỏng — nội dung trang vẫn render tốt bằng parser tolerant). `party-pdf.js`'s `sourceFromBuffer()`/`parseObjects()` cố tình strict về stream bounds (nó byte-copy stream nguyên vẹn để Party Mode xuất trang lossless), nên ném lỗi ngay ở bước parse đầu tiên thay vì đoán — đây là hành vi ĐÚNG cho Party Mode, nhưng compress mode không cần copy byte-exact (nó luôn rasterize lại mọi trang thành JPEG), nên có thể tolerant hơn.
+- **Thay đổi:**
+  1. **`party-pdf.js`:** thêm `loadPdfJsDocument(bytes)` (mở PDF.js trực tiếp trên bytes thô, độc lập với `sourceFromBuffer()`'s classical parser) và `renderPdfJsPageDirect(documentProxy, pageIndex, maxEdge)` (dựng 1 trang trực tiếp qua PDF.js, không cần `ref`/`source` cổ điển). `pdfJsDocument(source)` refactor để dùng lại `loadPdfJsDocument()` (không đổi hành vi caller cũ). Cả hai export qua `window.PartyPdf`.
+  2. **`pdf-compress.js`:** thêm `resolveSource(buffer, name, onProgress)` — thử `sourceFromBuffer()` bình thường trước (luồng cũ, không đổi khi PDF hợp lệ); nếu lỗi thuộc nhóm có thể phục hồi (`isRecoverableParseError()` — loại trừ "Tệp không phải PDF."/"mật khẩu/mã hóa"), gọi `repairPdfViaPdfJs()`: mở qua `loadPdfJsDocument()`, rasterize TỪNG trang tuần tự (1 canvas tại 1 thời điểm, giải phóng ngay sau JPEG-encode, `sleepFrame()` giữa các trang) ở độ phân giải cao (`COMPAT_REPAIR_MAX_EDGE=2600`, `quality=0.92` — cao hơn mọi round nén nên round-loop hiện có vẫn là bước giảm dung lượng thật sự), đóng gói lại bằng `PartyPdf.buildPdf()` có sẵn (không viết PDF writer thứ hai), rồi parse lại PDF sạch này bằng CHÍNH `sourceFromBuffer()` — từ đó pipeline `compressPdf()` (rounds/renderRound/buildCompressedPdf/verifyTarget) chạy y hệt cũ, không nhân bản logic nén. Nếu cả hai parser đều fail, ném lỗi tiếng Việt không kỹ thuật `COMPAT_UNREADABLE_MESSAGE` (không nhắc endstream/xref/declared length — những từ đó chỉ còn trong `console.warn`/`console.error`). `inspectPdf()` cũng dùng đường tolerant này cho một "peek" rẻ (chỉ lấy `numPages` qua PDF.js, KHÔNG render trang nào) để màn hình thông tin file vẫn hiện đúng số trang mà không trả tiền cho một lần repair-render đầy đủ. `compressPdf()`/`inspectPdf()` trả thêm field `compatRepaired`/`compatRequired`.
+  3. **UI (`compress-mode.js`, `index.html`):** thêm `#compressCompatNotice` (hiện trên màn hình thông tin file khi `compatRequired`), và progress label mới cho 2 phase `compat-start`/`compat-repairing`/`compat-done`: "PDF có cấu trúc scan không chuẩn. Đang sửa tương thích trên thiết bị…" rồi "Đã sửa tương thích PDF. Đang tối ưu dung lượng…" (giữ 500ms để người dùng thực sự đọc được trước khi round nén đầu tiên ghi đè). Không có thông báo kỹ thuật nào lộ ra UI.
+  4. **Sửa một bug môi trường chặn cả tính năng này lẫn pdf.js nói chung trên Chromium headless dùng để test:** `assets/vendor/pdfjs/pdf.mjs` (vendor 5.7.284) dùng `Map.prototype.getOrInsertComputed()` — một API TC39 rất mới mà bản Chromium headless trong môi trường này chưa có, gây `TypeError` ngay trong `PDFPageProxy.render()`. Đây CHÍNH LÀ lỗi đã ghi nhận trong `03-decisions.md` (2026-09-05) từng khiến toàn bộ preview Party Mode âm thầm rơi vào classical fallback (chỉ `console.warn`, không ai để ý). Với đường compatibility fallback mới, không có classical fallback nào để rơi vào (đó chính là thứ đã fail) nên PDF.js BẮT BUỘC phải chạy được. Thêm polyfill tối thiểu, additive-only (`ensureMapGetOrInsertComputed()` trong `party-pdf.js`, gọi ở điểm lazy-init `pdfJsLibrary()` duy nhất) — không sửa file vendor. Xác nhận lại toàn bộ acceptance PDF.js hiện có (Compress mode, Party Mode UI đầy đủ 18 kịch bản) vẫn PASS sau khi thêm polyfill.
+  5. **Test:**
+     - `scripts/regression_pdf_compress.cjs` (Node, không cần trình duyệt): thêm test dựng fixture PDF hợp lệ qua `PartyPdf.buildPdf()`, cố ý rút ngắn `/Length` của mọi DCTDecode stream đi 3 byte (đúng bug thật), xác nhận classical parser VẪN fail đúng thông điệp gốc (chứng minh fixture trung thực + parser cổ điển không bị nới lỏng/regression — Party Mode vẫn cần strict), và `isRecoverableParseError()` phân loại đúng (recoverable cho lỗi malformed-stream, KHÔNG recoverable cho "Tệp không phải PDF."/"mã hóa"). 43/43 PASS.
+     - `scripts/acceptance_pdf_compat_fallback.cjs` (mới, Chromium thật): dựng PDF hợp lệ 10 trang trong trình duyệt, corrupt giống hệt bug thật, xác nhận (a) parser cổ điển fail đúng lỗi gốc [pre-fix reproduction], (b) toàn bộ luồng UI thật (drop → info screen hiện đúng số trang + compat notice → progress hiện đúng 2 câu UX yêu cầu, không lộ thuật ngữ kỹ thuật → result 10/10 trang → download → parser cổ điển đọc lại được output sạch), (c) PDF hợp lệ bình thường vẫn `compatRepaired:false` (không regression, không rasterize thừa), (d) file mà CẢ HAI parser đều fail → lỗi thân thiện, không jargon. Toàn bộ PASS.
+     - Chạy lại toàn bộ suite hiện có sau thay đổi: `node --check` tất cả file đổi, `validate_static.py`, `regression_pdf_compress.cjs`, `regression_party_mode.cjs`, `acceptance_pdf_compress.cjs` (Compress mode + Party >20MB detour + mobile viewport), `acceptance_party_ui.cjs` (18 kịch bản Party Mode) — tất cả PASS, không regression.
+- **File đã sửa:** `party-pdf.js`, `pdf-compress.js`, `compress-mode.js`, `index.html`, `scripts/regression_pdf_compress.cjs`, `scripts/acceptance_pdf_compat_fallback.cjs` (mới), `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Yêu cầu rõ ràng của người dùng (DEV MODE task) — làm cho "Giảm dung lượng PDF" chấp nhận được loại PDF scan malformed nhẹ (declared length lệch vài byte) mà vẫn 100% offline, không hạ safety/privacy, không thêm server, giữ nguyên luồng cũ cho PDF hợp lệ.
+- **GIỚI HẠN QUAN TRỌNG — chưa test trên file thật:** File `02.Ly_lich_dang_vien.pdf` thật KHÔNG có sẵn trong phiên làm việc này (không được đính kèm/tải lên). Toàn bộ acceptance test ở trên dùng fixture TỔNG HỢP (synthetic) tái tạo đúng root cause đã mô tả (declared /Length ngắn hơn thực tế 3 byte), không phải chính file thật. Test acceptance A trong yêu cầu gốc ("phải nạp được 02.Ly_lich_dang_vien.pdf thật, 10 trang vào → 10 trang ra, output <20MB") **CHƯA được chạy end-to-end trên file thật** — cần owner tự chạy `node scripts/acceptance_pdf_compat_fallback.cjs` làm bằng chứng cho cơ chế, và tự thử file thật qua UI (`python server.py` → mở app → chọn "Giảm dung lượng PDF" → chọn file) để xác nhận PASS thật trên chính file đó trước khi coi task này là đóng.
+- **Kiểm tra:** xem mục Test ở trên; lệnh đầy đủ trong `docs/brain/05-testing-and-deploy.md` (mục mới "PDF compatibility fallback validation").
 - **Agent:** Claude Code
 - **Thay đổi:**
   1. **Sửa overclaim về memory:** báo cáo trước nói "chỉ giữ một full-resolution Canvas tại một thời điểm" — đúng cho canvas pixel buffer, nhưng bỏ sót rằng `renderRound()` vẫn giữ mảng `items` (JPEG bytes toàn bộ round) và — quan trọng hơn nhiều — bộ parser cổ điển dùng chung `party-pdf.js` decode toàn bộ file thành string 2 lần + lưu byte/text-slice cho mọi object, sống suốt `compressPdf()`. Xem chi tiết đầy đủ trong `03-decisions.md` "Compress mode memory audit (2026-09-06)".
