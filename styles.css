@@ -1572,11 +1572,10 @@ button {
 
   /* Icon-only on narrow topbars: badge + brand + up to three top-actions
      buttons (help, switch mode, install) can all be visible at once and must
-     never force horizontal overflow. */
-  .top-actions .btn.ghost.compact span {
-    display: none;
-  }
+     never force horizontal overflow while maintaining minimum 44px touch targets. */
   .top-actions .btn.ghost.compact {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
     padding: 0 9px;
   }
 

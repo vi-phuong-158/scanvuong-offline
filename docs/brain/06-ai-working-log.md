@@ -16,6 +16,26 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-06] UI/Accessibility: Đáp ứng chuẩn touch target tối thiểu 44x44px cho nút Hướng dẫn (#helpBtn) trên thiết bị di động
+- **Agent:** Codex
+- **Bối cảnh & vấn đề:** GitHub Actions CI workflow `static-validation.yml` bị fail ở bước `Mobile touch-target regression (>=44px hit areas across 5 viewports)` do `#helpBtn` có kích thước hit area `38x44px` (thiếu 6px chiều rộng so với chuẩn tối thiểu 44x44px trên 5 viewport di động 360x800, 375x812, 390x844, 412x915, 430x932).
+- **Nguyên nhân gốc:** Trong `styles.css` tại media query `@media (max-width: 768px)`, nút `.top-actions .btn.ghost.compact` ẩn text `span` và áp dụng `padding: 0 9px`. Với icon SVG 18px và viền 2px, tổng chiều rộng đạt 18 + 9 + 9 + 2 = 38px, trong khi chiều cao đã đạt 44px từ `min-height: var(--touch-min)` của `.btn`.
+- **Thay đổi:**
+  - **`styles.css`:** Bổ sung `min-width: var(--touch-min);` (44px) và giữ `min-height: var(--touch-min);` cho `.top-actions .btn.ghost.compact` trên di động. Giữ nguyên kích thước icon (18px) được căn giữa hoàn hảo bên trong nút, mở rộng tappable area thêm 3px mỗi bên mà không làm icon to bất thường và không gây tràn ngang topbar.
+- **File đã sửa:** `styles.css`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Đạt chuẩn trợ năng / touch target >= 44px, làm CI GitHub Actions xanh hoàn toàn trên nhánh `claude/pdf-compatibility-fallback-kozxmr` mà không sửa test hay ảnh hưởng logic PDF.
+- **Kiểm tra:**
+  - `scripts/test_touch_targets.cjs`: PASS 180/180 checks (`✓ ALL 180 TOUCH TARGET CHECKS PASSED (Every mobile interactive hit area >= 44px)`).
+  - `scripts/acceptance_help_ui.cjs`: PASS 22/22 checks (bao gồm no overflow ở 390px và 360px).
+  - `scripts/acceptance_party_ui.cjs`: PASS 19/19 checks.
+  - `scripts/acceptance_pdf_compress.cjs`: PASS.
+  - `scripts/acceptance_pdf_compat_fallback.cjs`: PASS.
+  - `scripts/regression_pdf_compress.cjs`: PASS 45/45.
+  - `scripts/regression_party_mode.cjs`: PASS 62/62.
+  - `scripts/test_benchmark_engine.cjs`: PASS 12/12.
+  - `python scripts/validate_static.py`: PASS 10/10.
+  - `node --check app.js`, `node --check sw.js`: PASS.
+
 ## [2026-09-06] Compress mode: điều chỉnh target nén 14–17 MB (sweet spot 15–16 MB, ceiling < 20 MB) & nghiệm thu file thật 02.Ly_lich_dang_vien.pdf
 - **Agent:** Codex
 - **Bối cảnh & vấn đề:** Sau khi sửa compatibility fallback, file scan thật `02.Ly_lich_dang_vien.pdf` (10 trang, 43.58 MB) nén được nhưng kết quả chỉ đạt ~583.7 KB. Mức nén này quá sâu, làm mất độ nét chữ viết tay, chữ nhỏ, con dấu và chi tiết scan.
