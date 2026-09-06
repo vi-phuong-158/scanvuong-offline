@@ -168,6 +168,102 @@
 
   const MEMORY_RISK_MESSAGE = 'Tệp này quá lớn để xử lý an toàn trên thiết bị hiện tại.\nHãy thử trên máy tính hoặc chia tài liệu thành các phần nhỏ hơn.';
 
+  /* Compatibility fallback for malformed-but-renderable scan PDFs.
+     Some scanner firmware writes a content stream /Length a few bytes
+     short of the real data (observed: declared length off by 3 bytes on
+     every image stream). PartyPdf.sourceFromBuffer()'s classical parser is
+     intentionally strict about stream bounds — it byte-copies streams
+     verbatim for Party Mode's lossless page export, so it throws
+     ("PDF stream không tìm thấy endstream sau declared length.") rather
+     than guess where a stream really ends. Compression mode never needs
+     that byte-exact copy (it always re-rasterizes every page to JPEG
+     anyway), so on that class of failure it re-opens the same bytes
+     through pdf.js's own tolerant reader (party-pdf.js's
+     loadPdfJsDocument(), vendored, still 100% local/offline), rasterizes
+     every page — one canvas at a time, released immediately, see
+     repairPdfViaPdfJs() — into a fresh, structurally valid PDF, then hands
+     that PDF straight back into the same, unmodified adaptive-rounds loop
+     below. Normal PDFs never take this path: resolveSource() only reaches
+     it when the classical parser actually throws. */
+  function isEncryptedParseError(err) {
+    return /mật khẩu|mã hóa/i.test(err?.message || '');
+  }
+  function isNotAPdfParseError(err) {
+    return /Tệp không phải PDF/i.test(err?.message || '');
+  }
+  // Any other classical-parser failure (bad /Length, missing endobj, a
+  // stream that runs past declared bounds, etc.) is treated as a
+  // potentially recoverable scan-compatibility issue worth trying pdf.js
+  // for — encryption and "not a PDF at all" are the only two cases where a
+  // more tolerant reader cannot plausibly help.
+  function isRecoverableParseError(err) {
+    return !isEncryptedParseError(err) && !isNotAPdfParseError(err);
+  }
+
+  // Near-lossless intermediate resolution/quality for the one-time repair
+  // render — higher than every compression round's maxEdge (2200 at most)
+  // so the normal rounds loop that runs afterward is still the one doing
+  // the actual size reduction, not this repair step.
+  const COMPAT_REPAIR_MAX_EDGE = 2600;
+  const COMPAT_REPAIR_JPEG_QUALITY = 0.92;
+  const COMPAT_UNREADABLE_MESSAGE = 'Không thể đọc được file PDF này. File có thể bị hỏng nặng hoặc ở định dạng chưa được hỗ trợ.';
+
+  async function repairPdfViaPdfJs(buffer, onProgress) {
+    const bytes = new Uint8Array(buffer);
+    let documentProxy = null;
+    try {
+      documentProxy = await partyPdf().loadPdfJsDocument(bytes);
+      const pageCount = documentProxy.numPages;
+      if (!pageCount) throw new Error('PDF không có trang nào.');
+      const items = [];
+      for (let i = 0; i < pageCount; i++) {
+        if (onProgress) onProgress({ phase: 'compat-repairing', pageIndex: i, pageCount });
+        const canvas = await partyPdf().renderPdfJsPageDirect(documentProxy, i, COMPAT_REPAIR_MAX_EDGE);
+        items.push(await encodePage(canvas, COMPAT_REPAIR_JPEG_QUALITY));
+        canvas.width = 0; canvas.height = 0; // release this page's pixel buffer before the next one renders
+        await sleepFrame();
+      }
+      return buildCompressedPdf(items);
+    } finally {
+      // Release pdf.js's own decoded-page/worker state now, independent of
+      // PartyPdf.releasePreviewCache() (that one only knows about sources
+      // created via sourceFromBuffer(), which this bytes-only path never
+      // creates).
+      documentProxy?.destroy?.();
+    }
+  }
+
+  // Tries the normal classical parser first (unchanged fast path for every
+  // well-formed PDF — see docs/brain/03-decisions.md). Only on a
+  // recoverable parse failure does it repair through pdf.js and re-parse
+  // the repaired (now well-formed, since PartyPdf.buildPdf wrote it) bytes
+  // with the very same classical parser, so every caller downstream keeps
+  // working with an ordinary `source` object either way.
+  async function resolveSource(buffer, name, onProgress) {
+    try {
+      return { source: partyPdf().sourceFromBuffer(new Uint8Array(buffer), name), compatRepaired: false };
+    } catch (parseError) {
+      if (!isRecoverableParseError(parseError)) throw parseError;
+      console.warn('[PdfCompress] Parser chuẩn không đọc được PDF, thử compatibility fallback qua PDF.js:', parseError.message);
+      if (onProgress) onProgress({ phase: 'compat-start' });
+      let repairedBlob;
+      try {
+        repairedBlob = await repairPdfViaPdfJs(buffer, onProgress);
+      } catch (fallbackError) {
+        console.error('[PdfCompress] Compatibility fallback cũng không đọc/dựng được PDF:', fallbackError);
+        throw new Error(COMPAT_UNREADABLE_MESSAGE);
+      }
+      const repairedBuffer = await repairedBlob.arrayBuffer();
+      if (onProgress) onProgress({ phase: 'compat-done' });
+      // Hold the "Đã sửa tương thích..." transition message on screen for a
+      // beat — otherwise the very next round's first onProgress('rendering')
+      // call overwrites it on the same tick, and a status the user can
+      // never actually read defeats the point of showing it.
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return { source: partyPdf().sourceFromBuffer(new Uint8Array(repairedBuffer), name), compatRepaired: true };
+    }
+  }
+
   // Cheap page-count lookup for the "Tên file · N trang · dung lượng" info
   // screen, before the user commits to a full compress run. Reading page
   // count only needs PartyPdf's classical parser, never PDF.js/WASM. Also
@@ -184,8 +280,26 @@
     if (memoryRisk.tooLarge) {
       return { pageCount: null, bytes: buffer.byteLength, memoryRisk };
     }
-    const source = partyPdf().sourceFromBuffer(new Uint8Array(buffer), 'document.pdf');
-    return { pageCount: source.pageCount, bytes: buffer.byteLength, memoryRisk };
+    try {
+      const source = partyPdf().sourceFromBuffer(new Uint8Array(buffer), 'document.pdf');
+      return { pageCount: source.pageCount, bytes: buffer.byteLength, memoryRisk, compatRequired: false };
+    } catch (parseError) {
+      if (!isRecoverableParseError(parseError)) throw parseError;
+      // Cheap compatibility peek: just open via pdf.js for a page count,
+      // without rendering any page — the file-info screen (name/pages/
+      // size, shown before the user commits to compressing) shouldn't pay
+      // for a full repair render just to display a number.
+      let documentProxy = null;
+      try {
+        documentProxy = await partyPdf().loadPdfJsDocument(new Uint8Array(buffer));
+        return { pageCount: documentProxy.numPages, bytes: buffer.byteLength, memoryRisk, compatRequired: true };
+      } catch (fallbackError) {
+        console.error('[PdfCompress] inspectPdf: cả hai parser đều không đọc được PDF:', parseError.message, fallbackError.message);
+        throw new Error(COMPAT_UNREADABLE_MESSAGE);
+      } finally {
+        documentProxy?.destroy?.();
+      }
+    }
   }
 
   // Pulled out as its own pure function so the "quality floor is never
@@ -217,9 +331,11 @@
     }
 
     // sourceFromBuffer() itself throws clear, already-established Vietnamese
-    // errors for a non-PDF, corrupt, or encrypted file (party-pdf.js), so
-    // this fails closed before any page is ever rendered.
-    const source = partyPdf().sourceFromBuffer(new Uint8Array(buffer), options.name || 'document.pdf');
+    // errors for a non-PDF or encrypted file, so this fails closed before
+    // any page is ever rendered. Anything else — the scanner-malformed
+    // stream lengths this task targets included — first tries the
+    // compatibility fallback above instead of failing outright.
+    const { source, compatRepaired } = await resolveSource(buffer, options.name || 'document.pdf', onProgress);
 
     try {
       const pageCount = source.pageCount;
@@ -248,7 +364,8 @@
         pageCount,
         achievedTarget,
         roundsUsed,
-        profileUsed
+        profileUsed,
+        compatRepaired
       };
     } finally {
       partyPdf().releasePreviewCache?.(source);
@@ -262,10 +379,13 @@
     BEYOND_FLOOR_ROUNDS,
     SAFE_MOBILE_PEAK_BYTES,
     MEMORY_RISK_MESSAGE,
+    COMPAT_UNREADABLE_MESSAGE,
     estimateMemoryRisk,
     inspectPdf,
     compressPdf,
     resolveRounds,
+    resolveSource,
+    isRecoverableParseError,
     renderCompressionPage,
     encodePage,
     buildCompressedPdf,

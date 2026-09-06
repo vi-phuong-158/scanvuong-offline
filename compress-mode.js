@@ -16,6 +16,7 @@
     metaPages: $('compressMetaPages'),
     metaSize: $('compressMetaSize'),
     alreadySmallNotice: $('compressAlreadySmallNotice'),
+    compatNotice: $('compressCompatNotice'),
     memoryRiskNotice: $('compressMemoryRiskNotice'),
     startBtn: $('compressStartBtn'),
     changeFileBtn: $('compressChangeFileBtn'),
@@ -42,7 +43,8 @@
     result: null,
     downloadUrl: null,
     usedBeyondFloor: false,
-    memoryRisk: null
+    memoryRisk: null,
+    compatRequired: false
   };
 
   function toast(message) {
@@ -86,6 +88,7 @@
       const info = await PdfCompress.inspectPdf(file);
       state.pageCount = info.pageCount;
       state.memoryRisk = info.memoryRisk;
+      state.compatRequired = !!info.compatRequired;
       renderInfo();
       showState('info');
     } catch (err) {
@@ -103,6 +106,7 @@
     els.metaSize.textContent = formatBytes(state.originalSize);
     const alreadySmall = state.originalSize <= PdfCompress.PDF_COMPRESSION_DISPLAY_LIMIT_BYTES;
     els.alreadySmallNotice.classList.toggle('hidden', !alreadySmall);
+    if (els.compatNotice) els.compatNotice.classList.toggle('hidden', !state.compatRequired);
     const tooLarge = !!state.memoryRisk?.tooLarge;
     if (els.memoryRiskNotice) {
       els.memoryRiskNotice.textContent = PdfCompress.MEMORY_RISK_MESSAGE;
@@ -118,8 +122,20 @@
     els.progressLabel.textContent = label;
   }
 
+  // Compat phases run once, before the normal round loop, only for PDFs the
+  // strict classical parser rejected — see pdf-compress.js resolveSource().
+  // Never mention endstream/xref/declared-length here: those stay in
+  // console diagnostics (pdf-compress.js's console.warn/error), not in
+  // user-facing text (AGENTS.md/CLAUDE.md task brief).
   function onCompressProgress(info) {
-    if (info.phase === 'rendering') {
+    if (info.phase === 'compat-start') {
+      setProgress(2, 'PDF có cấu trúc scan không chuẩn. Đang sửa tương thích trên thiết bị…');
+    } else if (info.phase === 'compat-repairing') {
+      const frac = (info.pageIndex + 1) / info.pageCount;
+      setProgress(2 + frac * 28, `Đang sửa tương thích trên thiết bị… (trang ${info.pageIndex + 1}/${info.pageCount})`);
+    } else if (info.phase === 'compat-done') {
+      setProgress(30, 'Đã sửa tương thích PDF. Đang tối ưu dung lượng…');
+    } else if (info.phase === 'rendering') {
       const roundFrac = (info.round - 1) / info.roundCount;
       const pageFrac = (info.pageIndex + 1) / info.pageCount / info.roundCount;
       const label = info.round > 1
@@ -208,8 +224,10 @@
     state.result = null;
     state.usedBeyondFloor = false;
     state.memoryRisk = null;
+    state.compatRequired = false;
     if (els.startBtn) { els.startBtn.disabled = false; els.startBtn.classList.remove('hidden'); }
     if (els.memoryRiskNotice) els.memoryRiskNotice.classList.add('hidden');
+    if (els.compatNotice) els.compatNotice.classList.add('hidden');
     if (els.fileInput) els.fileInput.value = '';
     showState('drop');
   }

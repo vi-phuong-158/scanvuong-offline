@@ -123,6 +123,48 @@ check('buildCompressedPdf returns a Blob', blob instanceof Blob);
   }
   check('compressPdf rejects an oversized input with the graceful message, before attempting to parse it', oversizedError?.message === PdfCompress.MEMORY_RISK_MESSAGE);
 
+  // ---- Compatibility fallback classification (DEV MODE task: a real scan
+  // PDF whose content-stream /Length is declared a few bytes short of the
+  // actual data must not hard-fail — see docs/brain/03-decisions.md "PDF
+  // compatibility fallback"). Node has no Canvas/pdf.js, so the actual
+  // render-through-pdf.js repair is covered by
+  // scripts/acceptance_pdf_compat_fallback.cjs; this covers everything that
+  // does NOT need a real render: that the fixture faithfully reproduces the
+  // reported error (proving the classical parser stays intentionally
+  // strict/unregressed — Party Mode depends on it for lossless byte
+  // copies), and that isRecoverableParseError() correctly tells apart a
+  // "worth retrying via pdf.js" failure from a hard "not a PDF"/"encrypted"
+  // one that a more tolerant reader cannot plausibly help with.
+  const malformedBlob = PdfCompress.buildCompressedPdf(items);
+  const malformedBytes = new Uint8Array(await malformedBlob.arrayBuffer());
+  const malformedText = new TextDecoder('iso-8859-1').decode(malformedBytes);
+  let shortenedCount = 0;
+  // party-pdf.js's writer emits image XObjects as
+  // "/Filter /DCTDecode /Length <N> >>\nstream\n<bytes>\nendstream" — shorten
+  // the declared N by 3 (matching the reported bug exactly: declared length
+  // 3 bytes short of the real data) without touching a single stream byte.
+  // The parser's stream-bounds check (findObjectEnd/resolveStreamLength) is
+  // identical for any stream object, image or content stream, so this is a
+  // faithful repro of the error CLASS even though the concrete object here
+  // is an image stream rather than the tiny content stream in the real file.
+  const corruptedText = malformedText.replace(/(\/Filter \/DCTDecode \/Length )(\d+)( >>\r?\nstream\r?\n)/g, (full, pre, len, post) => {
+    shortenedCount++;
+    return pre + (Number(len) - 3) + post;
+  });
+  check("malformed fixture actually shortens every DCTDecode stream's declared /Length (fixture is faithful to the reported bug)", shortenedCount === items.length);
+  const corruptedBytes = Uint8Array.from(corruptedText, c => c.charCodeAt(0));
+
+  let malformedParseError = null;
+  try {
+    PartyPdf.sourceFromBuffer(corruptedBytes, 'malformed.pdf');
+  } catch (err) {
+    malformedParseError = err;
+  }
+  check('classical parser still fails closed on a declared-length-too-short stream (unregressed, exact reported error message)', /endstream sau declared length/.test(malformedParseError?.message || ''));
+  check('isRecoverableParseError classifies this exact failure as recoverable (compatibility fallback should be attempted)', PdfCompress.isRecoverableParseError(malformedParseError) === true);
+  check('isRecoverableParseError does NOT retry a genuinely non-PDF file (a tolerant reader cannot help)', PdfCompress.isRecoverableParseError(new Error('Tệp không phải PDF.')) === false);
+  check('isRecoverableParseError does NOT retry an encrypted PDF (out of scope — decryption was never asked for)', PdfCompress.isRecoverableParseError(new Error('PDF có mật khẩu/mã hóa chưa được hỗ trợ.')) === false);
+
   // ---- Render-failure fail-closed (task: "Compression là destructive/lossy
   // export... phải fail closed nếu renderer báo lỗi rõ ràng") ----
   const singlePageBlob = PdfCompress.buildCompressedPdf([items[0]]);

@@ -114,7 +114,9 @@ Không có thư mục `src/`, `dist/`, `node_modules/` — mọi thứ nằm ph�
 | | `stripWatermarkFromContentStream()` | `copyPageObjects()` (khi `stripWatermarks: true`) | regex & token stripping loại bỏ khối `q ... cm /ImX Do Q` |
 | | `stripWatermarks()` | `watermark-mode.js` (`processPdfFile`) | `sourceFromBuffer()`, `detectCamScannerWatermarks()`, `copyPageObjects()`, `buildPdf()`, trả về kết quả hoặc fail-safe tệp gốc |
 | | `VigilLensWatermark` | `#watermarkChooseBtn`, drag-drop, `enterMode('watermark')` | `PartyPdf.stripWatermarks()`, render thống kê kết quả, tải file PDF sạch, thu hồi Object URL |
-| **Giảm dung lượng PDF** | `PdfCompress.compressPdf()` | `VigilLensCompress` (`compress-mode.js`), `party-mode.js`'s `#partyLargeCompressBtn` handler | `PartyPdf.sourceFromBuffer()` (parse), `renderRound()` → `renderCompressionPage()` → `PartyPdf.renderThumbnail()` (dùng lại renderer PDF.js-kèm-fallback-cổ-điển của Party Mode, không tự bootstrap PDF.js riêng) → `encodePage()` (canvas→JPEG) → `buildCompressedPdf()` (`PartyPdf.buildPdf([], items)`) → `verifyTarget()`, lặp qua `resolveRounds()` cho tới khi đạt target hoặc hết rounds |
+| **Giảm dung lượng PDF** | `PdfCompress.compressPdf()` | `VigilLensCompress` (`compress-mode.js`), `party-mode.js`'s `#partyLargeCompressBtn` handler | `resolveSource()` (parse, có compatibility fallback — xem hàng riêng bên dưới) → `renderRound()` → `renderCompressionPage()` → `PartyPdf.renderThumbnail()` (dùng lại renderer PDF.js-kèm-fallback-cổ-điển của Party Mode, không tự bootstrap PDF.js riêng) → `encodePage()` (canvas→JPEG) → `buildCompressedPdf()` (`PartyPdf.buildPdf([], items)`) → `verifyTarget()`, lặp qua `resolveRounds()` cho tới khi đạt target hoặc hết rounds |
+| | `resolveSource()` | `compressPdf()`, `inspectPdf()` | `PartyPdf.sourceFromBuffer()` trước (luồng cũ không đổi khi PDF hợp lệ); nếu lỗi thuộc `isRecoverableParseError()`, gọi `repairPdfViaPdfJs()` rồi `sourceFromBuffer()` lại trên PDF đã sửa — xem "Giảm dung lượng PDF: compatibility fallback" bên dưới |
+| | `repairPdfViaPdfJs()` | `resolveSource()` | `PartyPdf.loadPdfJsDocument()` (mở PDF.js trực tiếp trên bytes thô, bỏ qua classical parser) → `PartyPdf.renderPdfJsPageDirect()` từng trang tuần tự → `encodePage()` → `buildCompressedPdf()` (đóng gói lại thành PDF sạch) |
 | | `resolveRounds(options)` | `compressPdf()`, `scripts/regression_pdf_compress.cjs` | thuần hàm: `options.rounds` tường minh, hoặc `ROUNDS` (+`BEYOND_FLOOR_ROUNDS` chỉ khi `options.allowBeyondFloor===true`) — nơi DUY NHẤT quyết định có vượt quality floor hay không |
 | | `VigilLensCompress` | `#modeCompressBtn`, `enterMode('compress')`, drop-zone `#compressDropZone` | `PdfCompress.inspectPdf()` (hiện tên/số trang/dung lượng), `PdfCompress.compressPdf()`, tải kết quả, không chứa logic nén |
 | | Party Mode `>20MB` dialog | `exportSingleDocument()` khi `result.blob.size > 20.000.000 byte` | `openLargeFileDialog()` → `#partyLargeOriginalBtn` (tải đúng blob lossless đã có, không đổi) hoặc `#partyLargeCompressBtn` (gọi thẳng `PdfCompress.compressPdf()`, KHÔNG có bản sao logic nén trong `party-mode.js`) |
@@ -397,3 +399,50 @@ The fifth top-level workflow, `state.mode==='compress'`, is a standalone tool in
 ### Party Mode integration (`>20MB` detour)
 
 `exportSingleDocument()`'s existing lossless export path (`exportDocument()` → `PartyPdf.buildMixedPdf()`, page-object copy for PDF pages / canvas+JPEG for image pages — **unchanged**) is untouched. Only the point right before the automatic download changed: if `result.blob.size > 20,000,000`, `openLargeFileDialog(result)` shows `#partyLargeFileDialog` instead of auto-downloading. "Tải bản gốc" downloads that exact same lossless blob (no re-encode). "Tạo bản dưới 20MB" is the only path that calls `PdfCompress.compressPdf(pending.blob, {onProgress})`, then downloads the compressed result named `<type>_duoi-20MB.pdf`. `exportAll()` (bulk multi-document export) is intentionally left untouched — a per-file size-check interstitial would break its batch download loop; this is a scoped limitation, not an oversight (see `06-ai-working-log.md`).
+
+### Giảm dung lượng PDF: compatibility fallback for malformed scanner PDFs (2026-09-06)
+
+Some scanner-produced PDFs declare a content stream `/Length` a few bytes short of the actual data (observed on a real file: every affected stream's declared length was 3 bytes short — a scanner firmware bug, not corruption; the page content still decodes/renders fine through a tolerant reader). `party-pdf.js`'s classical parser (`sourceFromBuffer()`/`parseObjects()`/`findObjectEnd()`) is **intentionally strict** about stream bounds — it byte-copies streams verbatim so Party Mode can export pages losslessly — so it throws (`"PDF stream không tìm thấy endstream sau declared length."`) rather than guess where a stream really ends. That strictness is not relaxed; Compress mode instead grows its own tolerant path, since it never needs a byte-exact copy — it already re-rasterizes every page to JPEG regardless of whether the source PDF is well-formed.
+
+```
+compressPdf()/inspectPdf()
+        │
+        ▼
+   resolveSource(buffer, name, onProgress)
+        │
+        ├─► PartyPdf.sourceFromBuffer() succeeds ──► return { source, compatRepaired:false }   [unchanged fast path, every well-formed PDF]
+        │
+        └─► throws ──► isRecoverableParseError(err)?
+                          │
+                          ├─ false ("Tệp không phải PDF."/mật khẩu-mã hóa) ──► rethrow, hard fail (a tolerant reader cannot help either case)
+                          │
+                          └─ true (any other classical-parser structural failure) ──► repairPdfViaPdfJs(buffer, onProgress)
+                                    │
+                                    ▼
+                              PartyPdf.loadPdfJsDocument(bytes)  — opens raw bytes directly via pdf.js,
+                                    │                               bypassing the classical parser entirely
+                                    ▼
+                              for each page (sequential, one canvas at a time):
+                                PartyPdf.renderPdfJsPageDirect() → encodePage() → release canvas, sleepFrame()
+                                    │
+                                    ▼
+                              buildCompressedPdf(items)  — PartyPdf.buildPdf() writes a fresh, structurally valid PDF
+                                    │
+                                    ▼
+                              PartyPdf.sourceFromBuffer() on the REPAIRED bytes — now succeeds (it's this app's own writer's output)
+                                    │
+                                    ▼
+                              return { source, compatRepaired:true }
+        │
+        ▼ (either branch)
+   the rest of compressPdf() — the adaptive rounds loop, renderRound(), buildCompressedPdf(), verifyTarget() — is completely unmodified
+   and does not know or care which branch produced `source`.
+```
+
+Key invariants:
+
+- **The repair step never duplicates the compression loop.** It renders once at `COMPAT_REPAIR_MAX_EDGE=2600`/`quality=0.92` — deliberately higher than every round in `ROUNDS` (max 2200) — purely to produce a faithful, structurally valid replacement PDF. The actual size reduction is still done entirely by the unchanged adaptive-rounds loop that runs afterward on that replacement PDF. A malformed PDF is therefore rasterized twice (once to repair, once per compression round) — accepted, since this path only triggers when the classical parser has already failed, never for a well-formed PDF.
+- **Memory stays bounded exactly like the normal path**: `repairPdfViaPdfJs()` holds one full-resolution canvas at a time (`canvas.width=0;canvas.height=0` immediately after JPEG-encoding each page, `sleepFrame()` between pages) — the same discipline as `renderRound()`.
+- **`inspectPdf()`'s compatibility path is cheap on purpose**: it only opens the document via `loadPdfJsDocument()` to read `documentProxy.numPages` — it never renders a page — so the "Tên file · N trang · dung lượng" info screen (shown before the user commits to compressing) doesn't pay for a full repair render just to display a number. `{ pageCount, bytes, memoryRisk, compatRequired:true }` is returned instead of throwing.
+- **No user-facing technical jargon.** `compress-mode.js` shows "PDF có cấu trúc scan không chuẩn. Đang sửa tương thích trên thiết bị…" (phase `compat-start`/`compat-repairing`) then "Đã sửa tương thích PDF. Đang tối ưu dung lượng…" (phase `compat-done`, held on screen 500ms so the very next round's `onProgress('rendering')` call doesn't overwrite it before anyone reads it). Words like "endstream"/"xref"/"declared length" only ever reach `console.warn`/`console.error`. If `repairPdfViaPdfJs()` itself also fails (pdf.js cannot open/render the file either), `resolveSource()` throws the plain `PdfCompress.COMPAT_UNREADABLE_MESSAGE` — errors are only ever surfaced to the user when **both** parsers have failed.
+- **A vendored pdf.js/Chromium compatibility gap had to be fixed for this path to work at all.** `assets/vendor/pdfjs/pdf.mjs` (5.7.284) calls the still-early TC39 `Map.prototype.getOrInsertComputed()` internally (`WorkerTransport`'s method-promise cache, `PDFPageProxy.render()`'s per-intent cache); some Chromium builds don't implement it yet, throwing a `TypeError` straight out of `page.render()`. This is the same underlying gap already documented under "Tích hợp Scanic ML"/2026-09-05 in `03-decisions.md` that used to make Party Mode's preview silently fall back to the classical renderer (`console.warn` only, easy to miss) — but the compatibility fallback above has **no classical fallback to fall back to** (the classical parser is exactly what failed to get here), so `page.render()` must actually succeed. `party-pdf.js`'s `ensureMapGetOrInsertComputed()` polyfills the missing method (additive only, guarded by a `typeof` check, installed once at the single `pdfJsLibrary()` lazy-init choke point all pdf.js usage already goes through) rather than patching the vendored file.
