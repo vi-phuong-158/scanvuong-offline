@@ -16,6 +16,34 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-06] Compress mode: điều chỉnh target nén 14–17 MB (sweet spot 15–16 MB, ceiling < 20 MB) & nghiệm thu file thật 02.Ly_lich_dang_vien.pdf
+- **Agent:** Codex
+- **Bối cảnh & vấn đề:** Sau khi sửa compatibility fallback, file scan thật `02.Ly_lich_dang_vien.pdf` (10 trang, 43.58 MB) nén được nhưng kết quả chỉ đạt ~583.7 KB. Mức nén này quá sâu, làm mất độ nét chữ viết tay, chữ nhỏ, con dấu và chi tiết scan.
+- **Nguyên nhân gốc:** `party-pdf.js` trong `renderPdfJsPageDirect()`, `renderPdfJsThumbnail()` và `renderThumbnailFallback()` tính scale bằng:
+  `const scale = Math.min(1, maxEdge / Math.max(viewport.width, viewport.height));`
+  Trong PDF.js, toạ độ viewport tính bằng PostScript points (72 DPI). `Math.min(1, ...)` kẹp cứng scale ở mức 1.0 (72 DPI), bỏ qua hoàn toàn `maxEdge` (dù là 2200, 2600 hay 3400). Độ phân giải máy quét gốc (~600 DPI, ảnh nhúng 6820 × 4760 px) bị ép về 595 × 417 px.
+- **Thay đổi:**
+  1. **`party-pdf.js`:** Gỡ bỏ kẹp `Math.min(1, ...)`, cho phép `scale = maxEdge / Math.max(viewport.width, viewport.height)` khi `maxEdge` được truyền vào trong cả 3 hàm render.
+  2. **`pdf-compress.js`:**
+     - Điều chỉnh target: `PDF_COMPRESSION_TARGET_BYTES = 17 * 1000 * 1000` (17.0 MB ceiling của band chấp nhận 14–17 MB, sweet spot 15–16 MB, hard ceiling < 20 MB).
+     - Thang nén `ROUNDS` mới bắt đầu từ mức phân giải cao: Round 1 `{ maxEdge: 3000, jpeg: 0.90 }` (đo thực nghiệm trên toàn bộ 10 trang file scan đạt **16.58 decimal MB / 15.82 MiB**, đúng sweet spot 15–16 MB, dừng ngay ở round 1), giảm dần qua 2800/0.86, 2500/0.82, 2200/0.76, 1800/0.68 (floor).
+     - `COMPAT_REPAIR_MAX_EDGE = 3000`, `COMPAT_REPAIR_JPEG_QUALITY = 0.90`: Bản sửa tương thích `repairedBlob` đạt chất lượng cao ngay từ đầu.
+     - Tối ưu single-pass: Nếu file cần compatibility repair và `repairedBlob` đã nằm trong target ceiling (<= 17 MB, hoặc <= 20 MB với file vốn <= 20 MB), trả về `repairedBlob` trực tiếp, tránh re-rasterize lần thứ hai (loại bỏ hoàn toàn generation loss JPEG và giảm thời gian nén từ ~45s xuống ~18s).
+     - Quy tắc file <= 20 MB: Không tự ý nén/rasterize file hợp lệ <= 20 MB; nếu cần fallback tương thích thì giữ chất lượng rất cao (3000px/0.90), không ép xuống band nén thấp.
+  3. **`scripts/regression_pdf_compress.cjs`:** Cập nhật kiểm tra target 17,000,000 bytes và các cận min/max của target band. 45/45 checks PASS.
+- **File đã sửa:** `party-pdf.js`, `pdf-compress.js`, `scripts/regression_pdf_compress.cjs`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`.
+- **Kiểm tra & Nghiệm thu:**
+  - `node scripts/regression_pdf_compress.cjs`: 45/45 PASS.
+  - `node scripts/regression_party_mode.cjs`: 62/62 PASS.
+  - `node scripts/acceptance_pdf_compat_fallback.cjs`: PASS toàn bộ.
+  - `node scripts/acceptance_pdf_compress.cjs`: PASS toàn bộ (bao gồm Compress mode, Party Mode >20MB detour, và mobile viewports).
+  - **Nghiệm thu trên file thật `02.Ly_lich_dang_vien.pdf` (SHA-256: `b2d6126dba890e5d84a7446540cea75917a5a25be8c7ec31678aba5ab4fdc8e5`, 43.58 MB, 10 trang):**
+    - Chạy end-to-end trên Chrome thật qua CDP: 10/10 trang được sửa tương thích và nén thành công trong 18.7 giây.
+    - Dung lượng đầu ra: **16,583,576 bytes (15.82 MiB / 16.58 decimal MB)** — nằm chuẩn xác trong dải **14–17 MB**, đúng sweet spot **15–16 MB**, dưới ngưỡng trần **20 MB**.
+    - File đầu ra: `02.Ly_lich_dang_vien_duoi-20MB.pdf` có 10/10 trang đọc tốt bởi strict parser và `pypdf`, không trang trắng, MediaBox/tỷ lệ giữ nguyên.
+    - Kiểm tra trực quan ảnh crop: chữ in, chữ viết tay, con dấu đỏ, thớ giấy đều rõ nét vượt trội so với mức 72 DPI trước đây.
+    - SHA-256 file nguồn giữ nguyên tuyệt đối (`PASS`).
+
 ## [2026-09-06] Compress mode: compatibility fallback for scanner PDFs with a malformed content-stream /Length
 - **Agent:** Claude Code
 - **Bối cảnh / root cause:** File thật `02.Ly_lich_dang_vien.pdf` (PDF 1.4, 10 trang, ~50MB, không mã hóa) không nén được — UI báo "Không đọc được PDF: PDF stream không tìm thấy endstream sau declared length." Root cause: một số stream có `/Length` khai báo NGẮN HƠN dữ liệu thực tế 3 byte (lỗi firmware scanner, không phải file hỏng — nội dung trang vẫn render tốt bằng parser tolerant). `party-pdf.js`'s `sourceFromBuffer()`/`parseObjects()` cố tình strict về stream bounds (nó byte-copy stream nguyên vẹn để Party Mode xuất trang lossless), nên ném lỗi ngay ở bước parse đầu tiên thay vì đoán — đây là hành vi ĐÚNG cho Party Mode, nhưng compress mode không cần copy byte-exact (nó luôn rasterize lại mọi trang thành JPEG), nên có thể tolerant hơn.

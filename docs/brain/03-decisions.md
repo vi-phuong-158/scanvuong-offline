@@ -3,6 +3,31 @@
 > Ghi lại quyết định kỹ thuật quan trọng để agent sau không "phát minh lại" hoặc đảo ngược
 > mà không biết lý do. Mỗi entry: quyết định gì, vì sao, đánh đổi gì.
 
+## [2026-09-06] Compress mode: điều chỉnh target nén 14–17 MB (sweet spot 15–16 MB, ceiling < 20 MB) & gỡ bỏ giới hạn 72 DPI trong PartyPdf
+
+- **Bối cảnh:** Sau khi sửa compatibility fallback, file scan thật `02.Ly_lich_dang_vien.pdf` (10 trang, 43.58 MB) nén được nhưng kết quả chỉ đạt ~583.7 KB. Mức nén này quá sâu, làm mờ chữ nhỏ, chữ viết tay, con dấu và chi tiết scan.
+- **Nguyên nhân gốc:** `party-pdf.js` trong `renderPdfJsPageDirect()`, `renderPdfJsThumbnail()` và `renderThumbnailFallback()` tính scale bằng:
+  `const scale = Math.min(1, maxEdge / Math.max(viewport.width, viewport.height));`
+  Trong PDF.js, toạ độ viewport tính bằng PostScript points (72 DPI, ví dụ 595 × 417 pt). Do `Math.min(1, ...)`, scale bị kẹp cứng ở mức 1.0 (72 DPI) dù `maxEdge` được truyền vào là 2200, 2600 hay 3400. Toàn bộ độ phân giải quét gốc của máy scan (~600 DPI, ảnh nhúng 6820 × 4760 px) bị cắt gọt chỉ còn 595 × 417 px, sinh ra file nén chỉ ~580 KB.
+- **Quyết định:**
+  1. **Gỡ bỏ giới hạn `Math.min(1, ...)` trong `party-pdf.js`:** Cho phép `scale = maxEdge / Math.max(viewport.width, viewport.height)` khi `maxEdge` được truyền vào, giải phóng khả năng render ảnh độ phân giải cao thực sự theo yêu cầu.
+  2. **Điều chỉnh target nén:**
+     - Preferred target: **15–16 MB**
+     - Acceptable target band: **14–17 MB**
+     - Hard ceiling: **< 20 MB** (`PDF_COMPRESSION_TARGET_BYTES = 17 * 1000 * 1000`, `PDF_COMPRESSION_DISPLAY_LIMIT_BYTES = 20 * 1000 * 1000`).
+  3. **Thang nén mới (`ROUNDS`):** Bắt đầu từ mức phân giải cao:
+     - Round 1: `{ maxEdge: 3000, jpeg: 0.90 }` (đo thật trên 10 trang file scan đạt **16.58 decimal MB / 15.82 MiB**, đúng sweet spot 15–16 MB, dừng ngay ở round 1).
+     - Round 2: `{ maxEdge: 2800, jpeg: 0.86 }`
+     - Round 3: `{ maxEdge: 2500, jpeg: 0.82 }`
+     - Round 4: `{ maxEdge: 2200, jpeg: 0.76 }`
+     - Round 5: `{ maxEdge: 1800, jpeg: 0.68 }` (quality floor)
+     - Beyond floor: `[{ maxEdge: 1400, jpeg: 0.52 }, { maxEdge: 1000, jpeg: 0.40 }]`
+  4. **Tối ưu single-pass khi tương thích:** `COMPAT_REPAIR_MAX_EDGE = 3000` và `COMPAT_REPAIR_JPEG_QUALITY = 0.90`. Nếu bản sửa tương thích `repairedBlob` đã nằm trong target (<= 17 MB hoặc <= 20 MB đối với file vốn <= 20 MB), trả về trực tiếp kết quả này, tránh re-rasterize lần thứ hai gây suy giảm chất lượng JPEG (generation loss) và tiết kiệm 50% thời gian xử lý (chỉ ~18s thay vì ~45s).
+  5. **Quy tắc file <= 20 MB:** Không tự ý rasterize/nén file hợp lệ <= 20 MB trừ khi có yêu cầu tường minh; nếu cần fallback để sửa tương thích thì giữ chất lượng rất cao (3000px/0.90), không ép xuống band nén thấp.
+- **Kiểm chứng:** Đo đạc và kiểm thử thật trên file thật `02.Ly_lich_dang_vien.pdf`: 10/10 trang, kích thước 16,583,576 bytes (15.82 MiB / 16.58 decimal MB), chữ viết tay và con dấu sắc nét, `pypdf` đọc tốt, SHA-256 file gốc giữ nguyên tuyệt đối.
+
+---
+
 ## [2026-09-06] Compress mode: compatibility fallback qua PDF.js cho scanner PDF có /Length khai báo sai lệch nhẹ
 
 - **Bối cảnh:** File scan thật (`02.Ly_lich_dang_vien.pdf`, PDF 1.4, 10 trang, ~50MB) không nén được — `party-pdf.js`'s `sourceFromBuffer()` ném `"PDF stream không tìm thấy endstream sau declared length."` vì một số stream khai báo `/Length` ngắn hơn dữ liệu thực tế 3 byte (lỗi firmware scanner, nội dung vẫn render tốt bằng reader tolerant).

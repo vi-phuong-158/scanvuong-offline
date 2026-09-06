@@ -1141,7 +1141,8 @@
     try {
       const rotation = ((Number(page.rotate || 0) % 360) + 360) % 360;
       let viewport = page.getViewport({ scale: 1, rotation });
-      const scale = Math.min(1, maxEdge / Math.max(viewport.width, viewport.height));
+      const maxDim = Math.max(viewport.width, viewport.height);
+      const scale = maxEdge && maxDim > 0 ? (maxEdge / maxDim) : 1;
       viewport = page.getViewport({ scale, rotation });
       const width = Math.max(1, Math.round(viewport.width));
       const height = Math.max(1, Math.round(viewport.height));
@@ -1222,7 +1223,8 @@
     const page = await documentProxy.getPage(ref.index + 1);
     const rotation = ((Number(page.rotate || 0) + Number(extraRotation || 0)) % 360 + 360) % 360;
     let viewport = page.getViewport({ scale: 1, rotation });
-    const scale = Math.min(1, maxEdge / Math.max(viewport.width, viewport.height));
+    const maxDim = Math.max(viewport.width, viewport.height);
+    const scale = maxEdge && maxDim > 0 ? (maxEdge / maxDim) : 1;
     viewport = page.getViewport({ scale, rotation });
     const width = Math.max(1, Math.round(viewport.width));
     const height = Math.max(1, Math.round(viewport.height));
@@ -1256,7 +1258,8 @@
     if (!ref?.source || !canvas?.getContext) throw new Error('Thumbnail PDF không hợp lệ.');
     const info = pageInfo(ref.source, ref.index);
     const rotation = ((info.rotation + Number(extraRotation || 0)) % 360 + 360) % 360;
-    const scale = Math.min(1, maxEdge / Math.max(info.width, info.height));
+    const maxDim = Math.max(info.width, info.height);
+    const scale = maxEdge && maxDim > 0 ? (maxEdge / maxDim) : 1;
     const outputWidth = Math.max(1, Math.round((rotation % 180 ? info.height : info.width) * scale));
     const outputHeight = Math.max(1, Math.round((rotation % 180 ? info.width : info.height) * scale));
     const baseWidth = Math.max(1, Math.round(info.rawWidth * scale));

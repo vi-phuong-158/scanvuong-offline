@@ -29,7 +29,9 @@ function check(name, condition) {
 
 // ---- Target constants ----
 check('target is defined and positive', PdfCompress.PDF_COMPRESSION_TARGET_BYTES > 0);
-check('target is decimal 19,000,000 bytes (documented, not MiB)', PdfCompress.PDF_COMPRESSION_TARGET_BYTES === 19 * 1000 * 1000);
+check('target is decimal 17,000,000 bytes (acceptable band ceiling, not MiB)', PdfCompress.PDF_COMPRESSION_TARGET_BYTES === 17 * 1000 * 1000);
+check('target band min is decimal 14,000,000 bytes', PdfCompress.PDF_COMPRESSION_TARGET_BAND_MIN_BYTES === 14 * 1000 * 1000);
+check('target band max is decimal 17,000,000 bytes', PdfCompress.PDF_COMPRESSION_TARGET_BAND_MAX_BYTES === 17 * 1000 * 1000);
 check('display limit is decimal 20,000,000 bytes', PdfCompress.PDF_COMPRESSION_DISPLAY_LIMIT_BYTES === 20 * 1000 * 1000);
 check('target stays under the display limit with a real safety margin', PdfCompress.PDF_COMPRESSION_DISPLAY_LIMIT_BYTES - PdfCompress.PDF_COMPRESSION_TARGET_BYTES >= 500 * 1000);
 check('target also stays under a MiB-based 20MB reading of the limit', PdfCompress.PDF_COMPRESSION_TARGET_BYTES < 20 * 1024 * 1024);

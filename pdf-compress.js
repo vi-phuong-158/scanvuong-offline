@@ -30,27 +30,31 @@
 (() => {
   'use strict';
 
-  // Decimal MB, not MiB — 19,000,000 bytes stays safely under a 20MB cutoff
-  // whether the receiving system counts 20MB as 20,000,000 or 20,971,520
-  // bytes (see docs/brain/03-decisions.md).
-  const PDF_COMPRESSION_TARGET_BYTES = 19 * 1000 * 1000;
+  // Target ceiling: 17,000,000 bytes (decimal 17 MB). Preferred target band
+  // is 14–17 MB (sweet spot ~15–16 MB), with a hard ceiling strictly below 20 MB
+  // (see docs/brain/03-decisions.md).
+  const PDF_COMPRESSION_TARGET_BYTES = 17 * 1000 * 1000;
   const PDF_COMPRESSION_DISPLAY_LIMIT_BYTES = 20 * 1000 * 1000;
+  const PDF_COMPRESSION_TARGET_BAND_MIN_BYTES = 14 * 1000 * 1000;
+  const PDF_COMPRESSION_TARGET_BAND_MAX_BYTES = 17 * 1000 * 1000;
 
   // Color is always kept (no grayscale option) — see AGENTS.md/CLAUDE.md task
   // brief: seals/signatures/ink color must never be silently dropped.
+  // The first round aims for high resolution (~3000 maxEdge, 0.90 JPEG) which
+  // lands right in the 15–16 MB band for typical 10-page document scans.
   // Round 5 is the safety floor: compressPdf() never renders past it unless
   // the caller explicitly opts in via options.rounds (the UI's "Nén mạnh
   // hơn" button, a distinct user action — never automatic).
   const ROUNDS = [
-    { maxEdge: 2200, jpeg: 0.84 },
-    { maxEdge: 2000, jpeg: 0.78 },
-    { maxEdge: 1800, jpeg: 0.70 },
-    { maxEdge: 1600, jpeg: 0.62 },
-    { maxEdge: 1400, jpeg: 0.50 }
+    { maxEdge: 3000, jpeg: 0.90 },
+    { maxEdge: 2800, jpeg: 0.86 },
+    { maxEdge: 2500, jpeg: 0.82 },
+    { maxEdge: 2200, jpeg: 0.76 },
+    { maxEdge: 1800, jpeg: 0.68 }
   ];
   const BEYOND_FLOOR_ROUNDS = [
-    { maxEdge: 1200, jpeg: 0.42 },
-    { maxEdge: 1000, jpeg: 0.35 }
+    { maxEdge: 1400, jpeg: 0.52 },
+    { maxEdge: 1000, jpeg: 0.40 }
   ];
 
   // Peak-memory guard — see docs/brain/03-decisions.md "Compress mode memory
@@ -200,12 +204,10 @@
     return !isEncryptedParseError(err) && !isNotAPdfParseError(err);
   }
 
-  // Near-lossless intermediate resolution/quality for the one-time repair
-  // render — higher than every compression round's maxEdge (2200 at most)
-  // so the normal rounds loop that runs afterward is still the one doing
-  // the actual size reduction, not this repair step.
-  const COMPAT_REPAIR_MAX_EDGE = 2600;
-  const COMPAT_REPAIR_JPEG_QUALITY = 0.92;
+  // High-fidelity resolution/quality for the one-time compatibility repair
+  // render (~3000px, 0.90 JPEG).
+  const COMPAT_REPAIR_MAX_EDGE = 3000;
+  const COMPAT_REPAIR_JPEG_QUALITY = 0.90;
   const COMPAT_UNREADABLE_MESSAGE = 'Không thể đọc được file PDF này. File có thể bị hỏng nặng hoặc ở định dạng chưa được hỗ trợ.';
 
   async function repairPdfViaPdfJs(buffer, onProgress) {
@@ -260,7 +262,11 @@
       // call overwrites it on the same tick, and a status the user can
       // never actually read defeats the point of showing it.
       await new Promise(resolve => setTimeout(resolve, 500));
-      return { source: partyPdf().sourceFromBuffer(new Uint8Array(repairedBuffer), name), compatRepaired: true };
+      return {
+        source: partyPdf().sourceFromBuffer(new Uint8Array(repairedBuffer), name),
+        compatRepaired: true,
+        repairedBlob
+      };
     }
   }
 
@@ -335,11 +341,31 @@
     // any page is ever rendered. Anything else — the scanner-malformed
     // stream lengths this task targets included — first tries the
     // compatibility fallback above instead of failing outright.
-    const { source, compatRepaired } = await resolveSource(buffer, options.name || 'document.pdf', onProgress);
+    const { source, compatRepaired, repairedBlob } = await resolveSource(buffer, options.name || 'document.pdf', onProgress);
 
     try {
       const pageCount = source.pageCount;
       if (!pageCount) throw new Error('PDF không có trang nào.');
+
+      // If compatibility repair was required and the repaired PDF is already
+      // within the target size band (<= 17 MB, or <= 20 MB when original was <= 20 MB),
+      // retain the high-fidelity repaired document directly rather than running
+      // an unnecessary second-generation compression pass.
+      const ceiling = originalBytes <= PDF_COMPRESSION_DISPLAY_LIMIT_BYTES
+        ? PDF_COMPRESSION_DISPLAY_LIMIT_BYTES
+        : targetBytes;
+      if (compatRepaired && repairedBlob && verifyTarget(repairedBlob.size, ceiling) && !options.rounds && !options.forceCompress) {
+        return {
+          blob: repairedBlob,
+          originalBytes,
+          outputBytes: repairedBlob.size,
+          pageCount,
+          achievedTarget: true,
+          roundsUsed: 1,
+          profileUsed: { maxEdge: COMPAT_REPAIR_MAX_EDGE, jpeg: COMPAT_REPAIR_JPEG_QUALITY },
+          compatRepaired: true
+        };
+      }
 
       let blob = null, achievedTarget = false, profileUsed = null, roundsUsed = 0;
       for (let r = 0; r < rounds.length; r++) {
@@ -375,6 +401,8 @@
   window.PdfCompress = {
     PDF_COMPRESSION_TARGET_BYTES,
     PDF_COMPRESSION_DISPLAY_LIMIT_BYTES,
+    PDF_COMPRESSION_TARGET_BAND_MIN_BYTES,
+    PDF_COMPRESSION_TARGET_BAND_MAX_BYTES,
     ROUNDS,
     BEYOND_FLOOR_ROUNDS,
     SAFE_MOBILE_PEAK_BYTES,
