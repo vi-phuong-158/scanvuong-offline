@@ -1577,6 +1577,7 @@ button {
     min-width: var(--touch-min);
     min-height: var(--touch-min);
     padding: 0 9px;
+    min-width: 44px;
   }
 
   .app-shell {

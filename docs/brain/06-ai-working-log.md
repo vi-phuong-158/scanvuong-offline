@@ -1111,3 +1111,9 @@
   - Hồi quy không đổi: `regression_image_decode` 32/32 · `regression_scan_id` 52/52 · `regression_export_busy` 29/29 · `regression_detection_fallback` 17/17 · `regression_ml_detector` 53/53 · `regression_party_mode.cjs` 62/62 · `regression_watermark` 35/35 · `regression_sw_update` PASS · `test_touch_targets` 175/175 (Chromium thật, `helpBtn` 44×44px trên mobile) · `validate_static.py` 10/10 · `node --check` tất cả file JS PASS.
   - **Chưa kiểm tra được ở đây:** cảm nhận UX thực tế trên thiết bị Android của operator (chỉ có bằng chứng Chromium headless, không phải phiên cầm tay thật).
 
+## [2026-09-08] Local Chrome UX acceptance follow-up
+- **Agent:** Codex
+- **Thay đổi:** Chạy nghiệm thu browser thật trên Chrome local; thêm 6 screenshot acceptance và `UX_AUDIT.md`; sửa tối thiểu `styles.css` để các nút compact trên topbar, đặc biệt `#helpBtn`, có chiều rộng touch target tối thiểu 44px trên mobile.
+- **File đã sửa:** `styles.css`, `UX_AUDIT.md`, `docs/screenshots/home-desktop.png`, `docs/screenshots/home-mobile.png`, `docs/screenshots/party-scan-empty.png`, `docs/screenshots/party-scan-preview.png`, `docs/screenshots/footer-cleaner.png`, `docs/screenshots/help-mobile.png`, `scripts/acceptance_final_ux.cjs`, `docs/brain/06-ai-working-log.md`.
+- **Lý do:** Browser acceptance phát hiện `#helpBtn` đo 38x44px ở 360/375/390/412/430px; đây là lỗi touch-target thực tế. Bản sửa không thay đổi layout ngoài việc đảm bảo hit area tối thiểu.
+- **Kiểm tra:** Chrome 152 local; Help 22/22; Scan ID oversized photo 17/17; Party UI browser PASS; touch target 175/175; static 10/10; watermark 35/35; export-busy 29/29; scan ID 52/52; image decode 32/32; detection fallback 17/17; ML detector 53/53; Party regression 69/69; Service Worker upgrade 9/9. PWA offline browser acceptance Phase A/Phase B PASS đầy đủ.
