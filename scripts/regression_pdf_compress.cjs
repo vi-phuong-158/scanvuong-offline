@@ -13,7 +13,7 @@ const root = path.resolve(__dirname, '..');
 // A minimal `document` so renderCompressionPage()'s `document.createElement('canvas')`
 // doesn't throw a ReferenceError before reaching the renderer stub in the
 // fail-closed test below — nothing here needs real Canvas 2D behavior.
-const context = { window: {}, document: { createElement: () => ({}) }, TextEncoder, TextDecoder, Uint8Array, Blob, Math, Error, console, URL };
+const context = { window: {}, document: { createElement: () => ({}) }, TextEncoder, TextDecoder, Uint8Array, Blob, Math, Error, console, URL, setTimeout };
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(path.join(root, 'party-pdf.js'), 'utf8'), context, { filename: 'party-pdf.js' });
 vm.runInContext(fs.readFileSync(path.join(root, 'pdf-compress.js'), 'utf8'), context, { filename: 'pdf-compress.js' });
@@ -189,6 +189,84 @@ check('buildCompressedPdf returns a Blob', blob instanceof Blob);
   }
   check('compressPdf propagates a renderer failure instead of silently packaging a blank/partial page', renderFailurePropagated);
   check('compressPdf still releases the preview cache (finally block) even when rendering fails', releaseCalledOnFailure);
+
+  // ---- Never return an output larger than the original ----
+  // Reported bug: a compactly-encoded 9 MB scan came out as 13 MB, because
+  // round 1 (3000px/0.90) was "under the 17 MB target" and nothing compared
+  // it to the original. The renderer is stubbed so each round's JPEG size is
+  // controlled exactly; everything else (round loop, PDF assembly, size
+  // checks) is the real engine.
+  check('isMeaningfulReduction: a larger output is not a reduction', PdfCompress.isMeaningfulReduction(1300, 900) === false);
+  check('isMeaningfulReduction: a <5% smaller output is not a reduction', PdfCompress.isMeaningfulReduction(980, 1000) === false);
+  check('isMeaningfulReduction: exactly 5% smaller counts', PdfCompress.isMeaningfulReduction(950, 1000) === true);
+
+  const sourceItems = [0, 1, 2].map(i => ({ bytes: new Uint8Array(24000).fill(40 + i), width: 1240, height: 1754 }));
+  const sourceBytes = new Uint8Array(await PdfCompress.buildCompressedPdf(sourceItems).arrayBuffer());
+  async function compressWithStubbedRenderer(jpegBytesForRound) {
+    const saved = PartyPdf.renderThumbnail;
+    PartyPdf.renderThumbnail = async (ref, canvas, maxEdge) => {
+      canvas.width = Math.round(maxEdge / 1.414); canvas.height = maxEdge;
+      canvas.toBlob = (cb, type, quality) => cb(new Blob([new Uint8Array(jpegBytesForRound({ maxEdge, quality })).fill(7)]));
+    };
+    try {
+      return await PdfCompress.compressPdf({ arrayBuffer: async () => sourceBytes.slice().buffer });
+    } finally {
+      PartyPdf.renderThumbnail = saved;
+    }
+  }
+
+  const inflating = await compressWithStubbedRenderer(() => 50000);
+  check('every round inflates the file → the original is kept, not the larger output', inflating.keptOriginal === true && inflating.outputBytes === sourceBytes.length);
+  const keptBytes = new Uint8Array(await inflating.blob.arrayBuffer());
+  check('kept original is byte-identical to the input', keptBytes.length === sourceBytes.length && keptBytes.every((b, i) => b === sourceBytes[i]));
+  check('kept original under the limit still reports achievedTarget (it is under 20 MB)', inflating.achievedTarget === true);
+  check('kept original reports no compression profile', inflating.profileUsed === null);
+  check('kept original still tried every safe round before giving up (never beyond the floor)', inflating.roundsUsed === PdfCompress.ROUNDS.length);
+
+  const barelySmaller = await compressWithStubbedRenderer(() => 23500);
+  check('a <5% saving is not worth a lossy re-encode → the original is kept', barelySmaller.keptOriginal === true && barelySmaller.outputBytes === sourceBytes.length);
+
+  const shrinksLater = await compressWithStubbedRenderer(({ maxEdge }) => maxEdge * 10);
+  check('an in-target round that is still larger than the original is NOT accepted (round 1 = 3×30000 bytes)', shrinksLater.roundsUsed > 1);
+  check('compression stops at the first round that is meaningfully smaller than the original', shrinksLater.roundsUsed === 4 && shrinksLater.keptOriginal === false);
+  check('accepted output is meaningfully smaller than the original', shrinksLater.outputBytes <= sourceBytes.length * PdfCompress.MIN_REDUCTION_RATIO && shrinksLater.blob.size === shrinksLater.outputBytes);
+  const shrunkSource = PartyPdf.sourceFromBuffer(new Uint8Array(await shrinksLater.blob.arrayBuffer()), 'shrunk.pdf');
+  check('accepted output keeps every page', shrunkSource.pageCount === sourceItems.length);
+  check('every result carries underDisplayLimit (the user-facing "Dưới 20 MB" flag)', inflating.underDisplayLimit === true && shrinksLater.underDisplayLimit === true);
+
+  // ---- The 20 MB promise vs the 5% rule (review follow-up on PR #16) ----
+  const MB = 1000 * 1000;
+  check('isMeaningfulReduction: >20 MB → <=20 MB counts even when <5% smaller (20.5 → 19.8 MB)', PdfCompress.isMeaningfulReduction(19.8 * MB, 20.5 * MB) === true);
+  check('isMeaningfulReduction: >20 MB → still >20 MB needs the full 5% (20.5 → 20.2 MB)', PdfCompress.isMeaningfulReduction(20.2 * MB, 20.5 * MB) === false);
+  check('isMeaningfulReduction: never counts a larger output, even across the limit', PdfCompress.isMeaningfulReduction(21 * MB, 20.5 * MB) === false);
+
+  const bigPage = Math.round(20.5 * MB / 3);
+  const bigSourceItems = [0, 1, 2].map(i => ({ bytes: new Uint8Array(bigPage).fill(40 + i), width: 1240, height: 1754 }));
+  const bigSourceBytes = new Uint8Array(await PdfCompress.buildCompressedPdf(bigSourceItems).arrayBuffer());
+  check('fixture: large source is just over 20 MB', bigSourceBytes.length > 20 * MB && bigSourceBytes.length < 21 * MB);
+  async function compressBigWithStubbedRenderer(jpegBytesForRound) {
+    const saved = PartyPdf.renderThumbnail;
+    PartyPdf.renderThumbnail = async (ref, canvas, maxEdge) => {
+      canvas.width = Math.round(maxEdge / 1.414); canvas.height = maxEdge;
+      canvas.toBlob = (cb, type, quality) => cb(new Blob([new Uint8Array(jpegBytesForRound({ maxEdge, quality })).fill(7)]));
+    };
+    try {
+      return await PdfCompress.compressPdf({ arrayBuffer: async () => bigSourceBytes.slice().buffer });
+    } finally {
+      PartyPdf.renderThumbnail = saved;
+    }
+  }
+
+  const justUnder = await compressBigWithStubbedRenderer(() => Math.round(19.8 * MB / 3));
+  check('20.5 MB → 19.8 MB is returned (not discarded for the original) even though it misses the 17 MB target', justUnder.keptOriginal === false && justUnder.outputBytes < 20 * MB);
+  check('20.5 MB → 19.8 MB: achievedTarget (17 MB engine target) is false but underDisplayLimit is true', justUnder.achievedTarget === false && justUnder.underDisplayLimit === true);
+
+  const bigInflating = await compressBigWithStubbedRenderer(() => Math.round(22 * MB / 3));
+  check('>20 MB source that cannot shrink → original kept, reported as NOT under 20 MB', bigInflating.keptOriginal === true && bigInflating.underDisplayLimit === false && bigInflating.achievedTarget === false);
+
+  check('resultFileName: kept original keeps its own name (no "_duoi-20MB" on an untouched file)', PdfCompress.resultFileName('ho_so', bigInflating) === 'ho_so.pdf');
+  check('resultFileName: compressed and under 20 MB → "_duoi-20MB"', PdfCompress.resultFileName('ho_so', justUnder) === 'ho_so_duoi-20MB.pdf');
+  check('resultFileName: compressed but still over 20 MB → never labelled "_duoi-20MB"', PdfCompress.resultFileName('ho_so', { keptOriginal: false, underDisplayLimit: false }) === 'ho_so_da-nen.pdf');
 
   console.log(`\n${pass}/${pass} checks passed.`);
   console.log('PdfCompress engine regression: PASS');

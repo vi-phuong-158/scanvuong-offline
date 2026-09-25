@@ -3,6 +3,21 @@
 > Ghi lại quyết định kỹ thuật quan trọng để agent sau không "phát minh lại" hoặc đảo ngược
 > mà không biết lý do. Mỗi entry: quyết định gì, vì sao, đánh đổi gì.
 
+## [2026-09-25] Compress mode: không bao giờ trả về file to hơn bản gốc (`isMeaningfulReduction`, `keptOriginal`)
+
+- **Bối cảnh:** Owner báo file ~9 MB đưa vào "Giảm dung lượng PDF" xuất ra ~13 MB. Tái hiện thật (Chrome headless, engine HEAD): file scan thật 13 trang 1.12 MB → **10.41 MB** (×9.3), fixture scan nén gọn 24 trang 8.77 MB → **16.14 MB**, cả hai đều báo `achievedTarget:true`.
+- **Nguyên nhân gốc:** Engine luôn rasterize lại mọi trang thành JPEG (round 1 = 3000px/0.90) và chỉ so kết quả với target tuyệt đối 17 MB (`verifyTarget`), không bao giờ so với dung lượng gốc. File scan đã được máy scan nén gọn (JPEG DPI thấp, CCITT/JBIG2 đen trắng) phình to khi vẽ lại ở 3000px/0.90 nhưng vẫn "dưới 17 MB" nên được chấp nhận ngay. Shortcut compat-repair có cùng lỗi (chấp nhận bản sửa ≤ 20 MB dù to hơn bản gốc).
+- **Quyết định:**
+  1. Một round chỉ được chấp nhận khi **vừa** ≤ target **vừa** `isMeaningfulReduction(out, original)` — nhỏ hơn bản gốc ít nhất 5% (`MIN_REDUCTION_RATIO = 0.95`). Dưới 5% không đáng một lần re-encode lossy.
+  2. Nếu hết các round an toàn (không vượt floor) mà round cuối vẫn không nhỏ hơn bản gốc đáng kể → trả về **nguyên bytes gốc** (Blob mới, byte-identical), `keptOriginal:true`, `profileUsed:null`; `achievedTarget` = bản gốc ≤ ceiling (20 MB nếu bản gốc ≤ 20 MB).
+  3. Shortcut compat-repair áp dụng cùng quy tắc; nếu bản sửa không nhỏ hơn bản gốc thì đi tiếp vòng rounds bình thường.
+  4. UI: `compress-mode.js` hiện thông báo "đã nén tối ưu sẵn… giữ nguyên bản gốc" + nút "Nén mạnh hơn" (người dùng tự chọn vượt floor). Party Mode >20MB dialog: không tải bản sao trùng với tên `_duoi-20MB`, bật lại "Tải bản gốc" và báo không giảm được.
+  5. **Review follow-up PR #16:** (a) quy tắc 5% không áp dụng khi bản gốc >20 MB và kết quả đã ≤20 MB (20.5 → 19.8 MB là kết quả người dùng cần; bản đầu của fix này đã giữ lại bản gốc 20.5 MB — regression, đã sửa); (b) tách `achievedTarget` (target nội bộ 17 MB) khỏi `underDisplayLimit` (≤20 MB, dùng cho checkmark/thông báo/toast "Dưới 20 MB") — trước đây UI hiện ❌ "Dưới 20 MB" cho kết quả 18.7 MB; (c) `resultFileName()` dùng chung: bản gốc giữ nguyên không bao giờ mang đuôi `_duoi-20MB`, kết quả vẫn >20 MB mang `_da-nen`.
+- **Đánh đổi:** File đã nhỏ có thể chạy đủ 5 round rồi mới quyết định giữ bản gốc (đo: 1.1 MB/13 trang ~26s, 8.8 MB/24 trang ~16s trên desktop). Không thêm early-exit dựa trên ước lượng — vẫn giữ nguyên tắc chỉ đo `blob.size` thật.
+- **Người quyết định:** Claude Code, theo yêu cầu owner, sau khi tái hiện bằng đo thật.
+
+---
+
 ## [2026-09-06] Compress mode: điều chỉnh target nén 14–17 MB (sweet spot 15–16 MB, ceiling < 20 MB) & gỡ bỏ giới hạn 72 DPI trong PartyPdf
 
 - **Bối cảnh:** Sau khi sửa compatibility fallback, file scan thật `02.Ly_lich_dang_vien.pdf` (10 trang, 43.58 MB) nén được nhưng kết quả chỉ đạt ~583.7 KB. Mức nén này quá sâu, làm mờ chữ nhỏ, chữ viết tay, con dấu và chi tiết scan.

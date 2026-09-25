@@ -186,10 +186,18 @@
     const pageCheck = result.pageCount === state.pageCount;
     els.resultChecks.innerHTML = [
       `<li class="${pageCheck ? 'text-success' : 'text-danger'}">${pageCheck ? checkIcon : crossIcon} ${result.pageCount}/${state.pageCount} trang</li>`,
-      `<li class="${result.achievedTarget ? 'text-success' : 'text-danger'}">${result.achievedTarget ? checkIcon : crossIcon} Dưới 20 MB</li>`,
+      `<li class="${result.underDisplayLimit ? 'text-success' : 'text-danger'}">${result.underDisplayLimit ? checkIcon : crossIcon} Dưới 20 MB</li>`,
       `<li class="text-success">${checkIcon} Xử lý hoàn toàn trên thiết bị</li>`
     ].join('');
-    if (result.achievedTarget) {
+    if (result.keptOriginal) {
+      // pdf-compress.js never returns an output that isn't meaningfully
+      // smaller than the source; say so instead of showing "X → X" silently.
+      els.resultNotice.textContent = result.underDisplayLimit
+        ? 'File này đã được nén tối ưu sẵn. Nén lại ở mức chất lượng an toàn không làm file nhỏ đi, nên ứng dụng giữ nguyên bản gốc.'
+        : 'Không giảm được dung lượng ở mức chất lượng an toàn, nên ứng dụng giữ nguyên bản gốc.';
+      els.resultNotice.classList.remove('hidden');
+      els.strongerBtn.classList.toggle('hidden', state.usedBeyondFloor);
+    } else if (result.underDisplayLimit) {
       els.resultNotice.classList.add('hidden');
       els.strongerBtn.classList.add('hidden');
     } else {
@@ -204,7 +212,7 @@
     const baseName = sanitizeFilename(state.originalName.replace(/\.pdf$/i, ''));
     const link = document.createElement('a');
     link.href = state.downloadUrl;
-    link.download = `${baseName}_duoi-20MB.pdf`;
+    link.download = PdfCompress.resultFileName(baseName, state.result);
     document.body.appendChild(link);
     link.click();
     link.remove();
