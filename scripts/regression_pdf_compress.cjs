@@ -232,6 +232,41 @@ check('buildCompressedPdf returns a Blob', blob instanceof Blob);
   check('accepted output is meaningfully smaller than the original', shrinksLater.outputBytes <= sourceBytes.length * PdfCompress.MIN_REDUCTION_RATIO && shrinksLater.blob.size === shrinksLater.outputBytes);
   const shrunkSource = PartyPdf.sourceFromBuffer(new Uint8Array(await shrinksLater.blob.arrayBuffer()), 'shrunk.pdf');
   check('accepted output keeps every page', shrunkSource.pageCount === sourceItems.length);
+  check('every result carries underDisplayLimit (the user-facing "Dưới 20 MB" flag)', inflating.underDisplayLimit === true && shrinksLater.underDisplayLimit === true);
+
+  // ---- The 20 MB promise vs the 5% rule (review follow-up on PR #16) ----
+  const MB = 1000 * 1000;
+  check('isMeaningfulReduction: >20 MB → <=20 MB counts even when <5% smaller (20.5 → 19.8 MB)', PdfCompress.isMeaningfulReduction(19.8 * MB, 20.5 * MB) === true);
+  check('isMeaningfulReduction: >20 MB → still >20 MB needs the full 5% (20.5 → 20.2 MB)', PdfCompress.isMeaningfulReduction(20.2 * MB, 20.5 * MB) === false);
+  check('isMeaningfulReduction: never counts a larger output, even across the limit', PdfCompress.isMeaningfulReduction(21 * MB, 20.5 * MB) === false);
+
+  const bigPage = Math.round(20.5 * MB / 3);
+  const bigSourceItems = [0, 1, 2].map(i => ({ bytes: new Uint8Array(bigPage).fill(40 + i), width: 1240, height: 1754 }));
+  const bigSourceBytes = new Uint8Array(await PdfCompress.buildCompressedPdf(bigSourceItems).arrayBuffer());
+  check('fixture: large source is just over 20 MB', bigSourceBytes.length > 20 * MB && bigSourceBytes.length < 21 * MB);
+  async function compressBigWithStubbedRenderer(jpegBytesForRound) {
+    const saved = PartyPdf.renderThumbnail;
+    PartyPdf.renderThumbnail = async (ref, canvas, maxEdge) => {
+      canvas.width = Math.round(maxEdge / 1.414); canvas.height = maxEdge;
+      canvas.toBlob = (cb, type, quality) => cb(new Blob([new Uint8Array(jpegBytesForRound({ maxEdge, quality })).fill(7)]));
+    };
+    try {
+      return await PdfCompress.compressPdf({ arrayBuffer: async () => bigSourceBytes.slice().buffer });
+    } finally {
+      PartyPdf.renderThumbnail = saved;
+    }
+  }
+
+  const justUnder = await compressBigWithStubbedRenderer(() => Math.round(19.8 * MB / 3));
+  check('20.5 MB → 19.8 MB is returned (not discarded for the original) even though it misses the 17 MB target', justUnder.keptOriginal === false && justUnder.outputBytes < 20 * MB);
+  check('20.5 MB → 19.8 MB: achievedTarget (17 MB engine target) is false but underDisplayLimit is true', justUnder.achievedTarget === false && justUnder.underDisplayLimit === true);
+
+  const bigInflating = await compressBigWithStubbedRenderer(() => Math.round(22 * MB / 3));
+  check('>20 MB source that cannot shrink → original kept, reported as NOT under 20 MB', bigInflating.keptOriginal === true && bigInflating.underDisplayLimit === false && bigInflating.achievedTarget === false);
+
+  check('resultFileName: kept original keeps its own name (no "_duoi-20MB" on an untouched file)', PdfCompress.resultFileName('ho_so', bigInflating) === 'ho_so.pdf');
+  check('resultFileName: compressed and under 20 MB → "_duoi-20MB"', PdfCompress.resultFileName('ho_so', justUnder) === 'ho_so_duoi-20MB.pdf');
+  check('resultFileName: compressed but still over 20 MB → never labelled "_duoi-20MB"', PdfCompress.resultFileName('ho_so', { keptOriginal: false, underDisplayLimit: false }) === 'ho_so_da-nen.pdf');
 
   console.log(`\n${pass}/${pass} checks passed.`);
   console.log('PdfCompress engine regression: PASS');

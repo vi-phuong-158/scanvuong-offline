@@ -12,6 +12,7 @@
   2. Nếu hết các round an toàn (không vượt floor) mà round cuối vẫn không nhỏ hơn bản gốc đáng kể → trả về **nguyên bytes gốc** (Blob mới, byte-identical), `keptOriginal:true`, `profileUsed:null`; `achievedTarget` = bản gốc ≤ ceiling (20 MB nếu bản gốc ≤ 20 MB).
   3. Shortcut compat-repair áp dụng cùng quy tắc; nếu bản sửa không nhỏ hơn bản gốc thì đi tiếp vòng rounds bình thường.
   4. UI: `compress-mode.js` hiện thông báo "đã nén tối ưu sẵn… giữ nguyên bản gốc" + nút "Nén mạnh hơn" (người dùng tự chọn vượt floor). Party Mode >20MB dialog: không tải bản sao trùng với tên `_duoi-20MB`, bật lại "Tải bản gốc" và báo không giảm được.
+  5. **Review follow-up PR #16:** (a) quy tắc 5% không áp dụng khi bản gốc >20 MB và kết quả đã ≤20 MB (20.5 → 19.8 MB là kết quả người dùng cần; bản đầu của fix này đã giữ lại bản gốc 20.5 MB — regression, đã sửa); (b) tách `achievedTarget` (target nội bộ 17 MB) khỏi `underDisplayLimit` (≤20 MB, dùng cho checkmark/thông báo/toast "Dưới 20 MB") — trước đây UI hiện ❌ "Dưới 20 MB" cho kết quả 18.7 MB; (c) `resultFileName()` dùng chung: bản gốc giữ nguyên không bao giờ mang đuôi `_duoi-20MB`, kết quả vẫn >20 MB mang `_da-nen`.
 - **Đánh đổi:** File đã nhỏ có thể chạy đủ 5 round rồi mới quyết định giữ bản gốc (đo: 1.1 MB/13 trang ~26s, 8.8 MB/24 trang ~16s trên desktop). Không thêm early-exit dựa trên ước lượng — vẫn giữ nguyên tắc chỉ đo `blob.size` thật.
 - **Người quyết định:** Claude Code, theo yêu cầu owner, sau khi tái hiện bằng đo thật.
 

@@ -943,9 +943,9 @@
           toast('Không giảm được dung lượng ở mức chất lượng an toàn. Hãy dùng "Tải bản gốc".');
           return;
         }
-        const compressedName = pending.name.replace(/\.pdf$/i, '') + '_duoi-20MB.pdf';
+        const compressedName = window.PdfCompress.resultFileName(pending.name.replace(/\.pdf$/i, ''), result);
         downloadPartyBlob(result.blob, compressedName);
-        toast(result.achievedTarget
+        toast(result.underDisplayLimit
           ? `Đã tạo bản dưới 20 MB: ${compressedName}`
           : `Đã nén ở mức an toàn nhất nhưng vẫn ${(result.outputBytes / 1e6).toFixed(1)} MB — chưa đạt dưới 20 MB.`);
         closeLargeFileDialog();

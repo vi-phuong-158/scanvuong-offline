@@ -16,6 +16,13 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-25] Review follow-up PR #16: ngưỡng 20 MB, `underDisplayLimit`, tên file khi giữ bản gốc
+- **Agent:** Claude Code
+- **Thay đổi:** `isMeaningfulReduction()` coi >20 MB → ≤20 MB là giảm hợp lệ dù <5%; mọi kết quả `compressPdf()` có thêm `underDisplayLimit` (≤20 MB), UI/toast "Dưới 20 MB" dùng cờ này thay vì `achievedTarget` (17 MB); `achievedTarget` của nhánh compat/keptOriginal thống nhất theo target 17 MB; thêm `PdfCompress.resultFileName()` dùng chung cho compress-mode và Party Mode. Thêm 11 check hồi quy.
+- **File đã sửa:** `pdf-compress.js`, `compress-mode.js`, `party-mode.js`, `scripts/regression_pdf_compress.cjs`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`
+- **Lý do:** Review PR #16 chỉ ra: 20.5 MB → 19.8 MB bị bỏ để giữ bản gốc 20.5 MB (regression do fix trước); `achievedTarget` bị hiển thị như "Dưới 20 MB"; bản gốc >20 MB giữ nguyên vẫn tải về với đuôi `_duoi-20MB`.
+- **Kiểm tra:** `regression_pdf_compress.cjs` 69/69 PASS (check 20.5→19.8 MB FAIL trên commit `0261feb` — đã xác nhận); `regression_party_mode.cjs` 69/69; `validate_static.py` PASS; `acceptance_pdf_compress.cjs` PASS (10.17 → 4.84 MB, Party 10/10 trang, tên `_duoi-20MB`); `acceptance_pdf_compat_fallback.cjs` PASS; UI 390px với file scan thật: giữ nguyên, 13/13 trang, tải về `Scan.pdf` byte-identical.
+
 ## [2026-09-25] Sửa lỗi "Giảm dung lượng PDF" làm file to hơn bản gốc
 - **Agent:** Claude Code
 - **Thay đổi:** `compressPdf()` chỉ chấp nhận round vừa ≤ target vừa nhỏ hơn bản gốc ≥5% (`isMeaningfulReduction`, `MIN_REDUCTION_RATIO=0.95`); nếu không round an toàn nào đạt → trả nguyên bytes gốc (`keptOriginal:true`). Shortcut compat-repair cùng quy tắc. UI compress-mode hiện thông báo giữ nguyên bản gốc + "Nén mạnh hơn"; Party Mode >20MB không tải bản trùng, bật lại "Tải bản gốc". Thêm 13 check hồi quy.
