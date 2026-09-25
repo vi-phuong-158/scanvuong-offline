@@ -189,7 +189,15 @@
       `<li class="${result.achievedTarget ? 'text-success' : 'text-danger'}">${result.achievedTarget ? checkIcon : crossIcon} Dưới 20 MB</li>`,
       `<li class="text-success">${checkIcon} Xử lý hoàn toàn trên thiết bị</li>`
     ].join('');
-    if (result.achievedTarget) {
+    if (result.keptOriginal) {
+      // pdf-compress.js never returns an output that isn't meaningfully
+      // smaller than the source; say so instead of showing "X → X" silently.
+      els.resultNotice.textContent = result.achievedTarget
+        ? 'File này đã được nén tối ưu sẵn. Nén lại ở mức chất lượng an toàn không làm file nhỏ đi, nên ứng dụng giữ nguyên bản gốc.'
+        : 'Không giảm được dung lượng ở mức chất lượng an toàn, nên ứng dụng giữ nguyên bản gốc.';
+      els.resultNotice.classList.remove('hidden');
+      els.strongerBtn.classList.toggle('hidden', state.usedBeyondFloor);
+    } else if (result.achievedTarget) {
       els.resultNotice.classList.add('hidden');
       els.strongerBtn.classList.add('hidden');
     } else {

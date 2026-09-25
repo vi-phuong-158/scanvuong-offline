@@ -159,6 +159,17 @@
     return bytes <= targetBytes;
   }
 
+  // Every page is re-rasterized to JPEG, so a source that the scanner
+  // already encoded compactly (low-DPI JPEG, CCITT/JBIG2 bilevel) can come
+  // out LARGER than it went in — observed: 9 MB in → 13 MB out, "accepted"
+  // because 13 MB is under the 17 MB target. An output only counts as a
+  // real reduction if it is at least 5% smaller than the original; anything
+  // less would be a lossy re-encode for no meaningful gain.
+  const MIN_REDUCTION_RATIO = 0.95;
+  function isMeaningfulReduction(outputBytes, originalBytes) {
+    return outputBytes <= originalBytes * MIN_REDUCTION_RATIO;
+  }
+
   async function renderRound(source, pageCount, round, roundIndex, roundCount, onProgress) {
     const items = [];
     for (let i = 0; i < pageCount; i++) {
@@ -348,13 +359,15 @@
       if (!pageCount) throw new Error('PDF không có trang nào.');
 
       // If compatibility repair was required and the repaired PDF is already
-      // within the target size band (<= 17 MB, or <= 20 MB when original was <= 20 MB),
-      // retain the high-fidelity repaired document directly rather than running
-      // an unnecessary second-generation compression pass.
+      // within the target size band (<= 17 MB, or <= 20 MB when original was <= 20 MB)
+      // AND genuinely smaller than the original, retain the high-fidelity
+      // repaired document directly rather than running an unnecessary
+      // second-generation compression pass.
       const ceiling = originalBytes <= PDF_COMPRESSION_DISPLAY_LIMIT_BYTES
         ? PDF_COMPRESSION_DISPLAY_LIMIT_BYTES
         : targetBytes;
-      if (compatRepaired && repairedBlob && verifyTarget(repairedBlob.size, ceiling) && !options.rounds && !options.forceCompress) {
+      if (compatRepaired && repairedBlob && verifyTarget(repairedBlob.size, ceiling)
+        && isMeaningfulReduction(repairedBlob.size, originalBytes) && !options.rounds && !options.forceCompress) {
         return {
           blob: repairedBlob,
           originalBytes,
@@ -380,7 +393,28 @@
         if (onProgress) onProgress({ phase: 'packaging', round: roundsUsed, roundCount: rounds.length });
         blob = buildCompressedPdf(items);
         profileUsed = rounds[r];
-        if (verifyTarget(blob.size, targetBytes)) { achievedTarget = true; break; }
+        if (verifyTarget(blob.size, targetBytes) && isMeaningfulReduction(blob.size, originalBytes)) {
+          achievedTarget = true;
+          break;
+        }
+      }
+
+      // No round produced a meaningfully smaller file (the source was
+      // already compactly encoded): never hand back an output that is larger
+      // than, or barely smaller than, the original — return the original
+      // bytes untouched (as a new Blob; fileOrBlob itself is never returned).
+      if (!achievedTarget && !isMeaningfulReduction(blob.size, originalBytes)) {
+        return {
+          blob: new Blob([buffer], { type: 'application/pdf' }),
+          originalBytes,
+          outputBytes: originalBytes,
+          pageCount,
+          achievedTarget: originalBytes <= ceiling,
+          roundsUsed,
+          profileUsed: null,
+          compatRepaired,
+          keptOriginal: true
+        };
       }
 
       return {
@@ -391,7 +425,8 @@
         achievedTarget,
         roundsUsed,
         profileUsed,
-        compatRepaired
+        compatRepaired,
+        keptOriginal: false
       };
     } finally {
       partyPdf().releasePreviewCache?.(source);
@@ -417,6 +452,8 @@
     renderCompressionPage,
     encodePage,
     buildCompressedPdf,
-    verifyTarget
+    verifyTarget,
+    MIN_REDUCTION_RATIO,
+    isMeaningfulReduction
   };
 })();

@@ -16,6 +16,13 @@
 - **Kiểm tra:** <cách xác minh hoạt động đúng>
 ```
 
+## [2026-09-25] Sửa lỗi "Giảm dung lượng PDF" làm file to hơn bản gốc
+- **Agent:** Claude Code
+- **Thay đổi:** `compressPdf()` chỉ chấp nhận round vừa ≤ target vừa nhỏ hơn bản gốc ≥5% (`isMeaningfulReduction`, `MIN_REDUCTION_RATIO=0.95`); nếu không round an toàn nào đạt → trả nguyên bytes gốc (`keptOriginal:true`). Shortcut compat-repair cùng quy tắc. UI compress-mode hiện thông báo giữ nguyên bản gốc + "Nén mạnh hơn"; Party Mode >20MB không tải bản trùng, bật lại "Tải bản gốc". Thêm 13 check hồi quy.
+- **File đã sửa:** `pdf-compress.js`, `compress-mode.js`, `party-mode.js`, `scripts/regression_pdf_compress.cjs`, `docs/brain/01-architecture.md`, `docs/brain/03-decisions.md`, `docs/brain/06-ai-working-log.md`
+- **Lý do:** Owner báo 9 MB → 13 MB. Tái hiện: engine HEAD biến file scan thật 1.12 MB → 10.41 MB và fixture 8.77 MB → 16.14 MB, đều báo "đạt" vì chỉ so với target 17 MB, không so với bản gốc. Xem `03-decisions.md` entry 2026-09-25.
+- **Kiểm tra:** `node --check` app.js/sw.js/pdf-compress.js/compress-mode.js/party-mode.js PASS; `regression_pdf_compress.cjs` 58/58 PASS (check mới FAIL trên engine HEAD — đã xác nhận); `regression_party_mode.cjs` 69/69 PASS; `validate_static.py` PASS; `acceptance_pdf_compress.cjs` PASS (vẫn nén thật 10.18 MB → 4.85 MB, Party >20MB 10/10 trang); `acceptance_pdf_compat_fallback.cjs` PASS. Chrome headless trên file scan thật (13 trang): engine mới trả 1.12 MB → 1.12 MB byte-identical, 13/13 trang, hướng trang giữ nguyên (P×13); fixture 8.77 MB → giữ nguyên, 24/24 trang. UI 390px: thông báo + nút "Nén mạnh hơn" hiển thị đúng, file tải về byte-identical với bản gốc.
+
 ## [2026-09-06] UI/Accessibility: Đáp ứng chuẩn touch target tối thiểu 44x44px cho nút Hướng dẫn (#helpBtn) trên thiết bị di động
 - **Agent:** Codex
 - **Bối cảnh & vấn đề:** GitHub Actions CI workflow `static-validation.yml` bị fail ở bước `Mobile touch-target regression (>=44px hit areas across 5 viewports)` do `#helpBtn` có kích thước hit area `38x44px` (thiếu 6px chiều rộng so với chuẩn tối thiểu 44x44px trên 5 viewport di động 360x800, 375x812, 390x844, 412x915, 430x932).
